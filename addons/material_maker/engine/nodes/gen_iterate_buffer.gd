@@ -69,7 +69,7 @@ func get_buffers(flags : int = BUFFERS_ALL) -> Array:
 
 func get_parameter_defs() -> Array:
 	return [
-		{ name="size", label="Size", type="size", first=4, last=13, default=4 },
+		{ name="size", label="Size", type="size", first=4, last=14, default=4 },
 		{ name="shrink", label="Shrink", type="boolean", default=false },
 		{ name="autostop", label="Auto stop", type="boolean", default=false },
 		{ name="iterations", label="Iterations", type="float", min=1, max=50, step=1, default=5 },
@@ -200,7 +200,6 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	var check_current_iteration : int = current_iteration
 	var autostop : bool = get_parameter("autostop")
 	
-	var time = Time.get_ticks_msec()
 	var size = pow(2, get_parameter("size"))
 	if get_parameter("shrink"):
 		size = int(size)
@@ -217,6 +216,12 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	if not status:
 		print("Error while rendering %s" % buffer_name)
 		return false
+	
+	# Show the total time of all iterations so far
+	if first_iteration:
+		rendering_time = 0
+	rendering_time += shader_compute.get_render_time()
+	rendering_time_updated.emit(rendering_time)
 	
 	if check_current_iteration != current_iteration:
 		mm_deps.dependency_update(buffer_name, texture, true)

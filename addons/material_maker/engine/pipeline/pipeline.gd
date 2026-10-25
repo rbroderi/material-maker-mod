@@ -386,6 +386,10 @@ func get_output_parameters_declarations() -> String:
 func create_texture(rd : RenderingDevice, texture_size : Vector2i, texture_type : int, usage_bits : int):
 	if texture_size.x == 0 or texture_size.y == 0:
 		return RID()
+	var max_size : int = rd.limit_get(RenderingDevice.LIMIT_MAX_TEXTURE_SIZE_2D)
+	if texture_size.x > max_size or texture_size.y > max_size:
+		push_error("Texture size %dx%d exceeds this GPU's limit of %d" % [ texture_size.x, texture_size.y, max_size ])
+		return RID()
 	var fmt : RDTextureFormat = RDTextureFormat.new()
 	var texture_type_struct : Dictionary = TEXTURE_TYPE[texture_type]
 	fmt.width = texture_size.x
