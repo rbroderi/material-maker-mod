@@ -1,0 +1,182 @@
+{
+	"name": "atlas_scatter",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"columns": 2.0,
+		"rows": 2.0,
+		"count": 8.0,
+		"scale": 1.0,
+		"scale_random": 0.3,
+		"rotation_random": 180.0,
+		"offset_random": 0.6,
+		"value_random": 0.2
+	},
+	"shader_model": {
+		"code": "vec4 $(name_uv)_scatter = $(name)_scatter($uv);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "The atlas (a grid of images)",
+				"name": "atlas",
+				"shortdesc": "Atlas",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_scatter(vec2 uv) {",
+			"\tfloat cells = max(1.0, floor($count));",
+			"\tvec2 grid = max(floor(vec2($columns, $rows)), vec2(1.0));",
+			"\tvec2 cell = floor(uv*cells);",
+			"\tvec4 best = vec4(0.0);",
+			"\tfloat best_height = -1.0;",
+			"\tfor (int dx = -1; dx <= 1; ++dx) {",
+			"\t\tfor (int dy = -1; dy <= 1; ++dy) {",
+			"\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\tvec2 seed = mod(c, cells)+vec2($seed*17.0, $seed*31.0);",
+			"\t\t\tvec2 p = (c+vec2(0.5)+(vec2(rand(seed), rand(seed+vec2(13.1, 7.7)))-vec2(0.5))*$offset_random)/cells;",
+			"\t\t\tfloat s = $scale*(1.0-$scale_random*rand(seed+vec2(5.1, 2.3)))/cells;",
+			"\t\t\tfloat a = radians($rotation_random*(2.0*rand(seed+vec2(8.7, 4.1))-1.0));",
+			"\t\t\tvec2 local = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*(uv-p)/max(s, 0.00001);",
+			"\t\t\tif (abs(local.x) > 0.5 || abs(local.y) > 0.5) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat index = floor(rand(seed+vec2(2.7, 8.3))*grid.x*grid.y);",
+			"\t\t\tvec2 atlas_cell = vec2(mod(index, grid.x), floor(index/grid.x));",
+			"\t\t\tvec4 color = $atlas((atlas_cell+local+vec2(0.5))/grid);",
+			"\t\t\tcolor.rgb *= 1.0-$value_random*rand(seed+vec2(9.2, 6.5));",
+			"\t\t\t// Height-ordered blending: the brightest covered instance wins",
+			"\t\t\tfloat height = color.a > 0.0 ? dot(color.rgb, vec3(1.0/3.0))+rand(seed+vec2(4.4, 1.2))*0.001 : -1.0;",
+			"\t\t\tif (height > best_height) {",
+			"\t\t\t\tbest_height = height;",
+			"\t\t\t\tbest = color;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn best;",
+			"}"
+		],
+		"longdesc": "Scatters random images of an atlas on a grid, with random offset, scale, rotation and value, and height-ordered blending",
+		"name": "Atlas Scatter",
+		"outputs": [
+			{
+				"rgba": "$(name_uv)_scatter",
+				"longdesc": "The scattered images",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name_uv)_scatter.a",
+				"longdesc": "The coverage of the images",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Columns",
+				"longdesc": "The number of columns of the atlas",
+				"max": 16.0,
+				"min": 1.0,
+				"name": "columns",
+				"shortdesc": "Columns",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Rows",
+				"longdesc": "The number of rows of the atlas",
+				"max": 16.0,
+				"min": 1.0,
+				"name": "rows",
+				"shortdesc": "Rows",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Count",
+				"longdesc": "The number of cells of the grid on each side (one image per cell)",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "count",
+				"shortdesc": "Count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Scale",
+				"longdesc": "The size of images, relative to their cell",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the size of each image",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 180.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each image, in degrees",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.6,
+				"label": "Offset random",
+				"longdesc": "The random offset of each image, relative to its cell",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "offset_random",
+				"shortdesc": "Offset random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.2,
+				"label": "Value random",
+				"longdesc": "The random darkening of each image",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "value_random",
+				"shortdesc": "Value random",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Atlas Scatter"
+	}
+}

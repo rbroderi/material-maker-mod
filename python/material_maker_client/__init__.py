@@ -93,9 +93,14 @@ class MaterialMaker:
         """Returns the version of Material Maker and whether it has a user interface"""
         return self.call("ping")
 
-    def new_graph(self):
-        """Creates a new material graph"""
-        return self.call("new_graph")
+    def new_graph(self, template=None):
+        """Creates a new material graph, optionally from an output template
+        (see list_templates) that sets its export target"""
+        return self.call("new_graph", **({} if template is None else {"template": template}))
+
+    def list_templates(self):
+        """Output templates: new materials set up for an engine"""
+        return self.call("list_templates")
 
     def load(self, path):
         """Loads a .ptex file"""
@@ -150,6 +155,21 @@ class MaterialMaker:
         """Sets parameters by remote parameter name or label, or "node:parameter" """
         values = dict(values or {}, **kwargs)
         return self.call("set_parameters", values=values)
+
+    def list_presets(self):
+        """Names of the presets of the graph's parameters"""
+        return self.call("list_presets")
+
+    def apply_preset(self, name):
+        return self.call("apply_preset", name=name)
+
+    def save_preset(self, name, node=None):
+        """Saves the current parameter values of a remote node (the first one by default)"""
+        return self.call("save_preset", **({"name": name} if node is None else {"name": name, "node": node}))
+
+    def randomize_parameters(self, seed=None):
+        """Sets random values to the graph's parameters (within their ranges)"""
+        return self.call("randomize_parameters", **({} if seed is None else {"seed": seed}))
 
     def reseed(self, offset=1):
         """Changes the seeds of all nodes that are not locked"""

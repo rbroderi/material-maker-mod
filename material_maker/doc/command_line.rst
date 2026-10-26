@@ -44,6 +44,7 @@ Options
 * **--output-file <pattern>** is the file name of exported materials (%f is the input file name,
   %n and %N the material name, %a and %A its author)
 * **--size <size>** is the size of generated images
+* **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values)
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example
   --set Hue=0.5), or a node name and a parameter name (for example --set Perlin:scale_x=8).

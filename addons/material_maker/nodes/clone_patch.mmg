@@ -1,0 +1,126 @@
+{
+	"name": "clone_patch",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"source_x": 0.25,
+		"source_y": 0.5,
+		"target_x": 0.75,
+		"target_y": 0.5,
+		"radius": 0.1,
+		"softness": 0.5
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3($uv.x), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_clone(vec2 uv) {",
+			"\tvec2 target = vec2($target_x, $target_y);",
+			"\tvec2 d = uv-target;",
+			"\td -= floor(d+vec2(0.5));",
+			"\tfloat mask = 1.0-smoothstep($radius*(1.0-$softness), $radius+0.00001, length(d));",
+			"\treturn mix($in(uv), $in(vec2($source_x, $source_y)+d), mask);",
+			"}"
+		],
+		"longdesc": "Copies a circular patch of an image over another area, with soft edges (to remove blemishes from photos)",
+		"name": "Clone Patch",
+		"outputs": [
+			{
+				"rgba": "$(name)_clone($uv)",
+				"longdesc": "The image with the cloned patch",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.25,
+				"label": "Source X",
+				"longdesc": "The center of the copied patch",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "source_x",
+				"shortdesc": "Source X",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Source Y",
+				"longdesc": "The center of the copied patch",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "source_y",
+				"shortdesc": "Source Y",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.75,
+				"label": "Target X",
+				"longdesc": "The center of the area that is replaced",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "target_x",
+				"shortdesc": "Target X",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Target Y",
+				"longdesc": "The center of the area that is replaced",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "target_y",
+				"shortdesc": "Target Y",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Radius",
+				"longdesc": "The radius of the patch",
+				"max": 0.5,
+				"min": 0.0,
+				"name": "radius",
+				"shortdesc": "Radius",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Softness",
+				"longdesc": "The softness of the patch's edge, relative to its radius",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "softness",
+				"shortdesc": "Softness",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Clone Patch"
+	}
+}

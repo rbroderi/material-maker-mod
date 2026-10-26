@@ -1,0 +1,101 @@
+{
+	"name": "atlas_creator",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"layout": 0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 1 of the atlas",
+				"name": "in1",
+				"shortdesc": "Image 1",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 2 of the atlas",
+				"name": "in2",
+				"shortdesc": "Image 2",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 3 of the atlas",
+				"name": "in3",
+				"shortdesc": "Image 3",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 4 of the atlas",
+				"name": "in4",
+				"shortdesc": "Image 4",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_create(vec2 uv) {",
+			"\tvec2 grid = $layout == 0 ? vec2(2.0) : vec2(4.0, 1.0);",
+			"\tvec2 cell = floor(fract(uv)*grid);",
+			"\tvec2 local = fract(fract(uv)*grid);",
+			"\tint index = int(cell.x+grid.x*cell.y);",
+			"\tif (index == 0) {",
+			"\t\treturn $in1(local);",
+			"\t} else if (index == 1) {",
+			"\t\treturn $in2(local);",
+			"\t} else if (index == 2) {",
+			"\t\treturn $in3(local);",
+			"\t}",
+			"\treturn $in4(local);",
+			"}"
+		],
+		"longdesc": "Creates an atlas from up to 4 images (2x2, or 4x1 in a row)",
+		"name": "Atlas Creator",
+		"outputs": [
+			{
+				"rgba": "$(name)_create($uv)",
+				"longdesc": "The atlas",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"default": 0,
+				"label": "Layout",
+				"longdesc": "The layout of the atlas",
+				"name": "layout",
+				"shortdesc": "Layout",
+				"type": "enum",
+				"values": [
+					{
+						"name": "2x2",
+						"value": "0"
+					},
+					{
+						"name": "4x1",
+						"value": "1"
+					}
+				]
+			}
+		],
+		"shortdesc": "Atlas Creator"
+	}
+}

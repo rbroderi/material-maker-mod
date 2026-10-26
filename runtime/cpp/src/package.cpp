@@ -179,6 +179,13 @@ bool Package::load(const std::string &path, std::string &error) {
 		}
 		parameters.push_back(std::move(parameter));
 	}
+	if (manifest.contains("presets")) {
+		for (const auto &[preset_name, values] : manifest["presets"].items()) {
+			for (const auto &[parameter, value] : values.items()) {
+				presets[preset_name][parameter] = to_floats(value);
+			}
+		}
+	}
 	material_json = manifest.value("material", nlohmann::json::object()).dump();
 	return true;
 }

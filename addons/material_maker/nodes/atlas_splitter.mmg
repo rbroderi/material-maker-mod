@@ -1,0 +1,86 @@
+{
+	"name": "atlas_splitter",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"columns": 2.0,
+		"rows": 2.0,
+		"index": 0.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "The atlas (a grid of images)",
+				"name": "atlas",
+				"shortdesc": "Atlas",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_split(vec2 uv) {",
+			"\tvec2 grid = max(floor(vec2($columns, $rows)), vec2(1.0));",
+			"\tfloat index = mod(floor($index), grid.x*grid.y);",
+			"\tvec2 cell = vec2(mod(index, grid.x), floor(index/grid.x));",
+			"\treturn $atlas((cell+clamp(uv, 0.0, 1.0))/grid);",
+			"}"
+		],
+		"longdesc": "Extracts an image of an atlas, by index (from the top left corner, row by row)",
+		"name": "Atlas Splitter",
+		"outputs": [
+			{
+				"rgba": "$(name)_split($uv)",
+				"longdesc": "The extracted image",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Columns",
+				"longdesc": "The number of columns of the atlas",
+				"max": 16.0,
+				"min": 1.0,
+				"name": "columns",
+				"shortdesc": "Columns",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Rows",
+				"longdesc": "The number of rows of the atlas",
+				"max": 16.0,
+				"min": 1.0,
+				"name": "rows",
+				"shortdesc": "Rows",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Index",
+				"longdesc": "The index of the extracted image",
+				"max": 255.0,
+				"min": 0.0,
+				"name": "index",
+				"shortdesc": "Index",
+				"step": 1.0,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Atlas Splitter"
+	}
+}

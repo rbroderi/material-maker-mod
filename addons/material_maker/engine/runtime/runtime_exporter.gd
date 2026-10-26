@@ -73,6 +73,7 @@ func do_export(graph : MMGenGraph, path : String, size : int) -> PackedStringArr
 		outputs=outputs,
 		material=material_parameters,
 		parameters=parameter_info.parameters,
+		presets=get_presets(graph, parameter_info.parameters),
 		baked_parameters=parameter_info.baked
 	}
 	var zip : ZIPPacker = ZIPPacker.new()
@@ -250,6 +251,22 @@ func get_runtime_parameters(graph : MMGenGraph) -> Dictionary:
 	if not time_targets.is_empty():
 		parameters.append({ name="time", label="Time", type="float", default=0.0, min=0.0, max=60.0, step=0.01, targets=time_targets })
 	return { parameters=parameters, baked=baked }
+
+## Presets of the remote nodes, restricted to the runtime parameters
+func get_presets(graph : MMGenGraph, parameters : Array) -> Dictionary:
+	var names : Array = parameters.map(func(p): return p.name)
+	var presets : Dictionary = {}
+	for remote in graph.get_children():
+		if not remote is MMGenRemote:
+			continue
+		for preset_name in remote.presets.keys():
+			var values : Dictionary = presets.get(preset_name, {})
+			for k in remote.presets[preset_name].keys():
+				if k in names:
+					values[k] = to_json_value(MMType.deserialize_value(remote.presets[preset_name][k]))
+			if not values.is_empty():
+				presets[preset_name] = values
+	return presets
 
 ## Returns the [ generator, parameter ] pairs that a parameter drives,
 ## following the parameters of subgraphs to the nodes they are linked to

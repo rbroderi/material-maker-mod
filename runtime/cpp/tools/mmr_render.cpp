@@ -1,6 +1,6 @@
 // Renders the outputs of a Material Maker runtime package
 //
-//   mmr_render <package.mmr> [-o <dir>] [--set name=value ...] [--exr] [--list] [--device n]
+//   mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--exr] [--list] [--device n]
 //
 // Values are numbers, or comma separated lists for colors (r,g,b,a).
 
@@ -30,6 +30,7 @@ int main(int argc, char **argv) {
 	std::string package_path;
 	std::string output_dir = ".";
 	std::vector<std::pair<std::string, std::vector<float>>> values;
+	std::string preset;
 	bool exr = false;
 	bool list = false;
 	int device = -1;
@@ -50,6 +51,8 @@ int main(int argc, char **argv) {
 				value.push_back(std::strtof(item.c_str(), nullptr));
 			}
 			values.push_back({ assignment.substr(0, equal), value });
+		} else if (arg == "--preset" && i + 1 < argc) {
+			preset = argv[++i];
 		} else if (arg == "--exr") {
 			exr = true;
 		} else if (arg == "--list") {
@@ -57,7 +60,7 @@ int main(int argc, char **argv) {
 		} else if (arg == "--device" && i + 1 < argc) {
 			device = std::atoi(argv[++i]);
 		} else if (arg == "-h" || arg == "--help") {
-			printf("usage: mmr_render <package.mmr> [-o <dir>] [--set name=value ...] [--exr] [--list] [--device n]\n");
+			printf("usage: mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--exr] [--list] [--device n]\n");
 			return 0;
 		} else {
 			package_path = arg;
@@ -80,6 +83,18 @@ int main(int argc, char **argv) {
 		for (const auto &[channel, pass] : package.outputs) {
 			printf("  output %s: pass %s\n", channel.c_str(), pass.c_str());
 		}
+		for (const auto &[preset_name, preset_values] : package.presets) {
+			printf("  preset %s (%zu values)\n", preset_name.c_str(), preset_values.size());
+		}
+	}
+	// Presets are applied before --set values
+	if (!preset.empty()) {
+		auto it = package.presets.find(preset);
+		if (it == package.presets.end()) {
+			return fail("no preset " + preset);
+		}
+		std::vector<std::pair<std::string, std::vector<float>>> preset_values(it->second.begin(), it->second.end());
+		values.insert(values.begin(), preset_values.begin(), preset_values.end());
 	}
 	mmr::Renderer renderer;
 	start = std::chrono::steady_clock::now();

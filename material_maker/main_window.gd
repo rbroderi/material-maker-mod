@@ -54,6 +54,7 @@ const MENU_MANAGE_PRESETS : int = 1003
 
 const MENU : Array[Dictionary] = [
 	{ menu="File/New material", command="new_material", shortcut="Control+N" },
+	{ menu="File/New material from template", submenu="new_material_template" },
 	{ menu="File/New paint project (Experimental)", command="new_paint_project", shortcut="Control+Shift+N", not_in_ports=["HTML5"] },
 	{ menu="File/Load", command="load_project", shortcut="Control+O" },
 	{ menu="File/Load material from website", command="load_material_from_website" },
@@ -392,6 +393,15 @@ func create_menu_load_recent(menu) -> void:
 		menu.connect_id_pressed(self._on_LoadRecent_id_pressed)
 		menu.add_separator()
 		menu.add_item("Clear recent files", RECENTS_MENU_CLEAR)
+
+func create_menu_new_material_template(menu : MMMenuManager.MenuBase) -> void:
+	menu.clear()
+	for i in MMCliTools.ENGINE_TEMPLATES.size():
+		menu.add_item(MMCliTools.ENGINE_TEMPLATES[i].name, i)
+	menu.connect_id_pressed(self._on_NewMaterialTemplate_id_pressed)
+
+func _on_NewMaterialTemplate_id_pressed(id : int) -> void:
+	new_material(MMCliTools.ENGINE_TEMPLATES[id].name)
 
 func _on_LoadRecent_id_pressed(id) -> void:
 	match id:
@@ -757,9 +767,14 @@ func new_graph_panel() -> GraphEdit:
 	projects_panel.get_projects().current_tab = graph_edit.get_index()
 	return graph_edit
 
-func new_material() -> void:
+## Creates a new material, optionally from an output template (see
+## MMCliTools.ENGINE_TEMPLATES) that sets its export target
+func new_material(template : String = "") -> void:
 	var graph_edit = new_graph_panel()
-	graph_edit.new_material()
+	if template != "":
+		graph_edit.new_material(MMCliTools.get_engine_template_graph(template))
+	else:
+		graph_edit.new_material()
 	graph_edit.top_generator.set_current_mesh(current_mesh)
 	graph_edit.update_tab_title()
 	hierarchy.update_from_graph_edit(get_current_graph_edit())

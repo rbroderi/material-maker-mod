@@ -18,6 +18,11 @@ var float_value: float = 0.5
 		max_value = v
 		$Slider.max_value = v
 
+## Hard limits: values (typed or dragged past the slider's range) are
+## clamped to them
+var hard_min: float = -INF
+var hard_max: float = INF
+
 @export var step: float = 0.0 :
 	set(v):
 		step = v
@@ -88,6 +93,7 @@ func set_value(v: Variant, notify := false, merge_undos := false) -> void:
 		v = min_value
 
 	if v is float:
+		v = clampf(v, hard_min, hard_max)
 		float_value = v
 		if get_decimal_places(v) < _step_decimals:
 			$Edit.text = str(v).pad_decimals(_step_decimals)

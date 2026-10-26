@@ -1,0 +1,105 @@
+{
+	"name": "normal_combine",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"mode": 0,
+		"strength": 1.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec3(0.5, 0.5, 0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The base normal map",
+				"name": "base",
+				"shortdesc": "Base",
+				"type": "rgb"
+			},
+			{
+				"default": "vec3(0.5, 0.5, 0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The detail normal map, applied over the base",
+				"name": "detail",
+				"shortdesc": "Detail",
+				"type": "rgb"
+			}
+		],
+		"instance": [
+			"vec3 $(name)_combine(vec2 uv) {",
+			"\tvec3 a = mm_normal_decode($base(uv));",
+			"\tvec3 b = mm_normal_decode($detail(uv));",
+			"\tb = normalize(vec3(b.xy*$strength, b.z));",
+			"\tvec3 r;",
+			"\tif ($mode == 0) {",
+			"\t\tvec3 t = a+vec3(0.0, 0.0, 1.0);",
+			"\t\tvec3 u = b*vec3(-1.0, -1.0, 1.0);",
+			"\t\tr = t*dot(t, u)/t.z-u;",
+			"\t} else if ($mode == 1) {",
+			"\t\tr = vec3(a.xy+b.xy, a.z*b.z);",
+			"\t} else {",
+			"\t\tr = vec3(a.xy+b.xy, a.z);",
+			"\t}",
+			"\treturn mm_normal_encode(normalize(r));",
+			"}"
+		],
+		"longdesc": "Combines a detail normal map with a base normal map, with the Reoriented Normal Mapping (RNM), Whiteout or UDN methods",
+		"name": "Normal Combine",
+		"outputs": [
+			{
+				"rgb": "$(name)_combine($uv)",
+				"longdesc": "The combined normal map",
+				"shortdesc": "Output",
+				"type": "rgb"
+			}
+		],
+		"parameters": [
+			{
+				"default": 0,
+				"label": "Mode",
+				"longdesc": "RNM reorients the detail along the base (most accurate), Whiteout and UDN are cheaper approximations",
+				"name": "mode",
+				"shortdesc": "Mode",
+				"type": "enum",
+				"values": [
+					{
+						"name": "RNM",
+						"value": "0"
+					},
+					{
+						"name": "Whiteout",
+						"value": "1"
+					},
+					{
+						"name": "UDN",
+						"value": "2"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Strength",
+				"longdesc": "The strength of the detail normal map",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "strength",
+				"shortdesc": "Strength",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Normal Combine",
+		"includes": [
+			"normal_normalize"
+		]
+	}
+}

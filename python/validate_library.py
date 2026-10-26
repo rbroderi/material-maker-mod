@@ -25,7 +25,7 @@ def main():
     parser.add_argument("--mm", default="material_maker", help="command that starts Material Maker")
     parser.add_argument("--library", action="append", help="library files (default: material_maker/library/base.json)")
     parser.add_argument("--examples", default=None, help="directory of example .ptex files")
-    parser.add_argument("--filter", default="", help="only validate items whose path contains this text")
+    parser.add_argument("--filter", default="", help="only validate items whose path contains this text (several texts are separated by |)")
     parser.add_argument("--size", type=int, default=32)
     parser.add_argument("--start", type=int, default=0, help="index of the first library item")
     parser.add_argument("--limit", type=int, default=0, help="maximum number of library items")
@@ -45,7 +45,7 @@ def main():
             items = items[args.start:args.start + args.limit] if args.limit > 0 else items[args.start:]
             for item in items:
                 path = item.get("tree_item", item.get("name", "?"))
-                if args.filter.lower() not in path.lower():
+                if not any(f.lower() in path.lower() for f in args.filter.split("|")):
                     continue
                 count += 1
                 start = time.time()
@@ -68,7 +68,7 @@ def main():
                 print("%-60s %s (%.1fs)" % (path, status, time.time() - start), flush=True)
         if args.examples:
             for file_name in sorted(os.listdir(args.examples)):
-                if not file_name.endswith(".ptex") or args.filter.lower() not in file_name.lower():
+                if not file_name.endswith(".ptex") or not any(f.lower() in file_name.lower() for f in args.filter.split("|")):
                     continue
                 count += 1
                 start = time.time()

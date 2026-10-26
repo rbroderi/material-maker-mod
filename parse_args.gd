@@ -56,6 +56,8 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			from_website = true
 		if gen != null:
 			add_child(gen)
+			if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
+				show_error("ERROR: %s: no preset '%s'" % [ f.get_file(), options.preset ])
 			for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
 				show_error("ERROR: %s: %s" % [ f.get_file(), e ])
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
@@ -119,6 +121,7 @@ Options:
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels
+  --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
@@ -212,6 +215,9 @@ func _ready():
 				i += 1
 			"--node":
 				options.node = value
+				i += 1
+			"--preset":
+				options.preset = value
 				i += 1
 			"--high", "--cage":
 				options[arg.substr(2)] = value
@@ -315,6 +321,9 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 		show_error("ERROR: cannot load %s" % f)
 		return null
 	add_child(gen)
+	# Presets are applied before parameters set on the command line
+	if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
+		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(MMCliTools.get_preset_names(gen)) ])
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
 		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
 	return gen

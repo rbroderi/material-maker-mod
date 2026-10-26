@@ -76,6 +76,8 @@ public:
 	/// Pass name of each material output (albedo, orm, emission, normal, height)
 	std::map<std::string, std::string> outputs;
 	std::vector<Parameter> parameters;
+	/// Presets: parameter values by preset name
+	std::map<std::string, std::map<std::string, std::vector<float>>> presets;
 	std::map<std::string, Image> textures;
 	/// The "material" object of the manifest (Material node values), as JSON
 	std::string material_json;

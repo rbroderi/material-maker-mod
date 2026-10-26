@@ -1,0 +1,38 @@
+{
+	"name": "normal_normalize",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {},
+	"shader_model": {
+		"code": "",
+		"global": "// Material Maker's normal maps: x and y in [0, 1], z inverted\nvec3 mm_normal_decode(vec3 c) {\n\treturn normalize(vec3(2.0*c.xy-vec2(1.0), 1.0-2.0*c.z));\n}\n\nvec3 mm_normal_encode(vec3 n) {\n\treturn vec3(vec2(0.5)+0.5*n.xy, 0.5-0.5*n.z);\n}\n",
+		"inputs": [
+			{
+				"default": "vec3(0.5, 0.5, 0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The normal map",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "rgb"
+			}
+		],
+		"instance": [],
+		"longdesc": "Normalizes the vectors of a normal map (for example after blending or filtering it)",
+		"name": "Normal Normalize",
+		"outputs": [
+			{
+				"rgb": "mm_normal_encode(mm_normal_decode($in($uv)))",
+				"longdesc": "The normalized normal map",
+				"shortdesc": "Output",
+				"type": "rgb"
+			}
+		],
+		"parameters": [],
+		"shortdesc": "Normal Normalize"
+	}
+}

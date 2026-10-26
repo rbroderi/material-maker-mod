@@ -49,6 +49,10 @@ Click the node's edit button to open the function graph editor:
 
 * *Edit JSON* shows the function graph as text.
 
+* *Undo* and *Redo* (or Control+Z and Control+Y / Control+Shift+Z when no text field has
+  the focus) undo and redo changes in the editor. Closing the editor with *OK* or *Apply*
+  is a single step in the material's undo history.
+
 Random numbers
 ++++++++++++++
 

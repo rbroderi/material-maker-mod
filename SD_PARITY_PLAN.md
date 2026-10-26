@@ -127,7 +127,9 @@ Equivalent to SD's function graphs, Pixel Processor, and Value Processor:
   - a JSON fallback, and an undo step per apply.
 - 35 GUT tests, plus GPU and editor interaction runs.
 
-Not done: milestone 5 (sbsar2ptex emitting the IR) is on hold, there's no undo inside the editor itself, and FX-Map random streams wait for §3.2.
+✅ **Done (2026-10-26): undo inside the editor.** Undo/Redo buttons and Ctrl+Z, Ctrl+Y and Ctrl+Shift+Z (unless a text field has the focus), with up to 100 steps. Applying is still a single undo step in the material.
+
+Not done: milestone 5 (sbsar2ptex emitting the IR) is on hold.
 
 ### 3.2 FX-Map equivalent — **L**
 A recursive quadrant/iterate/switch splatting system with per-instance random seeds, blend modes, and pattern inputs. Implement as a compute-based instancing pass (it pairs with §2.1). MM's tile and splatter nodes cover the common cases. The gap is the general-purpose programmable version.
@@ -136,7 +138,11 @@ A recursive quadrant/iterate/switch splatting system with per-instance random se
 - Up to 10 quadrant levels, with one optional instance per cell. Instances get a random offset, scale, rotation and value, and a per-level opacity falloff.
 - 4 pattern inputs, chosen at random or by level.
 - Alpha-over, add and max blending, an instance ID output, and seamless tiling.
-- Still missing: SD's fully programmable FX-Map, with per-instance function graphs for every property, and iterate/switch nodes. That needs function graphs (§3.1) wired into an instancing pass.
+- ✅ **Done (2026-10-26): programmable FX-Map.** The **FX-Map Iterate** node (`nodes/fx_map_iterate.mmg`, *Transform/FX-Map/Iterate*) splats up to 256 instances.
+  - Position, scale, rotation, value, opacity and pattern are expressions of the instance index `i`, the count `n`, `t = i/(n-1)`, random values `r1` to `r4` and `$seed`. They can sample inputs, such as a map.
+  - Each property can be a function graph (§3.1). The parameter function editor exposes `i`, `n`, `t` and `r1` to `r4` to the graph through a new `expression_variables` field on shader parameters.
+  - The pattern expression acts as SD's Switch node, picking one of 4 inputs per instance. Alpha-over, add and max blending, and an instance output.
+  - Not done: nested iterations (an Iterate inside a quadrant level). Chaining FX-Map Iterate nodes covers most uses.
 
 ### 3.3 Node library parity — **L (ongoing)**
 Audit against SD's library. Priority gaps to check or build:
@@ -149,16 +155,16 @@ Audit against SD's library. Priority gaps to check or build:
   - Tiles seamlessly.
 - **Tile Sampler parity**. **✔ checked:** Tiler Advanced already has a mask input, per-tile translate/rotate/scale map inputs, two color inputs, multiple input patterns, overlap, and variations. There are also the Height to Angle/Offset and Remap helpers. Missing: vector-map displacement, pattern selection by map, symmetry options, and height-ordered stacking. This is a **smaller gap than first assumed (M, not L)**.
 - **Splines and paths**. **✔ checked:** MM has one Splines node (edge, fill, and guide inputs) and Poly Curve (with a width map). Poly Curve already stretches a pattern along a path. ✅ **Done (2026-10-26): Spline Mapper** (`nodes/spline_mapper.mmg`, *Simple/Spline Mapper*) places pattern instances along a curve, oriented to it, with random scale, rotation, offset and height, and height-ordered blending. Still missing: Spline Bridge, spline warp, and Ribbon/Ribbon Path.
-- **Flood Fill suite**. **✔ checked:** largely at parity. MM has To Color, To Gradient, To Orientation, To Position, To Random Color/Gray, To Size, To UV, To RGBA, Select, and From Colors. Missing: To Index and a Flood Fill Mapper (pattern per cell).
+- **Flood Fill suite**. **✔ checked:** largely at parity. MM has To Color, To Gradient, To Orientation, To Position, To Random Color/Gray, To Size, To UV, To RGBA, Select, and From Colors. To Index was added in §2.3. ✅ **Done (2026-10-26): Flood Fill Mapper** (`nodes/fill_mapper.mmg`, *Filter/Fill/Mapper*) places a pattern in each cell, fitted to its bounding box, with random rotation, scale and value.
 - **Advanced filters**. **✔ checked, already present:** Slope Blur, Directional Blur, Directional Warp, Multi Warp, Edge Detect (3 variants), Bevel, Normal Map / Normal Blend / Normal Map Convert, Normal to Height, Smooth Curvature, HBAO, Occlusion, Height Blend, Quantize, Tones (levels), and Auto Tones. **Done (2026-10-25): Non-Uniform Blur** (`nodes/non_uniform_blur.mmg`, library *Filter/Blur/Non-Uniform*). It's a golden-angle disc blur whose radius comes from an intensity map, with anisotropy, angle, and sample count. It doesn't yet have SD's "blades" (polygonal bokeh). ✅ **Done (2026-10-26): Distance** (`nodes/distance.mmg`, *Filter/Distance*). It outputs a distance falloff and source colors propagated from the mask's white areas, accurate to 1–2 px.
   - It uses a corrected jump flood: the step halves each pass, and sampling is at pixel centers.
   - ✅ **Fixed (2026-10-26): Mask to SDF** had both bugs. It used `size/4/k` steps and sampled at pixel corners, so with filtering it was off by about 0.04 UV outside the shape and about 0.15 UV inside it. It now uses the same corrected jump flood and is accurate to 1–2 px (for example −0.145 at the center of a radius-0.15 circle, where it used to give −0.005). New instances default to 12 iterations. Saved graphs keep their own count, which is still correct. Graphs that use Mask to SDF will render differently, now with correct distances.
 
-  Histogram Scan/Shift/Select are done (§2.3). Still missing: Normal Normalize, Whiteout/RNM combine modes *(check Normal Blend's modes)*, and dithered posterize.
-- **Atlas tooling**: Atlas Splitter, Atlas Scatter, Atlas Creator, rotate-to-fit, per-atlas-item IDs.
-- **✔ checked:** a **Text node** exists (`gen_text.gd`). An **SVG/vector node** with editable paths is still missing.
-- **Weathering and material generators**: edge wear, dirt, grunge, water-level, moss and dust (the "Material Filters" family).
-- **Bitmap-to-material**: delight, crop/tile-fix, make-it-tile (patch-based), clone patch, and PBR from photo.
+  Histogram Scan/Shift/Select are done (§2.3). ✅ **Done (2026-10-26):** **Normal Normalize** (`nodes/normal_normalize.mmg`), **Normal Combine** with RNM, Whiteout and UDN modes (`nodes/normal_combine.mmg`; Normal Blend only mixes linearly), and **Posterize (Dithered)** with a 4×4 Bayer matrix (`nodes/posterize_dither.mmg`).
+- **Atlas tooling**: Atlas Splitter, Atlas Scatter, Atlas Creator, rotate-to-fit, per-atlas-item IDs. ✅ **Done (2026-10-26):** *Transform/Atlas/Splitter* extracts one item of a grid atlas, *Creator* packs 4 inputs into a 2×2 atlas, and *Scatter* splats random items of an atlas, with an item ID output. Not done: rotate-to-fit and non-grid atlases.
+- **✔ checked:** a **Text node** exists (`gen_text.gd`). ✅ **Done (2026-10-26): SVG node** (`engine/nodes/gen_svg.gd`, *Simple/SVG*). It renders an SVG file, or a path (SVG `d` syntax on a 100×100 canvas) with fill and stroke colors and stroke width. Not done: editing paths in the 2D preview.
+- **Weathering and material generators**: edge wear, dirt, grunge, water-level, moss and dust (the "Material Filters" family). ✅ **Done (2026-10-26):** *Filter/Weathering* has Edge Wear (from curvature), Dirt (ambient occlusion and curvature), Grunge, Moss (normal direction and cavities) and Dust (upward-facing areas). They're masks broken up by shared noise (`nodes/weathering_*.mmg`). Not done: water level.
+- **Bitmap-to-material**: delight, crop/tile-fix, make-it-tile (patch-based), clone patch, and PBR from photo. ✅ **Done (2026-10-26):** **Delight** (`nodes/delight.mmg`, *Filter/Bitmap/Delight*) divides by a large blur to remove baked lighting, and **Clone Patch** (`nodes/clone_patch.mmg`) copies a soft-edged patch over a defect. Make Tileable already existed. Not done: patch-based make-it-tile and PBR from photo (photometric stereo covers normals, §5.4).
 
 ### 3.4 Graph UX and organization — **M**
 - **Graph instancing with versioning**: a subgraph instance records its source version, with "update outdated instances" and diff-before-update. ✅ **Done (2026-10-26)** (`tools/library_manager/library_instances.gd`, *Tools → Library instances*):
@@ -170,10 +176,13 @@ Audit against SD's library. Priority gaps to check or build:
   - Lists every file parameter (images, fonts), including in subgraphs.
   - Relinks one file, finds missing files by name in a folder, or collects all files into a folder.
   - All of it is undoable.
-- **Parameter UI**: groups, tooltips, sliders with soft/hard ranges, presets per graph, and color-picker swatches.
-- **Presets/variations** UI on top of the 1.6 Controlled Variations system.
+- **Parameter UI**: groups, tooltips, sliders with soft/hard ranges, presets per graph, and color-picker swatches. ✅ **Done (2026-10-26)**, except swatches:
+  - **Groups:** labels written `Group::Label` are shown under collapsible headers in the parameters panel.
+  - **Hard ranges:** min/max stay the slider's soft range, and `hard_min`/`hard_max` clamp values. The node editor keeps them.
+  - **Presets per graph:** remote nodes save, apply and delete named presets, saved in the `.ptex`. They're used by the CLI (`--preset`), RPC (`list_presets`, `apply_preset`, `save_preset`) and `.mmr` packages (`presets` in the manifest, `apply_preset` in the Godot runtime, `--preset` in `mmr_render`).
+- **Presets/variations** UI on top of the 1.6 Controlled Variations system. ✅ **Done (2026-10-26):** a preset bar on remote nodes (apply, save, delete, *Randomize* within each parameter's range), all undoable, plus `randomize_parameters(seed)` in RPC.
 - Pinned 2D-view inspection of any output, side-by-side compare, channel isolation, tiling preview, and a pixel value picker that shows float values.
-- **Graph templates**: Unreal, Unity HDRP/URP, Godot, glTF, and OpenPBR output sets.
+- **Graph templates**: Unreal, Unity HDRP/URP, Godot, glTF, and OpenPBR output sets. ✅ **Done (2026-10-26):** *File → New material from template* creates a material whose export target and Material node are set for Godot 4 (Standard or ORM), Unity HDRP/URP, Unreal Engine 5, glTF, MaterialX (OpenPBR), USD or Blender (`MMCliTools.ENGINE_TEMPLATES`, and `new_graph(template)` in RPC).
 - Faster search with fuzzy matching and the most-recent nodes first; connect-by-drag-to-empty-space search.
 
 ---
@@ -428,6 +437,7 @@ What it means for this plan:
 | **M4: 3D** ✅ (2026-10-26, UDIM, hardware RT, path tracer and OpenPBR preview deferred) | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
 | **M5: Runtime** ✅ (2026-10-26: format, exporter, Godot runtime, C++/Vulkan runtime; Blender/Unreal/Unity plugins pending) | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
 | **M6: Exceed** ✅ first slice (2026-10-26: FX-Map, photometric stereo, flipbooks and animated packages, ptex diff/merge, library validation) | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
+| **M7: Authoring parity** ✅ (2026-10-26: programmable FX-Map, function graph undo, weathering/atlas/normal/bitmap nodes, SVG, parameter groups, hard ranges, presets, engine templates) | 3.1–3.4 remaining items | Closes most of the day-to-day authoring gaps with SD |
 
 **Quick wins** (status as of 2026-10-25):
 1. ✅ **Profiler summary**: Iterate Buffer timing, plus *Tools → Show buffer render times* (§2.4).

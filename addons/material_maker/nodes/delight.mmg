@@ -1,0 +1,102 @@
+{
+	"name": "delight",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"radius": 0.1,
+		"target": 0.5,
+		"strength": 1.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(0.5)",
+				"function": true,
+				"label": "",
+				"longdesc": "The photo",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"float $(name)_lighting(vec2 uv) {",
+			"\t// Golden angle disc sampling of the luminance",
+			"\tfloat sum = 0.0;",
+			"\tfor (int i = 0; i < 48; ++i) {",
+			"\t\tfloat r = $radius*sqrt((float(i)+0.5)/48.0);",
+			"\t\tfloat a = float(i)*2.39996323;",
+			"\t\tsum += dot($in(uv+r*vec2(cos(a), sin(a))).rgb, vec3(0.2126, 0.7152, 0.0722));",
+			"\t}",
+			"\treturn sum/48.0;",
+			"}",
+			"",
+			"vec4 $(name)_delight(vec2 uv) {",
+			"\tvec4 c = $in(uv);",
+			"\tfloat gain = $target/max($(name)_lighting(uv), 0.001);",
+			"\treturn vec4(c.rgb*mix(1.0, gain, $strength), c.a);",
+			"}"
+		],
+		"longdesc": "Removes large scale lighting variations (shading, vignetting) from a photo, by dividing it by its blurred luminance",
+		"name": "Delight",
+		"outputs": [
+			{
+				"rgba": "$(name)_delight($uv)",
+				"longdesc": "The delighted photo",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name)_lighting($uv)",
+				"longdesc": "The estimated lighting (blurred luminance)",
+				"shortdesc": "Lighting",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Radius",
+				"longdesc": "The radius of the blur that estimates the lighting, relative to the image size",
+				"max": 0.5,
+				"min": 0.01,
+				"name": "radius",
+				"shortdesc": "Radius",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Target",
+				"longdesc": "The luminance of the delighted image",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "target",
+				"shortdesc": "Target",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Strength",
+				"longdesc": "The strength of the correction",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "strength",
+				"shortdesc": "Strength",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Delight"
+	}
+}

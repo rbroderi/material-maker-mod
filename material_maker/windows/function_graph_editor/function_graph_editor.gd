@@ -38,6 +38,12 @@ var compile_node_errors : Dictionary = {}
 var errors : PackedStringArray = PackedStringArray()
 
 var graph_edit : GraphEdit
+
+## Undo history: snapshots of the graph (var_to_str keeps value types)
+const HISTORY_SIZE : int = 100
+var history : PackedStringArray = PackedStringArray()
+var history_index : int = -1
+var history_timer : Timer
 var side_panel : VBoxContainer
 var scope_selector : OptionButton
 var add_menu : MenuButton
@@ -74,6 +80,9 @@ func _init() -> void:
 	add_button(toolbar, "Set output", set_selected_as_output)
 	add_button(toolbar, "Delete", delete_selected)
 	add_button(toolbar, "Edit JSON", edit_json)
+	toolbar.add_child(VSeparator.new())
+	add_button(toolbar, "Undo", undo).tooltip_text = "Undo (Ctrl+Z)"
+	add_button(toolbar, "Redo", redo).tooltip_text = "Redo (Ctrl+Y or Ctrl+Shift+Z)"
 	status_label = Label.new()
 	status_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	status_label.clip_text = true
@@ -105,6 +114,12 @@ func _init() -> void:
 	apply_button = add_button(buttons, "Apply", apply)
 	ok_button = add_button(buttons, "OK", on_ok_pressed)
 	add_button(buttons, "Cancel", queue_free)
+	# Edits that don't rebuild the view (e.g. typing in fields) are recorded
+	# periodically, so they are grouped in a single undo step
+	history_timer = Timer.new()
+	history_timer.wait_time = 0.5
+	history_timer.timeout.connect(record_state)
+	add_child(history_timer)
 
 static func add_button(parent : Control, text : String, callable : Callable) -> Button:
 	var button : Button = Button.new()
@@ -131,7 +146,59 @@ func edit(g : Dictionary, m : String, window_title : String = "", parameters : A
 	scope = ""
 	rebuild_add_menu()
 	rebuild_all()
+	history.clear()
+	history_index = -1
+	record_state()
+	history_timer.start()
 	popup_centered()
+
+#
+# Undo/redo
+#
+
+## Adds the current graph to the history if it changed
+func record_state() -> void:
+	var state : String = var_to_str(graph)
+	if history_index >= 0 and history[history_index] == state:
+		return
+	history.resize(history_index+1)
+	history.append(state)
+	if history.size() > HISTORY_SIZE:
+		history.remove_at(0)
+	history_index = history.size()-1
+
+func undo() -> void:
+	store_positions()
+	record_state()
+	if history_index > 0:
+		history_index -= 1
+		restore_state()
+
+func redo() -> void:
+	record_state()
+	if history_index < history.size()-1:
+		history_index += 1
+		restore_state()
+
+func restore_state() -> void:
+	graph = str_to_var(history[history_index])
+	if scope != "" and not get_functions().has(scope):
+		scope = ""
+	rebuild_all()
+
+func _input(event : InputEvent) -> void:
+	if not (event is InputEventKey and event.pressed and event.is_command_or_control_pressed()):
+		return
+	# Text fields have their own undo
+	var focus : Control = gui_get_focus_owner()
+	if focus is LineEdit or focus is TextEdit:
+		return
+	if event.keycode == KEY_Z and not event.shift_pressed:
+		undo()
+		set_input_as_handled()
+	elif event.keycode == KEY_Y or (event.keycode == KEY_Z and event.shift_pressed):
+		redo()
+		set_input_as_handled()
 
 func get_graph() -> Dictionary:
 	store_positions()
@@ -352,6 +419,8 @@ func rebuild_panel() -> void:
 
 func do_rebuild_view() -> void:
 	view_rebuild_scheduled = false
+	# Rebuilds follow discrete edits (adding, deleting, connecting nodes...)
+	record_state()
 	graph_edit.clear_connections()
 	for c in graph_edit.get_children():
 		if c is GraphNode:

@@ -87,6 +87,57 @@ static func get_remote_parameter_name(remote : MMGenRemote, parameter_name : Str
 			return w.name
 	return ""
 
+## Output templates: new materials set up for an engine (export target and
+## Material node values)
+const ENGINE_TEMPLATES : Array[Dictionary] = [
+	{ name="Godot 4", export="Godot/Godot 4 Standard", parameters={},
+		description="Godot 4 StandardMaterial3D (.tres) and its textures" },
+	{ name="Godot 4 (ORM)", export="Godot/Godot 4 ORM", parameters={},
+		description="Godot 4 ORMMaterial3D, with occlusion, roughness and metallic in one texture" },
+	{ name="Unity HDRP", export="Unity/HDRP", parameters={},
+		description="Unity High Definition Render Pipeline Lit material, with a mask map" },
+	{ name="Unity URP", export="Unity/URP", parameters={},
+		description="Unity Universal Render Pipeline Lit material" },
+	{ name="Unreal Engine 5", export="Unreal/Unreal Engine 5", parameters={ size=12, depth_scale=0.0 },
+		description="Unreal Engine 5 textures (base color, normal, occlusion/roughness/metallic), 4096x4096" },
+	{ name="glTF", export="GLTF/Plane", parameters={},
+		description="glTF 2.0 material on a plane" },
+	{ name="MaterialX (OpenPBR)", export="MaterialX/OpenPBR", parameters={},
+		description="MaterialX document with an OpenPBR surface" },
+	{ name="USD", export="USD/UsdPreviewSurface", parameters={},
+		description="USD layer with a UsdPreviewSurface material" },
+	{ name="Blender", export="Blender", parameters={},
+		description="Blender material import script and textures" },
+]
+
+## Graph data of a new material from an output template (by name or export
+## target), or an empty dictionary
+static func get_engine_template_graph(template_name : String) -> Dictionary:
+	for t in ENGINE_TEMPLATES:
+		if t.name == template_name or t.export == template_name:
+			var parameters : Dictionary = { size=11 }
+			parameters.merge(t.parameters, true)
+			return { nodes=[ { name="Material", type="material", parameters=parameters, export_last_target=t.export } ], connections=[] }
+	return {}
+
+## Applies a preset of the graph's remote nodes, returns false if none has it
+static func apply_preset(graph : MMGenBase, preset_name : String) -> bool:
+	var found : bool = false
+	for c in graph.get_children():
+		if c is MMGenRemote and c.apply_preset(preset_name):
+			found = true
+	return found
+
+## Names of the presets of the graph's remote nodes
+static func get_preset_names(graph : MMGenBase) -> PackedStringArray:
+	var names : PackedStringArray = PackedStringArray()
+	for c in graph.get_children():
+		if c is MMGenRemote:
+			for n in c.get_preset_names():
+				if not n in names:
+					names.append(n)
+	return names
+
 ## Changes the seeds of all nodes that are not locked, deterministically
 static func reseed(generator : Node, seed_offset : int) -> void:
 	for c in generator.get_children():

@@ -7,6 +7,8 @@ class_name MMGenRemote
 
 
 var widgets = []
+## Named sets of parameter values (name -> { widget name: value })
+var presets : Dictionary = {}
 
 
 func _enter_tree():
@@ -311,7 +313,56 @@ func remove_configuration(widget_name : String, config_name : String) -> void:
 func _serialize(data: Dictionary) -> Dictionary:
 	data.type = "remote"
 	data.widgets = widgets
+	if not presets.is_empty():
+		data.presets = presets
 	return data
 
 func _deserialize(data : Dictionary) -> void:
 	set_widgets(data.widgets.duplicate(true))
+	presets = data.get("presets", {}).duplicate(true)
+
+# Presets
+
+func get_preset_names() -> PackedStringArray:
+	var names : PackedStringArray = PackedStringArray(presets.keys())
+	names.sort()
+	return names
+
+## Saves the current values of all parameters as a preset
+func save_preset(preset_name : String) -> void:
+	var values : Dictionary = {}
+	for w in widgets:
+		values[w.name] = MMType.serialize_value(get_parameter(w.name))
+	presets[preset_name] = values
+
+func apply_preset(preset_name : String) -> bool:
+	if not presets.has(preset_name):
+		return false
+	var values : Dictionary = presets[preset_name]
+	for w in widgets:
+		if values.has(w.name):
+			set_parameter(w.name, MMType.deserialize_value(values[w.name]))
+	emit_signal("parameter_changed", "__update_all__", null)
+	return true
+
+func delete_preset(preset_name : String) -> void:
+	presets.erase(preset_name)
+
+## Sets random values (within the parameters' ranges) to float, enum and
+## boolean parameters, to explore variations
+func randomize_parameters(random_seed : int) -> void:
+	var rng : RandomNumberGenerator = RandomNumberGenerator.new()
+	rng.seed = random_seed
+	for p in get_parameter_defs():
+		match p.type:
+			"float":
+				var value : float = rng.randf_range(p.min, p.max)
+				if p.has("step") and p.step > 0.0:
+					value = snappedf(value, p.step)
+				set_parameter(p.name, value)
+			"enum":
+				if p.has("values") and not p.values.is_empty():
+					set_parameter(p.name, rng.randi_range(0, p.values.size()-1))
+			"boolean":
+				set_parameter(p.name, rng.randf() < 0.5)
+	emit_signal("parameter_changed", "__update_all__", null)

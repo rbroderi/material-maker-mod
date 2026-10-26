@@ -44,7 +44,9 @@ Paths must be absolute (the Python client converts them). Node names are those s
 graph (and in **list_nodes**).
 
 * **ping()** returns the version and whether the user interface is running
-* **new_graph()**, **load(path)**, **save(path)** create, load and save .ptex files
+* **new_graph(template)**, **load(path)**, **save(path)** create, load and save .ptex files.
+  The optional template is an output template (a name returned by **list_templates()**, or
+  an export target) that sets the export target of the new material
 * **list_nodes()** returns the nodes with their type, inputs, outputs and parameters
 * **get_node(node)**, **list_connections()**, **list_parameters()**
 * **set_parameter(node, parameter, value)** and **set_parameters(values)**, where values is a
@@ -54,6 +56,9 @@ graph (and in **list_nodes**).
   "perlin") or, with the user interface, from a library item (such as "Noise/Perlin"), and
   returns its name
 * **delete_node(node)**, **connect(from, from_port, to, to_port)**, **disconnect(from, from_port, to, to_port)**
+* **list_presets()**, **apply_preset(name)**, **save_preset(name, node)** manage the presets of
+  the graph's remote nodes, and **randomize_parameters(seed)** sets random values to their
+  parameters
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
 * **render(node, output, size, path)** renders a node output to a PNG or EXR file
 * **list_export_targets()** and **export(target, prefix, size)** export the material

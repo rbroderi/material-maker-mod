@@ -2,7 +2,7 @@ extends SceneTree
 
 # Renders a runtime package's outputs, before and after changing parameters.
 #
-#	godot --path runtime/godot -s res://tests/runtime_test.gd -- <package.mmr> <output dir> [name=value ...]
+#	godot --path runtime/godot -s res://tests/runtime_test.gd -- <package.mmr> <output dir> [name=value ...] [preset=name]
 
 func _initialize():
 	run.call_deferred()
@@ -23,6 +23,9 @@ func run():
 	for i in range(2, args.size()):
 		var nv : PackedStringArray = args[i].split("=")
 		start = Time.get_ticks_msec()
+		if nv[0] == "preset":
+			print("TEST presets %s, apply %s: %s" % [ mmr.get_preset_names(), nv[1], mmr.apply_preset(nv[1]) ])
+			continue
 		var dirty_count : int = 0
 		mmr.renderer.set_parameter(nv[0], float(nv[1]))
 		dirty_count = mmr.renderer.dirty.size()

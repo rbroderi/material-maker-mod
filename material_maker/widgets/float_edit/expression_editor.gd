@@ -44,6 +44,12 @@ func get_named_parameter_expressions(generator : MMGenBase) -> Dictionary:
 	if parent != null and parent.has_method("get_named_parameters"):
 		for n in parent.get_named_parameters().keys():
 			rv[n] = "$"+n
+	# Variables the parameter's expression can use (such as the instance
+	# index and random values in FX-Map Iterate)
+	for p in generator.get_parameter_defs():
+		if p.name == object.name:
+			for v in p.get("expression_variables", []):
+				rv[v] = v
 	return rv
 
 func add_function_graph_button() -> void:

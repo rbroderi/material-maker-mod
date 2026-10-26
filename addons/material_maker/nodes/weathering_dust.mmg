@@ -1,0 +1,113 @@
+{
+	"name": "weathering_dust",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"amount": 0.5,
+		"softness": 0.1,
+		"noise_scale": 8.0,
+		"noise_amount": 0.5
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec3(0.5, 0.5, 0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "A normal map",
+				"name": "normal",
+				"shortdesc": "Normal",
+				"type": "rgb"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "An ambient occlusion map (dark in cavities)",
+				"name": "ao",
+				"shortdesc": "Ambient occlusion",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"float $(name)_mask(vec2 uv) {",
+			"\tfloat noise = mm_weathering_fbm(uv, $noise_scale, 5, $seed)-0.5;",
+			"\tvec3 n = mm_normal_decode($normal(uv));",
+			"\tfloat flat_areas = n.z*n.z;",
+			"\tfloat dust = flat_areas*0.7+0.3*(1.0-$ao(uv));",
+			"\treturn smoothstep(1.0-$amount, 1.0-$amount+$softness+0.0001, dust+noise*$noise_amount);",
+			"}"
+		],
+		"longdesc": "Generates a mask of dust settled on flat, upward facing surfaces and in corners, broken up by noise",
+		"name": "Dust",
+		"outputs": [
+			{
+				"f": "$(name)_mask($uv)",
+				"longdesc": "The weathering mask (1 where the effect is present)",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Amount",
+				"longdesc": "The amount of the effect",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "amount",
+				"shortdesc": "Amount",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Softness",
+				"longdesc": "The softness of the mask's edges",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "softness",
+				"shortdesc": "Softness",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Noise scale",
+				"longdesc": "The scale of the noise that breaks up the mask",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "noise_scale",
+				"shortdesc": "Noise scale",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Noise amount",
+				"longdesc": "How much the noise breaks up the mask",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "noise_amount",
+				"shortdesc": "Noise amount",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Dust",
+		"includes": [
+			"weathering_grunge",
+			"normal_normalize"
+		]
+	}
+}

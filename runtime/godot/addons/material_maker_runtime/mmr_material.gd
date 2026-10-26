@@ -73,6 +73,18 @@ func set_parameter(parameter_name : String, value) -> bool:
 	update()
 	return true
 
+## Names of the presets of the package
+func get_preset_names() -> PackedStringArray:
+	return PackedStringArray(package.manifest.get("presets", {}).keys())
+
+## Applies a preset (saved parameter values) of the package
+func apply_preset(preset_name : String) -> bool:
+	var presets : Dictionary = package.manifest.get("presets", {})
+	if not presets.has(preset_name):
+		push_error("Unknown preset %s" % preset_name)
+		return false
+	return set_parameters(presets[preset_name])
+
 func set_parameters(values : Dictionary) -> bool:
 	if not is_valid():
 		return false

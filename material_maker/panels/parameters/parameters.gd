@@ -23,6 +23,8 @@ func set_generator(g):
 			parameters.remove_child(c)
 			c.free()
 	controls = {}
+	var group : String = ""
+	var group_controls : Array = []
 	if generator != null:
 		var parameter_labels = {}
 		for p in generator.get_parameter_defs():
@@ -41,10 +43,22 @@ func set_generator(g):
 					parameters.add_child(channel_control)
 					controls[paint_parameter.name] = channel_control
 				else:
+					var label_text : String = p.label
+					# "Group::Label" parameters are shown under a collapsible header
+					var parameter_group : String = ""
+					if label_text.contains("::"):
+						parameter_group = label_text.left(label_text.rfind("::"))
+						label_text = label_text.get_slice("::", label_text.get_slice_count("::")-1)
+					if parameter_group != group:
+						group = parameter_group
+						group_controls = []
+						if group != "":
+							add_group_header(group, group_controls)
 					var label : Label = Label.new()
-					label.text = p.label if p.has("label") else ""
+					label.text = label_text
 					label.size_flags_horizontal = SIZE_EXPAND_FILL
 					parameters.add_child(label)
+					group_controls.append(label)
 			else:
 				p.add_child(Control.new())
 			var control = GENERIC.create_parameter_control(p, false)
@@ -52,9 +66,24 @@ func set_generator(g):
 			control.size_flags_horizontal = SIZE_FILL
 			parameters.add_child(control)
 			controls[p.name] = control
+			group_controls.append(control)
 		GENERIC.initialize_controls_from_generator(controls, generator, self)
 	set_size(get_size()-Vector2(1.0, 1.0))
 	set_size(get_size())
+
+## Adds a header that shows or hides the controls of a group
+func add_group_header(group_name : String, group_controls : Array) -> void:
+	var header : Button = Button.new()
+	header.text = "\u25bc "+group_name
+	header.flat = true
+	header.toggle_mode = true
+	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	header.toggled.connect(func(collapsed : bool):
+		header.text = ("\u25b6 " if collapsed else "\u25bc ")+group_name
+		for c in group_controls:
+			c.visible = not collapsed)
+	parameters.add_child(header)
+	parameters.add_child(Control.new())
 
 func on_parameter_changed(p : String, v) -> void:
 	if ignore_parameter_change == p:

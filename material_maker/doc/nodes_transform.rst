@@ -33,3 +33,7 @@ The transform nodes are nodes that affect the geometry of their input.
 	node_transform_directional_warp
 	node_transform_crop
 	node_transform_trimsheet
+	node_transform_fx-map_iterate
+	node_transform_atlas_splitter
+	node_transform_atlas_creator
+	node_transform_atlas_scatter

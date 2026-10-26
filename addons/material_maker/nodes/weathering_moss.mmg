@@ -1,0 +1,141 @@
+{
+	"name": "weathering_moss",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"amount": 0.5,
+		"softness": 0.1,
+		"direction": 90.0,
+		"cavity_weight": 0.5,
+		"noise_scale": 8.0,
+		"noise_amount": 0.5
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec3(0.5, 0.5, 0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "A normal map",
+				"name": "normal",
+				"shortdesc": "Normal",
+				"type": "rgb"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "An ambient occlusion map (dark in cavities)",
+				"name": "ao",
+				"shortdesc": "Ambient occlusion",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"float $(name)_mask(vec2 uv) {",
+			"\tfloat noise = mm_weathering_fbm(uv, $noise_scale, 5, $seed)-0.5;",
+			"\tvec3 n = mm_normal_decode($normal(uv));",
+			"\tvec2 d = vec2(cos(radians($direction)), -sin(radians($direction)));",
+			"\t// Normals of Material Maker's normal maps have x pointing left",
+			"\tfloat facing = dot(vec2(-n.x, n.y), d)*0.5+0.5;",
+			"\tfloat moss = facing*(1.0-$cavity_weight)+$cavity_weight*(1.0-$ao(uv));",
+			"\treturn smoothstep(1.0-$amount, 1.0-$amount+$softness+0.0001, moss+noise*$noise_amount);",
+			"}"
+		],
+		"longdesc": "Generates a mask of moss growing on surfaces that face a direction (up by default), in cavities, broken up by noise",
+		"name": "Moss",
+		"outputs": [
+			{
+				"f": "$(name)_mask($uv)",
+				"longdesc": "The weathering mask (1 where the effect is present)",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Amount",
+				"longdesc": "The amount of the effect",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "amount",
+				"shortdesc": "Amount",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Softness",
+				"longdesc": "The softness of the mask's edges",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "softness",
+				"shortdesc": "Softness",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 90.0,
+				"label": "Direction",
+				"longdesc": "The direction moss grows towards, in degrees (90 is up in the image)",
+				"max": 180.0,
+				"min": -180.0,
+				"name": "direction",
+				"shortdesc": "Direction",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Cavity weight",
+				"longdesc": "How much cavities (from the ambient occlusion map) get moss",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "cavity_weight",
+				"shortdesc": "Cavity weight",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Noise scale",
+				"longdesc": "The scale of the noise that breaks up the mask",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "noise_scale",
+				"shortdesc": "Noise scale",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Noise amount",
+				"longdesc": "How much the noise breaks up the mask",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "noise_amount",
+				"shortdesc": "Noise amount",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Moss",
+		"includes": [
+			"weathering_grunge",
+			"normal_normalize"
+		]
+	}
+}

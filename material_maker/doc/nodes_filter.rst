@@ -78,3 +78,14 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_symmetric_nearest_neighbor
 	node_filter_set_alpha
 	node_filter_blur_hq
+	node_filter_normal_map_combine
+	node_filter_normal_map_normalize
+	node_filter_posterize_dithered
+	node_filter_fill_mapper
+	node_filter_weathering_edge_wear
+	node_filter_weathering_dirt
+	node_filter_weathering_grunge
+	node_filter_weathering_moss
+	node_filter_weathering_dust
+	node_filter_bitmap_delight
+	node_filter_bitmap_clone_patch

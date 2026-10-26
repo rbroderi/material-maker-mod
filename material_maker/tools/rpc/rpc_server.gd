@@ -173,13 +173,27 @@ static func describe_node(generator : MMGenBase) -> Dictionary:
 func api_ping(_params : Dictionary):
 	return { version=ProjectSettings.get_setting("application/config/actual_release", ProjectSettings.get_setting("application/config/version", "")), gui=mm_globals.main_window != null }
 
-func api_new_graph(_params : Dictionary):
+## Creates a new material, optionally from an output template (by name or
+## export target)
+func api_new_graph(params : Dictionary):
+	var template : String = params.get("template", "")
+	if template != "" and MMCliTools.get_engine_template_graph(template).is_empty():
+		return fail("no template '%s' (templates: %s)" % [ template, ", ".join(list_templates()) ])
 	if mm_globals.main_window != null:
-		mm_globals.main_window.new_material()
+		mm_globals.main_window.new_material(template)
+		await get_tree().process_frame
+	elif template != "":
+		await set_headless_graph(await mm_loader.create_gen(MMCliTools.get_engine_template_graph(template)))
 	else:
 		await set_headless_graph(null)
 		await get_graph()
 	return true
+
+func list_templates() -> Array:
+	return MMCliTools.ENGINE_TEMPLATES.map(func(t): return t.name)
+
+func api_list_templates(_params : Dictionary):
+	return MMCliTools.ENGINE_TEMPLATES.map(func(t): return { name=t.name, export=t.export, description=t.description })
 
 func api_load(params : Dictionary):
 	if not require(params, [ "path" ]):
@@ -326,6 +340,37 @@ func api_disconnect(params : Dictionary):
 	return await change_graph("Disconnect nodes", func(graph : MMGenGraph):
 		if not graph.disconnect_children_by_name(params.from, int(params.get("from_port", 0)), params.to, int(params.get("to_port", 0))):
 			return fail("%s is not connected to %s" % [ params.from, params.to ])
+		return true)
+
+## Presets of the remote nodes of the current graph
+func api_list_presets(_params : Dictionary):
+	return Array(MMCliTools.get_preset_names(await get_graph()))
+
+func api_apply_preset(params : Dictionary):
+	if not require(params, [ "name" ]):
+		return null
+	return await change_graph("Apply preset", func(graph : MMGenGraph):
+		return true if MMCliTools.apply_preset(graph, params.name) else fail("no preset '%s'" % params.name))
+
+## Saves the current values of a remote node (the first one by default) as a preset
+func api_save_preset(params : Dictionary):
+	if not require(params, [ "name" ]):
+		return null
+	return await change_graph("Save preset", func(graph : MMGenGraph):
+		for c in graph.get_children():
+			if c is MMGenRemote and (not params.has("node") or c.name == params.node):
+				c.save_preset(params.name)
+				return true
+		return fail("no remote node"))
+
+## Sets random values to the parameters of the remote nodes
+func api_randomize_parameters(params : Dictionary):
+	return await change_graph("Randomize parameters", func(graph : MMGenGraph):
+		var random_seed : int = int(params.get("seed", randi()))
+		for c in graph.get_children():
+			if c is MMGenRemote:
+				c.randomize_parameters(random_seed)
+				random_seed += 1
 		return true)
 
 ## Changes the seeds of all nodes that are not locked (cannot be undone)

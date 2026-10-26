@@ -91,3 +91,31 @@ dollar prefix in parameter expressions of all nodes in the subgraph.
 
 It is possible to configure the lower and upper bound as well as the increment step
 by clicking the pencil button of the parameter.
+
+Parameter groups
+~~~~~~~~~~~~~~~~
+
+A widget whose label is written **Group::Label** (for example *Color::Hue*) is shown with
+the label *Label* under a collapsible *Group* header in the parameters panel. Consecutive
+widgets of the same group are shown together, so reorder widgets to keep groups contiguous.
+
+Presets
+~~~~~~~
+
+A preset stores the values of all widgets of a remote node under a name. The bar at the
+bottom of the remote node is used to manage presets:
+
+* the drop down button applies a preset
+* *Save* saves the current values as a preset (enter the name of an existing preset to
+  update it)
+* *Delete* deletes the selected preset
+* *Randomize* sets random values to all widgets (within their range, and snapped to their
+  step), which is useful to explore variations of a material. Use *Save* to keep a result.
+
+Applying, saving, deleting presets and randomizing can be undone. Presets are saved in the
+material file, and the presets of the parameters exported in runtime packages (.mmr) are
+exported with them.
+
+Presets can also be applied from the command line (**--preset**), from Python scripts
+(see :ref:`scripting-section`) and in the runtimes (**apply_preset** in Godot, **--preset** with
+mmr_render).

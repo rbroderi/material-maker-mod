@@ -133,6 +133,7 @@ Packages can be used in Godot 4.3+ with the **Material Maker Runtime** addon, in
     var mmr : MMRMaterial = MMRMaterial.load_material("res://bricks.mmr")
     $MeshInstance3D.material_override = mmr.material
     mmr.set_parameter("Hue", 0.3)
+    mmr.apply_preset("Mossy")    # presets saved in the remote node, see get_preset_names()
 
 Animated materials (using $time) have a **time** parameter, in seconds.
 
@@ -141,3 +142,5 @@ source repository) renders packages without Godot, and can be embedded in other 
 plugins:
 
  mmr_render bricks.mmr -o textures --set Hue=0.3
+ mmr_render bricks.mmr -o textures --preset Mossy
+ mmr_render bricks.mmr --list   # parameters, outputs and presets

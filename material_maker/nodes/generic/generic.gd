@@ -309,6 +309,10 @@ static func create_parameter_control(p : Dictionary, accept_float_expressions : 
 			control.float_only = true
 		control.min_value = p.min
 		control.max_value = p.max
+		if p.has("hard_min"):
+			control.hard_min = p.hard_min
+		if p.has("hard_max"):
+			control.hard_max = p.hard_max
 		control.step = 0.005 if !p.has("step") else p.step
 		if p.has("default"):
 			control.value = p.default
@@ -532,6 +536,9 @@ func update_node() -> void:
 				controls[control.name] = control
 				if p.has("label"):
 					label = p.label
+				# Groups ("Group::Label") are shown in the parameters panel
+				if label.contains("::"):
+					label = label.get_slice("::", label.get_slice_count("::")-1)
 				var result = regex.search(label)
 				if result:
 					index = result.get_string(1).to_int()-1
