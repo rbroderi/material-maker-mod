@@ -101,12 +101,20 @@ Equivalent to SD's function graphs, Pixel Processor, and Value Processor:
 - **Parameter functions**: any exposed parameter can be driven by a function of other parameters (for example `tile_count = density * 4`). Also a visibility/enable condition per parameter.
 - Keep GLSL custom nodes as the power-user path. Consider a "view as GLSL" toggle on any function graph. SD can't do that.
 
-**Started (2026-10-25):** design and IR v1 spec in [design/function_graphs.md](design/function_graphs.md). **Milestone 1 is done:**
-- **Compiler:** typed JSON IR → GLSL (`engine/function_graph/function_graph.gd`). It has about 50 ops, type inference with float broadcasting, and cycle and dangling-reference detection. Errors are reported per node. It's covered by 22 GUT tests (`test/test_function_graph.gd`).
-- **Pixel Processor node:** *Miscellaneous/Pixel Processor* (`gen_pixel_processor.gd`). It compiles its graph into a shader model, so previews, exports, and automatic buffers work unchanged. Only the function graph is saved.
-- Editing is a JSON text dialog for now.
+✅ **Done (2026-10-25), milestones 1–4.** See [design/function_graphs.md](design/function_graphs.md).
+- **Compiler** (`engine/function_graph/function_graph.gd`): typed IR v2 → GLSL.
+  - About 60 ops, including integers with explicit conversions, typed **sub-functions**, and **loops**.
+  - Errors and types are reported per node.
+  - **`sd_rand`** is Substance-compatible: implemented from sbsar2ptex's random-generator spec, and matches its conformance vectors on the GPU for both pixel-processor and value-function streams.
+- **Pixel Processor** and **Value Processor** nodes. The Value Processor renders its graph once into a 1×1 buffer.
+- **Parameter functions:** *Function graph…* in the float expression editor compiles a graph to the parameter's expression, and the graph is saved with the node.
+- **Visual editor** (`material_maker/windows/function_graph_editor/`):
+  - typed nodes, inline constants, errors highlighted on nodes;
+  - an inputs and parameters panel, and sub-function editing;
+  - a JSON fallback, and an undo step per apply.
+- 35 GUT tests, plus GPU and editor interaction runs.
 
-Next: milestone 2, the visual editor.
+Not done: milestone 5 (sbsar2ptex emitting the IR) is on hold, there's no undo inside the editor itself, and FX-Map random streams wait for §3.2.
 
 ### 3.2 FX-Map equivalent — **L**
 A recursive quadrant/iterate/switch splatting system with per-instance random seeds, blend modes, and pattern inputs. Implement as a compute-based instancing pass (it pairs with §2.1). MM's tile and splatter nodes cover the common cases. The gap is the general-purpose programmable version.

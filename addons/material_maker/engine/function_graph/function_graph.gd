@@ -11,20 +11,35 @@ class_name MMFunctionGraph
 #   with the UV expression (e.g. "$in(%s)")
 # - parameter_expressions: a dictionary that maps parameter names to GLSL
 #   expressions (e.g. "$contrast")
-# - variables: GLSL expressions for "pos", "size" and "seed"
-# and returns { ok, code, value, errors }, where code is a list of GLSL
-# statements and value the vec4 expression of the result.
+# - variables: GLSL expressions for "pos", "size" and "seed", the prefix
+#   of generated function names ("function_prefix"), and for sd_rand the
+#   uint seed ("sd_seed") and mode ("sd_rand_mode": "pixel" or "value")
+# and returns { ok, code, value, functions, types, node_errors, errors }:
+# - code is a list of GLSL statements and value the vec4 expression of the
+#   result (inside a function that has a vec2 uv argument),
+# - functions is a list of GLSL function definitions (sub-functions) that
+#   must be declared before that code,
+# - globals is a list of global GLSL definitions the code requires,
+# - types maps node ids of the main graph to their types,
+# - node_errors maps node ids of the main graph to error messages.
 
 
-const VERSION : int = 1
+const VERSION : int = 2
 
-const COMPONENTS : Dictionary = { bool=1, float=1, vec2=2, vec3=3, vec4=4 }
+const COMPONENTS : Dictionary = { bool=1, int=1, float=1, vec2=2, vec3=3, vec4=4 }
 const VECTOR_TYPES : Array[String] = [ "float", "vec2", "vec3", "vec4" ]
+const ARG_TYPES : Array[String] = [ "bool", "int", "float", "vec2", "vec3", "vec4" ]
+const MAX_LOOP_COUNT : int = 1024
 
 const BINARY_OPS : Dictionary = {
 	add="(%s+%s)", sub="(%s-%s)", mul="(%s*%s)", div="(%s/%s)",
 	min="min(%s, %s)", max="max(%s, %s)", pow="pow(%s, %s)", mod="mod(%s, %s)",
 	atan2="atan(%s, %s)", step="step(%s, %s)"
+}
+# Binary operations that also accept integers, and their integer form
+const INT_BINARY_OPS : Dictionary = {
+	add="(%s+%s)", sub="(%s-%s)", mul="(%s*%s)", div="(%s/%s)",
+	min="min(%s, %s)", max="max(%s, %s)", mod="(%s%%%s)"
 }
 const UNARY_OPS : Dictionary = {
 	neg="(-%s)", abs="abs(%s)", floor="floor(%s)", ceil="ceil(%s)",
@@ -32,6 +47,7 @@ const UNARY_OPS : Dictionary = {
 	tan="tan(%s)", exp="exp(%s)", log="log(%s)", sign="sign(%s)",
 	normalize="normalize(%s)"
 }
+const INT_UNARY_OPS : Array[String] = [ "neg", "abs", "sign" ]
 const COMPARISON_OPS : Dictionary = { lt="<", le="<=", gt=">", ge=">=", eq="==", ne="!=" }
 
 # Operand keys of each operation (used to find dependencies)
@@ -40,20 +56,69 @@ const OPERANDS : Dictionary = {
 	"cross": [ "a", "b" ], "swizzle": [ "a" ], "mix": [ "a", "b", "t" ],
 	"clamp": [ "a", "min", "max" ], "smoothstep": [ "e0", "e1", "a" ],
 	"and": [ "a", "b" ], "or": [ "a", "b" ], "not": [ "a" ], "select": [ "cond", "a", "b" ],
-	"rand": [ "a" ]
+	"rand": [ "a" ], "sd_rand": [ "a" ], "to_int": [ "a" ], "to_float": [ "a" ], "loop": [ "init" ]
 }
+
+static var re_identifier : RegEx = RegEx.create_from_string("^[a-zA-Z][a-zA-Z0-9_]*$")
+
+# Substance-compatible random numbers (behavior specified in sbsar2ptex's
+# docs/random-generator.md). Each evaluation owns a 32 bits state:
+# - pixel processors start from a Jenkins one-at-a-time hash of the seed and
+#   of the bit patterns of the pixel center position,
+# - value functions start from the seed,
+# and each sd_rand call advances it with an LCG, then uses bits 1-23 as the
+# mantissa of a number in [0, 1).
+const SD_RAND_PIXEL_LCG : String = "1228363579u+51137u" # 0x4937573B, 0xC7C1
+const SD_RAND_VALUE_LCG : String = "2147001325u+715136305u" # 0x7FF8A3ED, 0x2AA01D31
+const SD_RAND_GLOBAL : String = """uint mm_sd_rand_init(uint seed, vec2 pos) {
+	uint h = seed;
+	h += h << 10u;
+	h ^= h >> 6u;
+	h += floatBitsToUint(pos.x);
+	h += h << 10u;
+	h ^= h >> 6u;
+	h += floatBitsToUint(pos.y);
+	h += h << 10u;
+	h ^= h >> 6u;
+	h += h << 3u;
+	h ^= h >> 11u;
+	h += h << 15u;
+	return h;
+}
+"""
+
+static func is_identifier(s) -> bool:
+	return (s is String or s is StringName) and re_identifier.search(str(s)) != null
+
+## Replaces whole-word occurrences of word in s (without RegEx.sub, that
+## would interpret "$" in the replacement)
+static func replace_word(s : String, word : String, replacement : String) -> String:
+	var rv : String = ""
+	var position : int = 0
+	for m in RegEx.create_from_string("\\b%s\\b" % word).search_all(s):
+		rv += s.substr(position, m.get_start()-position)+replacement
+		position = m.get_end()
+	return rv+s.substr(position)
 
 
 class Compiler:
 	extends RefCounted
 
-	var graph : Dictionary
 	var nodes : Dictionary
+	var output : String
 	var sample_expressions : Array
 	var parameter_expressions : Dictionary
 	var variables : Dictionary
+	# Sub-functions: name -> { params, return_type, glsl_name }
+	var functions_info : Dictionary = {}
+	# Arguments of the function being compiled: name -> { type, glsl_name }
+	var args : Dictionary = {}
+	var context : String = ""
+
+	var uses_sd_rand : bool = false
 
 	var errors : PackedStringArray = PackedStringArray()
+	var node_errors : Dictionary = {}
 	var order : Array[String] = []
 	var types : Dictionary = {}
 	var names : Dictionary = {}
@@ -61,9 +126,10 @@ class Compiler:
 
 	func error(node_id : String, message : String) -> void:
 		if node_id == "":
-			errors.append(message)
+			errors.append(context+message)
 		else:
-			errors.append("%s: %s" % [ node_id, message ])
+			errors.append("%s%s: %s" % [ context, node_id, message ])
+			node_errors[node_id] = message
 
 	func get_operand_ids(node : Dictionary) -> Array:
 		var op : String = node.get("op", "")
@@ -77,7 +143,7 @@ class Compiler:
 		var rv : Array = []
 		for k in keys:
 			rv.append(node.get(k))
-		if op in [ "vec2", "vec3", "vec4" ] and node.has("args"):
+		if op in [ "vec2", "vec3", "vec4", "call" ] and node.has("args") and node.args is Array:
 			rv.append_array(node.args)
 		return rv
 
@@ -112,11 +178,18 @@ class Compiler:
 			return value_of(node_id)
 		return "%s(%s)" % [ t, value_of(node_id) ]
 
-	# Returns the common type of numeric operands, or "" if incompatible
-	func common_type(node_id : String, operands : Array) -> String:
+	# Returns the common type of numeric operands, or "" if incompatible.
+	# Integers are only accepted if allow_int is true and all operands are
+	# integers.
+	func common_type(node_id : String, operands : Array, allow_int : bool = false) -> String:
+		if allow_int and not operands.is_empty() and operands.all(func(o): return types[o] == "int"):
+			return "int"
 		var rv : String = "float"
 		for o in operands:
 			var t : String = types[o]
+			if t == "int":
+				error(node_id, "operand %s is an int, use to_float to convert it" % o)
+				return ""
 			if not t in VECTOR_TYPES:
 				error(node_id, "operand %s has type %s, a number or vector is expected" % [ o, t ])
 				return ""
@@ -142,6 +215,12 @@ class Compiler:
 					return ""
 				types[node_id] = "float"
 				return format_float(node.value)
+			"int":
+				if not (node.get("value") is float or node.get("value") is int):
+					error(node_id, "int value expected")
+					return ""
+				types[node_id] = "int"
+				return "%d" % int(node.value)
 			"vec2", "vec3", "vec4":
 				var count : int = COMPONENTS[op]
 				if node.has("value"):
@@ -156,7 +235,7 @@ class Compiler:
 				var components : int = 0
 				for a in node.args:
 					if not types[a] in VECTOR_TYPES:
-						error(node_id, "operand %s is not a number or vector" % a)
+						error(node_id, "operand %s is not a float or vector" % a)
 						return ""
 					components += COMPONENTS[types[a]]
 				if components != count and not (components == 1 and node.args.size() == 1):
@@ -179,6 +258,12 @@ class Compiler:
 					return ""
 				types[node_id] = "float"
 				return parameter_expressions[node.name]
+			"arg":
+				if not args.has(node.get("name", "")):
+					error(node_id, "unknown argument %s" % str(node.get("name")))
+					return ""
+				types[node_id] = args[node.name].type
+				return args[node.name].glsl_name
 			"sample":
 				var input = node.get("input")
 				if not (input is int or input is float) or int(input) < 0 or int(input) >= sample_expressions.size():
@@ -189,6 +274,52 @@ class Compiler:
 					return ""
 				types[node_id] = "vec4"
 				return sample_expressions[int(input)] % value_of(node.uv)
+			"to_int":
+				if types[node.a] != "float":
+					error(node_id, "to_int requires a float")
+					return ""
+				types[node_id] = "int"
+				return "int(floor(%s))" % value_of(node.a)
+			"to_float":
+				if types[node.a] != "int":
+					error(node_id, "to_float requires an int")
+					return ""
+				types[node_id] = "float"
+				return "float(%s)" % value_of(node.a)
+			"call":
+				var info = functions_info.get(node.get("function", ""))
+				if info == null:
+					error(node_id, "unknown function %s" % str(node.get("function")))
+					return ""
+				var call_args : Array = node.get("args", [])
+				if call_args.size() != info.params.size():
+					error(node_id, "%d arguments expected, %d given" % [ info.params.size(), call_args.size() ])
+					return ""
+				for i in call_args.size():
+					if types[call_args[i]] != info.params[i].type:
+						error(node_id, "argument %s must be a %s" % [ info.params[i].name, info.params[i].type ])
+						return ""
+				types[node_id] = info.return_type
+				return "%s(%s)" % [ info.glsl_name, ", ".join([ "uv" ]+call_args.map(value_of)) ]
+			"loop":
+				var info = functions_info.get(node.get("function", ""))
+				if info == null:
+					error(node_id, "unknown function %s" % str(node.get("function")))
+					return ""
+				var count = node.get("count")
+				if not (count is int or count is float) or int(count) < 0 or int(count) > MAX_LOOP_COUNT:
+					error(node_id, "count must be a number between 0 and %d" % MAX_LOOP_COUNT)
+					return ""
+				var t : String = types[node.init]
+				if info.params.size() != 2 or info.params[0].type != t or info.params[1].type != "int" or info.return_type != t:
+					error(node_id, "the loop function must take (%s, int) and return %s" % [ t, t ])
+					return ""
+				# The loop is emitted as statements before the node's value
+				var accumulator : String = "fg_loop_%d" % code.size()
+				code.append("%s %s = %s;" % [ t, accumulator, value_of(node.init) ])
+				code.append("for (int fg_i = 0; fg_i < %d; ++fg_i) { %s = %s(uv, %s, fg_i); }" % [ int(count), accumulator, info.glsl_name, accumulator ])
+				types[node_id] = t
+				return accumulator
 			"dot", "distance":
 				var t : String = common_type(node_id, operands)
 				if t == "":
@@ -197,7 +328,7 @@ class Compiler:
 				return "%s(%s, %s)" % [ op, cast(node.a, t), cast(node.b, t) ]
 			"length":
 				if not types[node.a] in VECTOR_TYPES:
-					error(node_id, "a number or vector is expected")
+					error(node_id, "a float or vector is expected")
 					return ""
 				types[node_id] = "float"
 				return "length(%s)" % value_of(node.a)
@@ -210,7 +341,7 @@ class Compiler:
 			"swizzle":
 				var source_type : String = types[node.a]
 				var components = node.get("components", "")
-				if not components is String or components.length() < 1 or components.length() > 4 or source_type in [ "bool", "float" ]:
+				if not components is String or components.length() < 1 or components.length() > 4 or not source_type in [ "vec2", "vec3", "vec4" ]:
 					error(node_id, "invalid swizzle")
 					return ""
 				# Components must all come from the same set (xyzw or rgba)
@@ -244,7 +375,7 @@ class Compiler:
 				if types[node.cond] != "bool":
 					error(node_id, "cond must be a boolean")
 					return ""
-				var t : String = common_type(node_id, [ node.a, node.b ])
+				var t : String = common_type(node_id, [ node.a, node.b ], true)
 				if t == "":
 					return ""
 				types[node_id] = t
@@ -255,64 +386,203 @@ class Compiler:
 					return ""
 				types[node_id] = "float"
 				return "rand(%s+vec2(%s))" % [ value_of(node.a), variables.seed ]
+			"sd_rand":
+				# Substance-compatible rand(a): every call advances a random
+				# state, in dependency order (see SD_RAND_* below)
+				if types[node.a] != "float":
+					error(node_id, "sd_rand requires a float amplitude")
+					return ""
+				if not args.is_empty() or context != "":
+					error(node_id, "sd_rand is not supported in sub-functions")
+					return ""
+				var mode : String = variables.get("sd_rand_mode", "pixel")
+				if not uses_sd_rand:
+					uses_sd_rand = true
+					if mode == "value":
+						code.append("uint fg_rng = %s;" % variables.get("sd_seed", "0u"))
+					else:
+						code.append("uint fg_rng = mm_sd_rand_init(%s, uv);" % variables.get("sd_seed", "0u"))
+				code.append("fg_rng = fg_rng*%s;" % (SD_RAND_VALUE_LCG if mode == "value" else SD_RAND_PIXEL_LCG))
+				types[node_id] = "float"
+				return "((uintBitsToFloat(1065353216u | ((fg_rng >> 1u) & 8388607u))-1.0)*%s)" % value_of(node.a)
 		if BINARY_OPS.has(op):
-			var t : String = common_type(node_id, operands)
+			var t : String = common_type(node_id, operands, INT_BINARY_OPS.has(op))
 			if t == "":
 				return ""
 			types[node_id] = t
+			if t == "int":
+				return INT_BINARY_OPS[op] % [ value_of(node.a), value_of(node.b) ]
 			return BINARY_OPS[op] % [ cast(node.a, t), cast(node.b, t) ]
 		if UNARY_OPS.has(op):
-			if not types[node.a] in VECTOR_TYPES:
-				error(node_id, "a number or vector is expected")
+			if not (types[node.a] in VECTOR_TYPES or (types[node.a] == "int" and op in INT_UNARY_OPS)):
+				error(node_id, "a float or vector is expected")
 				return ""
 			types[node_id] = types[node.a]
 			return UNARY_OPS[op] % value_of(node.a)
 		if COMPARISON_OPS.has(op):
-			if types[node.a] != "float" or types[node.b] != "float":
-				error(node_id, "comparisons require float operands")
+			if not (types[node.a] in [ "float", "int" ] and types[node.b] == types[node.a]):
+				error(node_id, "comparisons require two floats or two ints")
 				return ""
 			types[node_id] = "bool"
 			return "(%s %s %s)" % [ value_of(node.a), COMPARISON_OPS[op], value_of(node.b) ]
 		error(node_id, "unknown operation %s" % op)
 		return ""
 
-	func run() -> Dictionary:
-		if not graph.has("nodes") or not graph.nodes is Dictionary:
-			error("", "the graph has no nodes")
-		elif not graph.has("output") or not graph.output is String:
-			error("", "the graph has no output")
-		else:
-			nodes = graph.nodes
-			visit(graph.output, {})
-		if errors.is_empty():
-			for node_id in order:
-				var expression : String = compile_node(node_id)
-				if expression == "":
-					break
-				names[node_id] = "fg_%d" % names.size()
-				# Node ids are only kept in comments, without characters that
-				# could be mistaken for Material Maker variables or line breaks
-				var comment : String = node_id.replace("$", "").replace("\n", " ")
-				code.append("%s %s = %s; // %s" % [ types[node_id], names[node_id], expression, comment ])
+	# Compiles nodes reachable from output into code, returns false on error
+	func compile_body() -> bool:
+		var state : Dictionary = {}
+		visit(output, state)
+		# The editor also compiles nodes the output does not depend on
+		if variables.get("compile_all_nodes", false):
+			for node_id in nodes.keys():
+				visit(node_id, state)
 		if not errors.is_empty():
-			return { ok=false, errors=errors }
-		var value : String = names[graph.output]
-		match types[graph.output]:
-			"float":
-				value = "vec4(vec3(%s), 1.0)" % value
-			"vec2":
-				value = "vec4(%s, 0.0, 1.0)" % value
-			"vec3":
-				value = "vec4(%s, 1.0)" % value
-			"bool":
-				return { ok=false, errors=PackedStringArray([ "%s: the output cannot be a boolean" % graph.output ]) }
-		return { ok=true, code=code, value=value, errors=errors }
+			return false
+		for node_id in order:
+			var expression : String = compile_node(node_id)
+			if expression == "":
+				if errors.is_empty():
+					error(node_id, "could not be compiled")
+				return false
+			names[node_id] = "fg_%d" % names.size()
+			# Node ids are only kept in comments, without characters that
+			# could be mistaken for Material Maker variables or line breaks
+			var comment : String = node_id.replace("$", "").replace("\n", " ")
+			code.append("%s %s = %s; // %s" % [ types[node_id], names[node_id], expression, comment ])
+		return true
 
+
+# Validates sub-functions and returns them in an order where callees come
+# before callers, or reports errors in errors
+static func order_functions(functions : Dictionary, errors : PackedStringArray) -> Array:
+	var rv : Array = []
+	var state : Dictionary = {}
+	for name in functions.keys():
+		visit_function(name, functions, state, rv, errors)
+	return rv
+
+static func visit_function(name : String, functions : Dictionary, state : Dictionary, ordered : Array, errors : PackedStringArray) -> void:
+	if state.get(name, 0) == 2:
+		return
+	if state.get(name, 0) == 1:
+		errors.append("function %s: recursion is not supported" % name)
+		return
+	state[name] = 1
+	var f : Dictionary = functions[name]
+	if f.get("nodes") is Dictionary:
+		for n in f.nodes.values():
+			if n is Dictionary and n.get("op", "") in [ "call", "loop" ] and functions.has(n.get("function", "")):
+				visit_function(n.function, functions, state, ordered, errors)
+	state[name] = 2
+	ordered.append(name)
 
 static func compile(graph : Dictionary, sample_expressions : Array, parameter_expressions : Dictionary, variables : Dictionary) -> Dictionary:
-	var compiler : Compiler = Compiler.new()
-	compiler.graph = graph
-	compiler.sample_expressions = sample_expressions
-	compiler.parameter_expressions = parameter_expressions
-	compiler.variables = variables
-	return compiler.run()
+	var errors : PackedStringArray = PackedStringArray()
+	var functions_info : Dictionary = {}
+	var function_definitions : PackedStringArray = PackedStringArray()
+	var prefix : String = variables.get("function_prefix", "fg_function_")
+	var functions = graph.get("functions", {})
+	if not functions is Dictionary:
+		return { ok=false, errors=PackedStringArray([ "functions must be a dictionary" ]), node_errors={}, types={} }
+	for name in functions.keys():
+		var f = functions[name]
+		if not is_identifier(name) or not f is Dictionary or not f.get("params", []) is Array:
+			errors.append("function %s: invalid function" % str(name))
+			continue
+		for p in f.get("params", []):
+			if not p is Dictionary or not is_identifier(p.get("name")) or not p.get("type") in ARG_TYPES:
+				errors.append("function %s: invalid parameter %s" % [ name, str(p) ])
+	var ordered : Array = order_functions(functions, errors) if errors.is_empty() else []
+	# Types and errors of sub-functions' nodes (used by the editor)
+	var function_types : Dictionary = {}
+	var function_node_errors : Dictionary = {}
+	# Compile sub-functions, callees first
+	for name in ordered:
+		var f : Dictionary = functions[name]
+		var compiler : Compiler = Compiler.new()
+		compiler.context = "function %s: " % name
+		compiler.nodes = f.get("nodes", {}) if f.get("nodes") is Dictionary else {}
+		compiler.output = f.get("output", "") if f.get("output") is String else ""
+		compiler.sample_expressions = sample_expressions
+		compiler.parameter_expressions = parameter_expressions
+		compiler.variables = variables
+		compiler.functions_info = functions_info
+		var declarations : PackedStringArray = PackedStringArray([ "vec2 uv" ])
+		for p in f.get("params", []):
+			compiler.args[p.name] = { type=p.type, glsl_name="fa_"+p.name }
+			declarations.append("%s fa_%s" % [ p.type, p.name ])
+		var compiled : bool = compiler.compile_body()
+		function_types[name] = compiler.types
+		function_node_errors[name] = compiler.node_errors
+		if not compiled:
+			errors.append_array(compiler.errors)
+			continue
+		var return_type : String = compiler.types[compiler.output]
+		var definition : String = "%s %s%s(%s) {\n" % [ return_type, prefix, name, ", ".join(declarations) ]
+		for line in compiler.code:
+			definition += "\t%s\n" % line
+		definition += "\treturn %s;\n}\n" % compiler.value_of(compiler.output)
+		function_definitions.append(definition)
+		functions_info[name] = { params=f.get("params", []), return_type=return_type, glsl_name=prefix+name }
+	# Compile the main graph
+	var main : Compiler = Compiler.new()
+	main.sample_expressions = sample_expressions
+	main.parameter_expressions = parameter_expressions
+	main.variables = variables
+	main.functions_info = functions_info
+	if not graph.has("nodes") or not graph.nodes is Dictionary:
+		main.error("", "the graph has no nodes")
+	elif not graph.has("output") or not graph.output is String:
+		main.error("", "the graph has no output")
+	else:
+		# The main graph is compiled even if sub-functions have errors, so
+		# the editor can show its types
+		main.nodes = graph.nodes
+		main.output = graph.output
+		main.compile_body()
+	errors.append_array(main.errors)
+	if not errors.is_empty():
+		return { ok=false, errors=errors, node_errors=main.node_errors, types=main.types,
+			function_types=function_types, function_node_errors=function_node_errors }
+	var value : String = main.value_of(graph.output)
+	match main.types[graph.output]:
+		"float":
+			value = "vec4(vec3(%s), 1.0)" % value
+		"int":
+			value = "vec4(vec3(float(%s)), 1.0)" % value
+		"vec2":
+			value = "vec4(%s, 0.0, 1.0)" % value
+		"vec3":
+			value = "vec4(%s, 1.0)" % value
+		"bool":
+			return { ok=false, errors=PackedStringArray([ "%s: the output cannot be a boolean" % graph.output ]),
+				node_errors={ graph.output: "the output cannot be a boolean" }, types=main.types }
+	var globals : PackedStringArray = PackedStringArray()
+	if main.uses_sd_rand and variables.get("sd_rand_mode", "pixel") == "pixel":
+		globals.append(SD_RAND_GLOBAL)
+	return { ok=true, code=main.code, value=value, functions=function_definitions, globals=globals, types=main.types, node_errors={}, errors=errors,
+		function_types=function_types, function_node_errors=function_node_errors }
+
+## Compiles a function graph that only uses parameters and constants to a
+## single GLSL expression (used for parameter functions), returns
+## { ok, expression, type, errors }
+static func compile_expression(graph : Dictionary, parameter_expressions : Dictionary) -> Dictionary:
+	if not graph.get("functions", {}).is_empty():
+		return { ok=false, errors=PackedStringArray([ "functions are not supported in parameter functions" ]) }
+	if graph.get("nodes") is Dictionary:
+		for n in graph.nodes.values():
+			if n is Dictionary and n.get("op", "") in [ "pos", "size", "sample", "rand", "sd_rand", "loop", "call" ]:
+				return { ok=false, errors=PackedStringArray([ "%s is not supported in parameter functions" % n.op ]) }
+	var result : Dictionary = compile(graph, [], parameter_expressions, { pos="uv", size="vec2(1.0)", seed="0.0" })
+	if not result.ok:
+		return { ok=false, errors=result.errors }
+	# Inline all statements into one expression, operands first
+	var expressions : Dictionary = {}
+	var expression : String = ""
+	for line in result.code:
+		var m : RegExMatch = RegEx.create_from_string("^\\w+ (fg_\\d+) = (.*); //").search(line)
+		expression = m.get_string(2)
+		for name in expressions.keys():
+			expression = replace_word(expression, name, expressions[name])
+		expressions[m.get_string(1)] = "(%s)" % expression
+	return { ok=true, expression=expressions.values()[-1] if not expressions.is_empty() else "0.0", type=result.types[graph.output], errors=PackedStringArray() }

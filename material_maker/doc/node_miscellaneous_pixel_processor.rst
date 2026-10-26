@@ -3,10 +3,8 @@ Pixel Processor node
 
 The **Pixel Processor** node computes each pixel of its output with a *function graph*:
 a small typed graph of operations (arithmetic, vector operations, comparisons, selection,
-sampling of its inputs at any position, random values...) that is compiled to GLSL.
-
-The function graph format and the list of operations are described in
-``design/function_graphs.md`` in the source repository.
+sampling of its inputs at any position, random values, sub-functions and loops...) that is
+compiled to GLSL.
 
 Inputs
 ++++++
@@ -28,12 +26,37 @@ The **Pixel Processor** node has the float parameters declared in its function g
 (an *Amount* parameter by default, that blends the input with its inverse).
 If the function graph uses the *size* variable, a *Size* parameter is added.
 
-Editing
-+++++++
+Function graph editor
++++++++++++++++++++++
 
-Until a visual editor is available, the function graph is edited as JSON text: click the
-node's edit button to open it. Invalid graphs are rejected with an explanation of each
-error (unknown operation, type mismatch, cycle...).
+Click the node's edit button to open the function graph editor:
+
+* *Add node* adds an operation (grouped by category). Connect a node's output to the
+  inputs of other nodes, and set constants and settings directly in the nodes.
+
+* *Set output* chooses the node whose value is the result of the graph.
+
+* Each node shows its type (float, vec2, vec3, vec4, int or bool). Nodes with errors are
+  shown in red, with the error in their tooltip, and *Apply* and *OK* are disabled until
+  the graph is valid.
+
+* The side panel defines the node's inputs and parameters, and an optional fixed seed
+  for Substance-compatible random numbers.
+
+* *Add function* creates a sub-function, with typed arguments, that can be used with the
+  *call* operation, or repeated with the *loop* operation (a loop function takes an
+  accumulator and the iteration index, and returns the new accumulator).
+
+* *Edit JSON* shows the function graph as text.
+
+Random numbers
+++++++++++++++
+
+* *rand* returns a random value computed from a 2D seed.
+
+* *sd_rand* reproduces Substance Designer's pixel processor random generator: each call
+  returns the next value of a random sequence that depends on the seed and the pixel
+  position. With a fixed seed, results match Substance Designer for the same seed.
 
 Notes
 +++++
@@ -41,3 +64,6 @@ Notes
 When *Automatic Buffers* are enabled in the preferences, inputs that depend on many nodes
 are sampled through an automatic buffer, which is much faster when the function graph
 samples them several times.
+
+The function graph format is described in ``design/function_graphs.md`` in the source
+repository.

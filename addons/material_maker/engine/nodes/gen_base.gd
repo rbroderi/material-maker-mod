@@ -207,6 +207,11 @@ var rendering_time : int = 0
 var preview : int = -1
 var minimized : bool = false
 
+# Function graphs that define float parameters (parameter functions, see
+# design/function_graphs.md). The parameter's value is the compiled
+# expression, the graph is only kept to be edited again.
+var parameter_functions : Dictionary = {}
+
 
 const MAX_SEED : int = 4294967296
 
@@ -735,6 +740,8 @@ func serialize() -> Dictionary:
 	else:
 		rv = _serialize(rv)
 	rv = _serialize_data(rv)
+	if not parameter_functions.is_empty():
+		rv.parameter_functions = parameter_functions.duplicate(true)
 	return rv
 
 func _deserialize(_data : Dictionary) -> void:
@@ -742,6 +749,8 @@ func _deserialize(_data : Dictionary) -> void:
 
 func deserialize(data : Dictionary) -> void:
 	await _deserialize(data)
+	if data.has("parameter_functions") and data.parameter_functions is Dictionary:
+		parameter_functions = data.parameter_functions.duplicate(true)
 	if data.has("name"):
 		name = data.name
 	if data.has("node_position"):

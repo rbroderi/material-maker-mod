@@ -41,21 +41,34 @@ func get_type() -> String:
 func get_type_name() -> String:
 	return "Pixel Processor"
 
+## "pixel" for pixel processors, "value" for value processors
+func get_mode() -> String:
+	return "pixel"
+
 static func is_valid_name(n) -> bool:
 	if not n is String or n == "" or n in RESERVED_NAMES:
 		return false
 	var regex : RegEx = RegEx.create_from_string("^[a-zA-Z][a-zA-Z0-9_]*$")
 	return regex.search(n) != null
 
+## Returns true if the graph or one of its sub-functions uses op
 static func uses_op(graph : Dictionary, op : String) -> bool:
-	if graph.has("nodes") and graph.nodes is Dictionary:
-		for n in graph.nodes.values():
-			if n is Dictionary and n.get("op", "") == op:
-				return true
+	var node_lists : Array = [ graph.get("nodes") ]
+	if graph.get("functions") is Dictionary:
+		for f in graph.functions.values():
+			if f is Dictionary:
+				node_lists.append(f.get("nodes"))
+	for nodes in node_lists:
+		if nodes is Dictionary:
+			for n in nodes.values():
+				if n is Dictionary and n.get("op", "") == op:
+					return true
 	return false
 
-## Builds the shader model for a function graph, returns { model, errors }
-static func build_shader_model(graph : Dictionary) -> Dictionary:
+## Builds the shader model for a function graph, returns { model, errors }.
+## In "value" mode, the graph is evaluated once (value processors), so it
+## cannot use the pixel position.
+static func build_shader_model(graph : Dictionary, mode : String = "pixel") -> Dictionary:
 	var errors : PackedStringArray = PackedStringArray()
 	var used_names : Dictionary = {}
 	var inputs : Array = graph.get("inputs", [])
@@ -81,24 +94,33 @@ static func build_shader_model(graph : Dictionary) -> Dictionary:
 		model_parameters.append({ name=p.name, label=p.get("label", p.name), type="float", control="None",
 			min=float(p.get("min", 0.0)), max=float(p.get("max", 1.0)), step=float(p.get("step", 0.01)), default=float(p.get("default", 0.0)) })
 		parameter_expressions[p.name] = "$"+p.name
-	if uses_op(graph, "size"):
+	if mode == "value":
+		for op in [ "pos", "size" ]:
+			if uses_op(graph, op):
+				errors.append("%s cannot be used in a value processor" % op)
+	elif uses_op(graph, "size"):
 		model_parameters.append({ name="size", label="Size", type="size", first=4, last=13, default=10 })
 	if not errors.is_empty():
 		return { errors=errors }
-	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed" }
+	# sd_rand uses the graph's integer random seed if it has one (e.g. for
+	# graphs translated from Substance), or the node's seed
+	var sd_seed : String = "uint(fract($seed)*16777216.0)"
+	if graph.get("random_seed") is float or graph.get("random_seed") is int:
+		sd_seed = "%du" % (int(graph.random_seed) & 0xFFFFFFFF)
+	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed", function_prefix="$(name)_fn_", sd_seed=sd_seed, sd_rand_mode=mode }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
 	if not result.ok:
 		return { errors=result.errors }
-	var instance : String = "vec4 $(name)_pp(vec2 uv) {\n"
+	var instance : String = "\n".join(result.functions)+"vec4 $(name)_pp(vec2 uv) {\n"
 	for line in result.code:
 		instance += "\t%s\n" % line
 	instance += "\treturn %s;\n}\n" % result.value
 	var model : Dictionary = {
-		name="Pixel Processor",
-		shortdesc="Pixel Processor",
-		longdesc="Computes each pixel with a function graph",
+		name="Value Processor" if mode == "value" else "Pixel Processor",
+		shortdesc="Value Processor" if mode == "value" else "Pixel Processor",
+		longdesc="Computes a value once with a function graph" if mode == "value" else "Computes each pixel with a function graph",
 		code="",
-		global="",
+		global="".join(result.globals),
 		instance=instance,
 		inputs=model_inputs,
 		parameters=model_parameters,
@@ -108,7 +130,7 @@ static func build_shader_model(graph : Dictionary) -> Dictionary:
 
 ## Sets the function graph, returns the list of errors (empty on success)
 func set_function_graph(graph : Dictionary) -> PackedStringArray:
-	var result : Dictionary = build_shader_model(graph)
+	var result : Dictionary = build_shader_model(graph, get_mode())
 	if not result.errors.is_empty():
 		return result.errors
 	function_graph = graph
@@ -125,33 +147,22 @@ func _deserialize(data : Dictionary) -> void:
 		if not errors.is_empty():
 			push_error("Invalid function graph in %s: %s" % [ name, ", ".join(errors) ])
 
-# Until the function graph editor exists, the graph is edited as JSON text
 func edit(node, _tab : String = "") -> void:
-	var dialog : AcceptDialog = AcceptDialog.new()
-	dialog.title = "Edit function graph (JSON)"
-	dialog.add_cancel_button("Cancel")
-	var text_edit : TextEdit = TextEdit.new()
-	text_edit.custom_minimum_size = Vector2(640, 520)
-	text_edit.text = JSON.stringify(function_graph, "\t")
-	dialog.add_child(text_edit)
-	dialog.confirmed.connect(self.on_edit_confirmed.bind(node, text_edit))
-	dialog.visibility_changed.connect(func():
-		if not dialog.visible:
-			dialog.queue_free())
-	mm_globals.main_window.add_dialog(dialog)
-	dialog.popup_centered()
+	var editor = load("res://material_maker/windows/function_graph_editor/function_graph_editor.gd").new()
+	mm_globals.main_window.add_dialog(editor)
+	editor.graph_applied.connect(self.on_graph_applied.bind(node))
+	editor.edit(function_graph, get_mode(), "%s - %s" % [ get_type_name(), name ])
 
-func on_edit_confirmed(node, text_edit : TextEdit) -> void:
-	var json : JSON = JSON.new()
-	var errors : PackedStringArray = PackedStringArray()
-	if json.parse(text_edit.text) != OK or not json.data is Dictionary:
-		errors.append("line %d: %s" % [ json.get_error_line(), json.get_error_message() ])
-	else:
-		var result : Dictionary = build_shader_model(json.data)
-		errors = result.errors
-		if errors.is_empty():
-			function_graph = json.data
-			node.update_shader_generator(result.model)
-			node.finalize_generator_update()
-	if not errors.is_empty():
-		mm_globals.main_window.accept_dialog("The function graph is invalid:\n"+"\n".join(errors))
+func on_graph_applied(graph : Dictionary, node) -> void:
+	var result : Dictionary = build_shader_model(graph, get_mode())
+	if not result.errors.is_empty():
+		mm_globals.main_window.accept_dialog("The function graph is invalid:
+"+"
+".join(result.errors))
+		return
+	# Each apply is a separate undo step
+	if node.edit_generator_prev_state.is_empty():
+		node.edit_generator_prev_state = get_parent().serialize().duplicate(true)
+	function_graph = graph
+	node.update_shader_generator(result.model)
+	node.finalize_generator_update()

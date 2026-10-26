@@ -168,3 +168,121 @@ func test_pixel_processor_rejects_bad_names() -> void:
 	var graph : Dictionary = { inputs=[ { name="uv" }, { name="a" } ], parameters=[ { name="a" } ], nodes={ out={ op="float", value=1 } }, output="out" }
 	var r : Dictionary = MMGenPixelProcessor.build_shader_model(graph)
 	assert_eq(r.errors.size(), 2, str(r.errors))
+
+# IR v2: integers, sub-functions, loops, Substance-compatible rand,
+# parameter functions
+
+func test_integers() -> void:
+	var r : Dictionary = compile({
+		a={ op="int", value=7 },
+		b={ op="int", value=2 },
+		m={ op="mod", a="a", b="b" },
+		f={ op="to_float", a="m" },
+		out={ op="mul", a="f", b="half" },
+		half={ op="float", value=0.5 }
+	}, "out")
+	assert_true(r.ok, str(r.errors))
+	var code : String = "\n".join(r.code)
+	assert_string_contains(code, "int fg_2 = (fg_0%fg_1);")
+	assert_string_contains(code, "float fg_3 = float(fg_2);")
+
+func test_mixing_int_and_float_is_rejected() -> void:
+	var r : Dictionary = compile({ a={ op="int", value=1 }, b={ op="float", value=1 }, out={ op="add", a="a", b="b" } }, "out")
+	assert_false(r.ok)
+	assert_true(has_error_containing(r, "use to_float"))
+	assert_true(r.node_errors.has("out"))
+
+func test_int_output_is_converted() -> void:
+	var r : Dictionary = compile({ out={ op="int", value=3 } }, "out")
+	assert_true(r.ok)
+	assert_eq(r.value, "vec4(vec3(float(fg_0)), 1.0)")
+
+func test_sub_function_call() -> void:
+	var graph : Dictionary = {
+		functions={
+			brighten={ params=[ { name="c", type="vec4" }, { name="k", type="float" } ],
+				nodes={ c={ op="arg", name="c" }, k={ op="arg", name="k" }, out={ op="mul", a="c", b="k" } }, output="out" }
+		},
+		nodes={ uv={ op="pos" }, c={ op="sample", input=0, uv="uv" }, k={ op="float", value=2 }, out={ op="call", function="brighten", args=[ "c", "k" ] } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [ "$in(%s)" ], {}, VARIABLES)
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.functions.size(), 1)
+	assert_string_contains(r.functions[0], "vec4 fg_function_brighten(vec2 uv, vec4 fa_c, float fa_k) {")
+	assert_string_contains("\n".join(r.code), "fg_function_brighten(uv, fg_1, fg_2)")
+
+func test_call_argument_types_are_checked() -> void:
+	var graph : Dictionary = {
+		functions={ f={ params=[ { name="x", type="vec2" } ], nodes={ out={ op="arg", name="x" } }, output="out" } },
+		nodes={ k={ op="float", value=2 }, out={ op="call", function="f", args=[ "k" ] } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_false(r.ok)
+	assert_true(has_error_containing(r, "argument x must be a vec2"))
+
+func test_recursion_is_rejected() -> void:
+	var graph : Dictionary = {
+		functions={ f={ params=[ { name="x", type="float" } ], nodes={ x={ op="arg", name="x" }, out={ op="call", function="f", args=[ "x" ] } }, output="out" } },
+		nodes={ k={ op="float", value=2 }, out={ op="call", function="f", args=[ "k" ] } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_false(r.ok)
+	assert_true(has_error_containing(r, "recursion is not supported"))
+
+func test_loop() -> void:
+	var graph : Dictionary = {
+		functions={ step={ params=[ { name="acc", type="float" }, { name="i", type="int" } ],
+			nodes={ acc={ op="arg", name="acc" }, i={ op="arg", name="i" }, f={ op="to_float", a="i" }, out={ op="add", a="acc", b="f" } }, output="out" } },
+		nodes={ zero={ op="float", value=0 }, out={ op="loop", function="step", count=4, init="zero" } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_true(r.ok, str(r.errors))
+	var code : String = "\n".join(r.code)
+	assert_string_contains(code, "for (int fg_i = 0; fg_i < 4; ++fg_i) { fg_loop_1 = fg_function_step(uv, fg_loop_1, fg_i); }")
+
+func test_loop_signature_is_checked() -> void:
+	var graph : Dictionary = {
+		functions={ step={ params=[ { name="acc", type="vec2" }, { name="i", type="int" } ], nodes={ out={ op="arg", name="acc" } }, output="out" } },
+		nodes={ zero={ op="float", value=0 }, out={ op="loop", function="step", count=4, init="zero" } },
+		output="out"
+	}
+	assert_false(MMFunctionGraph.compile(graph, [], {}, VARIABLES).ok)
+
+func test_sd_rand_pixel_mode() -> void:
+	var r : Dictionary = compile({ one={ op="float", value=1 }, a={ op="sd_rand", a="one" }, b={ op="sd_rand", a="one" }, out={ op="add", a="a", b="b" } }, "out")
+	assert_true(r.ok, str(r.errors))
+	var code : String = "\n".join(r.code)
+	# The state is initialized once, and advanced by each call
+	assert_eq(code.count("mm_sd_rand_init("), 1)
+	assert_eq(code.count("fg_rng = fg_rng*1228363579u+51137u;"), 2)
+	assert_eq(r.globals.size(), 1)
+
+func test_sd_rand_value_mode() -> void:
+	var variables : Dictionary = VARIABLES.duplicate()
+	variables.sd_rand_mode = "value"
+	variables.sd_seed = "5u"
+	var r : Dictionary = MMFunctionGraph.compile({ nodes={ one={ op="float", value=1 }, out={ op="sd_rand", a="one" } }, output="out" }, [], {}, variables)
+	assert_true(r.ok, str(r.errors))
+	assert_string_contains("\n".join(r.code), "uint fg_rng = 5u;")
+	assert_string_contains("\n".join(r.code), "2147001325u+715136305u")
+	assert_eq(r.globals.size(), 0)
+
+func test_compile_expression() -> void:
+	var graph : Dictionary = { nodes={ s={ op="param", name="speed" }, two={ op="float", value=2 }, out={ op="mul", a="s", b="two" } }, output="out" }
+	var r : Dictionary = MMFunctionGraph.compile_expression(graph, { speed="$speed" })
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.expression, "((($speed)*(2.000000000)))")
+	assert_eq(r.type, "float")
+
+func test_compile_expression_rejects_pixel_operations() -> void:
+	var r : Dictionary = MMFunctionGraph.compile_expression({ nodes={ p={ op="pos" }, out={ op="swizzle", a="p", components="x" } }, output="out" }, {})
+	assert_false(r.ok)
+
+func test_value_processor_rejects_position() -> void:
+	var graph : Dictionary = { inputs=[], parameters=[], nodes={ p={ op="pos" }, out={ op="swizzle", a="p", components="x" } }, output="out" }
+	var r : Dictionary = MMGenPixelProcessor.build_shader_model(graph, "value")
+	assert_false(r.errors.is_empty())
