@@ -28,8 +28,32 @@ func get_parameter_defs() -> Array:
 		{ name="image", type="image_path", label="", default="" },
 		{ name="fix_ar", type="boolean", label="Fix Aspect Ratio", default=false },
 		{ name="clamp", type="boolean", label="Clamp", default=false },
-		{ name="filter", type="boolean", label="Filter", default=true }
+		{ name="filter", type="boolean", label="Filter", default=true },
+		{ name="color_space", type="enum", label="Color space", default=0,
+			values=[ { name="As is", value="as_is" }, { name="Linear", value="linear" }, { name="Auto", value="auto" } ],
+			longdesc="Material Maker works with sRGB encoded colors. As is uses the image's values (sRGB images and data such as normal maps), Linear converts linear colors to sRGB, Auto does it for EXR and HDR images" }
 	]
+
+## Whether the image holds linear colors that must be converted to sRGB
+func is_linear() -> bool:
+	match int(get_parameter("color_space")):
+		1:
+			return true
+		2:
+			return get_parameter("image").get_extension().to_lower() in [ "exr", "hdr" ]
+	return false
+
+func _get_shader_code_lod(uv : String, output_index : int, context : MMGenContext, is_greyscale : bool = false, lod : float = -1.0, texture_suffix : String = "_tex") -> ShaderCode:
+	var rv : ShaderCode = super._get_shader_code_lod(uv, output_index, context, is_greyscale, lod, texture_suffix)
+	# The conversion is added where the texture is sampled (code is empty
+	# for variants that were already generated)
+	if is_linear() and rv.code != "":
+		var v : String = rv.output_values[rv.output_type]
+		if is_greyscale:
+			rv.code += "%s = mix(1.055*pow(max(%s, 0.0), 1.0/2.4)-0.055, %s*12.92, float(%s < 0.0031308));\n" % [ v, v, v, v ]
+		else:
+			rv.code += "%s.rgb = mix(vec3(1.055)*pow(max(%s.rgb, vec3(0.0)), vec3(1.0/2.4))-vec3(0.055), %s.rgb*12.92, vec3(lessThan(%s.rgb, vec3(0.0031308))));\n" % [ v, v, v, v ]
+	return rv
 
 func get_filetime(file_path : String) -> int:
 	if FileAccess.file_exists(file_path):

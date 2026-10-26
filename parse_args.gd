@@ -10,9 +10,10 @@ static func name_to_lower(s : String) -> String:
 	s = s.remove_chars("()/\"")
 	return s
 
-func export_files(files, output_dir, target, target_file, image_size) -> void:
+func export_files(files, output_dir, target, target_file, image_size, options : Dictionary = {}) -> void:
 	var website_materials : Array = []
-	var export_list : PackedStringArray = PackedStringArray()
+	# An Array (and not a PackedStringArray) so export_variation can append to it
+	var export_list : Array = []
 	for f : String in files:
 		var basename : String = f.get_file().get_basename()
 		var mat_name : String = f.get_file().get_basename()
@@ -53,123 +54,291 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 				print("Failed to download asset ", asset_index)
 				continue
 			from_website = true
-		var mat_name_lower = name_to_lower(mat_name)
-		var mat_author_lower = name_to_lower(mat_author)
 		if gen != null:
 			add_child(gen)
-			var gen_stack : Array[MMGenBase] = [gen]
-			while gen_stack.size():
-				var c : MMGenBase = gen_stack.pop_back()
-				gen_stack.append_array(c.get_children())
-				if c.has_method("export_material"):
-					var best_target : String = target
-					if c.has_method("get_export_profiles"):
-						if c.get_export_profiles().find(target) == -1:
-							var best_similarity : float = 0.0
-							for p : String in c.get_export_profiles():
-								var similarity : float = p.similarity(target)
-								if similarity > best_similarity:
-									best_similarity = similarity
-									best_target = p
-							if best_target == "":
-								continue
-							print("Using target ", best_target, " (and not ", target, ")")
-					var target_file_name : String = target_file
-					target_file_name = target_file_name.replace("%f", basename)
-					target_file_name = target_file_name.replace("%N", mat_name)
-					target_file_name = target_file_name.replace("%A", mat_author)
-					target_file_name = target_file_name.replace("%n", mat_name_lower)
-					target_file_name = target_file_name.replace("%a", mat_author_lower)
-					var prefix : String = output_dir.path_join(target_file_name)
-					if c.has_method("get_export_profiles"):
-						print("Exporting Material %s to %s..." % [f.get_file(), prefix])
-					else:
-						var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
-						print("Saving additional export %s" % file_name)
-					await c.export_material(prefix, best_target, image_size, true)
-					if from_website:
-						export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
+			for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
+				show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
 	if not export_list.is_empty():
-		print(",\n".join(export_list))
+		print(",\n".join(PackedStringArray(export_list)))
 	get_tree().quit()
+
+func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array) -> void:
+	var mat_name_lower = name_to_lower(mat_name)
+	var mat_author_lower = name_to_lower(mat_author)
+	var gen_stack : Array[MMGenBase] = [gen]
+	while gen_stack.size():
+		var c : MMGenBase = gen_stack.pop_back()
+		gen_stack.append_array(c.get_children())
+		if c.has_method("export_material"):
+			var best_target : String = target
+			if c.has_method("get_export_profiles"):
+				if c.get_export_profiles().find(target) == -1:
+					var best_similarity : float = 0.0
+					for p : String in c.get_export_profiles():
+						var similarity : float = p.similarity(target)
+						if similarity > best_similarity:
+							best_similarity = similarity
+							best_target = p
+					if best_target == "":
+						continue
+					print("Using target ", best_target, " (and not ", target, ")")
+			var target_file_name : String = target_file
+			target_file_name = target_file_name.replace("%f", basename+suffix)
+			target_file_name = target_file_name.replace("%N", mat_name)
+			target_file_name = target_file_name.replace("%A", mat_author)
+			target_file_name = target_file_name.replace("%n", mat_name_lower)
+			target_file_name = target_file_name.replace("%a", mat_author_lower)
+			var prefix : String = output_dir.path_join(target_file_name)
+			if c.has_method("get_export_profiles"):
+				print("Exporting Material %s to %s..." % [f.get_file(), prefix])
+			else:
+				var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
+				print("Saving additional export %s" % file_name)
+			await c.export_material(prefix, best_target, image_size, true)
+			if from_website:
+				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
+
+const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--rpc", "--help" ]
+
+const HELP : String = """Material Maker command line
+
+  material_maker --export-material [options] <files>   export materials for an engine
+  material_maker --render --node <node[:output]> [options] <files>   render a node output
+  material_maker --bake [--maps <map,...>] [options] <meshes>   bake mesh maps
+  material_maker --list-parameters <files>   list the parameters that can be set
+  material_maker --rpc [--rpc-port <port>]   run a JSON-RPC server without user interface
+  material_maker --rpc-port <port>   start the user interface with a JSON-RPC server
+  material_maker -- --help   show this help
+
+Options:
+  --target <target>          export target (e.g. "Godot/Godot 4 Standard", "MaterialX/Standard Surface")
+  -o, --output-dir <dir>     output directory (created if needed)
+  --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
+  --size <size>              image size in pixels
+  --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
+                             name or label, or node/path:parameter
+  --seed <n>                 change the seeds of all nodes that are not locked
+  --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
+  --format <png|exr>         image format of --render
+  --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position)
+  --show-window              do not minimize the window
+  --rpc-port <port>          port of the JSON-RPC server (localhost only, default 7680)
+"""
 
 func _ready():
 	RenderingServer.set_default_clear_color(Color.BLACK)
-	var args : PackedStringArray = OS.get_cmdline_args()
-	if ("--export" in args) or ("--export-material" in args):
-		print("Exporting...")
-		var image_size : int = 2048
-		var dir : DirAccess = DirAccess.open(".")
-		print("Current dir: ", dir.get_current_dir())
-		var target : String = "Godot/Godot 4 Standard"
-		#TODO: fix this
-		var output_dir : String = dir.get_current_dir()
-		var output_file : String = "%f"
-		var files : Array[String] = []
-		var i = 1
-		while i < OS.get_cmdline_args().size():
-			match OS.get_cmdline_args()[i]:
-				"-t", "--target":
-					i += 1
-					target = OS.get_cmdline_args()[i]
-				"-o", "--output-dir":
-					i += 1
-					output_dir = OS.get_cmdline_args()[i]
-				"--output-file":
-					i += 1
-					output_file = OS.get_cmdline_args()[i]
-				"--size":
-					i += 1
-					image_size = int(OS.get_cmdline_args()[i])
-					if image_size < 0:
-						show_error("ERROR: incorrect size "+OS.get_cmdline_args()[i])
-						return
-				_:
-					files.push_back(OS.get_cmdline_args()[i])
-			i += 1
-		print("Output dir: ", output_dir)
-		if ! dir.dir_exists(output_dir):
-			dir.make_dir(output_dir)
-		var expanded_files = []
-		for f : String in files:
-			var basedir : String = f.get_base_dir()
-			if basedir == "":
-				basedir = "."
-			var basename : String = f.get_file()
-			if basename.find("*") != -1:
-				basename = basename.replace("*", ".*")
-				dir = DirAccess.open(basedir)
-				if dir.is_open():
-					var regex : RegEx = RegEx.new()
-					regex.compile("^"+basename+"$")
-					dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
-					var file_name = dir.get_next()
-					while file_name != "":
-						if regex.search(file_name) and file_name.get_extension() == "ptex":
-							expanded_files.push_back(basedir+"/"+file_name)
-						file_name = dir.get_next()
-			elif f.begins_with("website:"):
-				for m : String in f.right(-8).split(","):
-					var index_range : PackedStringArray = m.split("-")
-					match index_range.size():
-						1:
-							if m.is_valid_int():
-								expanded_files.push_back("website:"+m)
-						2:
-							if index_range[0].is_valid_int() and index_range[1].is_valid_int():
-								for mi in range(index_range[0].to_int(), index_range[1].to_int()+1):
-									expanded_files.push_back("website:"+str(mi))
-			else:
-				expanded_files.push_back(f)
-		await export_files(expanded_files, output_dir, target, output_file, image_size)
-	else:
+	# Arguments after "--" are also accepted (Godot handles --help itself)
+	var args : PackedStringArray = OS.get_cmdline_args()+OS.get_cmdline_user_args()
+	var mode : String = ""
+	for m in CLI_MODES:
+		if m in args:
+			mode = m
+			break
+	if mode == "":
 		var no_logo : bool = ( args.find("--no-splash") != -1 )
 		var scene : PackedScene
 		if no_logo:
 			scene = load("res://material_maker/main_window.tscn")
 		else:
 			scene = load("res://splash_screen/splash_screen.tscn")
+		var rpc_port : int = args.find("--rpc-port")
+		if rpc_port != -1 and rpc_port+1 < args.size():
+			start_rpc_server(int(args[rpc_port+1]))
 		await get_tree().process_frame
 		get_tree().change_scene_to_packed(scene)
+		return
+	if mode == "--help":
+		print(HELP)
+		get_tree().quit()
+		return
+	# Rendering needs a window (the GPU is not available in headless mode),
+	# but it does not need to be visible
+	if not "--show-window" in args:
+		get_window().mode = Window.MODE_MINIMIZED
+	var dir : DirAccess = DirAccess.open(".")
+	print("Current dir: ", dir.get_current_dir())
+	var options : Dictionary = {
+		target="Godot/Godot 4 Standard", output_dir=dir.get_current_dir(), output_file="%f",
+		size=2048, set=[], variations=1, format="png", node="", maps=MMCliTools.DEFAULT_BAKE_MAPS
+	}
+	var files : Array[String] = []
+	var i = 0
+	while i < args.size():
+		var arg : String = args[i]
+		var value : String = args[i+1] if i+1 < args.size() else ""
+		match arg:
+			# -t is also Godot's --always-on-top, so it only works after "--"
+			"-t", "--target":
+				options.target = value
+				i += 1
+			"-o", "--output-dir":
+				options.output_dir = value
+				i += 1
+			"--output-file":
+				options.output_file = value
+				i += 1
+			"--size":
+				options.size = int(value)
+				if options.size <= 0:
+					show_error("ERROR: incorrect size "+value)
+					get_tree().quit(1)
+					return
+				i += 1
+			"--set":
+				options.set.append(value)
+				i += 1
+			"--seed":
+				options.seed = int(value)
+				i += 1
+			"--variations":
+				options.variations = max(1, int(value))
+				i += 1
+			"--format":
+				options.format = value
+				i += 1
+			"--node":
+				options.node = value
+				i += 1
+			"--maps":
+				options.maps = Array(value.split(",", false))
+				i += 1
+			"--show-window":
+				pass
+			"--rpc-port":
+				options.rpc_port = int(value)
+				i += 1
+			_:
+				if not arg in CLI_MODES:
+					files.push_back(arg)
+		i += 1
+	if ! dir.dir_exists(options.output_dir):
+		dir.make_dir_recursive(options.output_dir)
+	print("Output dir: ", options.output_dir)
+	match mode:
+		"--export", "--export-material":
+			print("Exporting...")
+			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, options.size, options)
+		"--render":
+			await render_files(expand_files(files), options)
+		"--bake":
+			await bake_files(files, options)
+		"--list-parameters":
+			await list_parameters(expand_files(files))
+		"--rpc":
+			if start_rpc_server(options.get("rpc_port", MMRpcServer.DEFAULT_PORT)) != OK:
+				get_tree().quit(1)
+			elif not files.is_empty():
+				await get_tree().process_frame
+				await rpc_server.api_load({ path=files[0] })
+
+var rpc_server : MMRpcServer = null
+
+## Starts the JSON-RPC server, as a child of the root so it survives scene changes
+func start_rpc_server(port : int) -> Error:
+	rpc_server = MMRpcServer.new()
+	rpc_server.name = "RpcServer"
+	get_tree().root.add_child.call_deferred(rpc_server)
+	return rpc_server.start(port)
+
+func expand_files(files : Array[String]) -> Array:
+	var expanded_files = []
+	for f : String in files:
+		var basedir : String = f.get_base_dir()
+		if basedir == "":
+			basedir = "."
+		var basename : String = f.get_file()
+		if basename.find("*") != -1:
+			basename = basename.replace("*", ".*")
+			var dir : DirAccess = DirAccess.open(basedir)
+			if dir != null:
+				var regex : RegEx = RegEx.new()
+				regex.compile("^"+basename+"$")
+				dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
+				var file_name = dir.get_next()
+				while file_name != "":
+					if regex.search(file_name) and file_name.get_extension() == "ptex":
+						expanded_files.push_back(basedir+"/"+file_name)
+					file_name = dir.get_next()
+		elif f.begins_with("website:"):
+			for m : String in f.right(-8).split(","):
+				var index_range : PackedStringArray = m.split("-")
+				match index_range.size():
+					1:
+						if m.is_valid_int():
+							expanded_files.push_back("website:"+m)
+					2:
+						if index_range[0].is_valid_int() and index_range[1].is_valid_int():
+							for mi in range(index_range[0].to_int(), index_range[1].to_int()+1):
+								expanded_files.push_back("website:"+str(mi))
+		else:
+			expanded_files.push_back(f)
+	return expanded_files
+
+## Loads a graph, adds it to the tree and applies parameter overrides
+func load_graph(f : String, options : Dictionary) -> MMGenBase:
+	var gen = await mm_loader.load_gen(f)
+	if gen == null:
+		show_error("ERROR: cannot load %s" % f)
+		return null
+	add_child(gen)
+	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
+		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	return gen
+
+## Calls callable once per variation, after changing the seeds, with the
+## suffix of the variation's files
+func for_each_variation(gen : MMGenBase, options : Dictionary, callable : Callable) -> void:
+	var variations : int = options.get("variations", 1)
+	for v in variations:
+		# Seeds are offset relatively to the previous variation
+		if v == 0 and options.has("seed"):
+			MMCliTools.reseed(gen, options.seed)
+		elif v > 0:
+			MMCliTools.reseed(gen, 1)
+		await callable.call("_v%d" % v if variations > 1 else "")
+
+func render_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
+	await MMCliTools.wait_for_renders(get_tree())
+	var node_name : String = options.node.replace("/", "_").replace(":", "_")
+	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), node_name, suffix, options.format ])
+	var error : String = await MMCliTools.render_node(gen, options.node, options.size, file_name)
+	if error != "":
+		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
+	else:
+		print("Rendered %s" % file_name)
+
+func render_files(files : Array, options : Dictionary) -> void:
+	if options.node == "":
+		show_error("ERROR: --render requires --node <node[:output]>")
+		get_tree().quit(1)
+		return
+	for f : String in files:
+		var gen : MMGenBase = await load_graph(f, options)
+		if gen == null:
+			continue
+		await for_each_variation(gen, options, render_variation.bind(gen, f, options))
+		gen.queue_free()
+	print("Done")
+	get_tree().quit()
+
+func bake_files(files : Array[String], options : Dictionary) -> void:
+	for f in files:
+		var prefix : String = options.output_dir.path_join(f.get_file().get_basename())
+		for e in await MMCliTools.bake(f, options.maps, options.size, prefix):
+			show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	print("Done")
+	get_tree().quit()
+
+func list_parameters(files : Array) -> void:
+	for f : String in files:
+		var gen : MMGenBase = await load_graph(f, {})
+		if gen == null:
+			continue
+		print("Parameters of %s:" % f)
+		for l in MMCliTools.list_parameters(gen):
+			print("  "+l)
+		gen.queue_free()
+	get_tree().quit()

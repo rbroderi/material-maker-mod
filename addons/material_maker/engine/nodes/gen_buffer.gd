@@ -100,7 +100,10 @@ func on_output_size_changed() -> void:
 func update_buffer_size() -> void:
 	if is_inside_tree():
 		mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), pow(2, get_buffer_size()))
-		mm_deps.buffer_invalidate("o%d_tex" % get_instance_id())
+		# Remote nodes can set the size before the buffer is created
+		var buffer_name : String = "o%d_tex" % get_instance_id()
+		if mm_deps.buffers.has(buffer_name):
+			mm_deps.buffer_invalidate(buffer_name)
 
 func get_input_defs() -> Array:
 	return [ { name="in", type="rgba" } ]

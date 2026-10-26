@@ -26,7 +26,7 @@ Sizes: **S** ≈ days, **M** ≈ 1–3 weeks, **L** ≈ 1–3 months, **XL** ≈
 | 3D viewport | Godot renderer | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium–High |
 | Color management | sRGB/linear only | OCIO/ACES | **High** for studios |
 | Runtime format | Export textures / engine shaders | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
-| Automation | CLI `--export` with `--target`, `--output-dir`, `--output-file`, `--size` (`parse_args.gd`) ✔. No Python | Python API, plugins, Automation Toolkit (cooker/render/baker/mutator) | **High** |
+| Automation | CLI export, render, bake, `--set` overrides and variations, plus a JSON-RPC server and Python client ✅ (§5.2) | Python API, plugins, Automation Toolkit (cooker/render/baker/mutator) | **High** |
 | Packages / dependencies | Library panel, user nodes | Packages, dependency manager, instance versioning, update outdated | Medium |
 | Scan processing | — | Multi-angle-to-material, AxF, scan workflows | Medium (niche) |
 | Painting | **Built in** | None (needs Painter) | MM ahead |
@@ -195,6 +195,12 @@ Audit against SD's library. Priority gaps to check or build:
 - An ACES config by default option, with sRGB as the fallback.
 - Correct linear/sRGB tagging on every bitmap input and export.
 
+✅ **Done (2026-10-26), lite version without OCIO:**
+- The **Image** node has a *Color space* parameter: *As is* (the default, so saved graphs don't change), *Linear* (converts linear colors to sRGB, MM's working encoding), and *Auto* (linear for EXR and HDR files). The conversion runs in the shader, so it also works on float images.
+- **✔ checked:** the 3D preview already has view transforms (Linear, Reinhard, Filmic, ACES, AgX, with exposure and white point) in its post-process menu, so nothing was added there.
+- The MaterialX and USD exports (§5.3) tag albedo and emission as sRGB and every other map as raw.
+- Still missing: real OCIO. It needs the OpenColorIO C++ library through a GDExtension to apply config-defined input, working-space, and display transforms. There's also no view transform on the 2D preview yet.
+
 ---
 
 ## 5. Phase 3: Pipeline and ecosystem (this is what makes studios adopt it)
@@ -217,11 +223,34 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - `mm-mutate`: batch-change parameters, generate variations, swap bitmaps.
 - Headless operation on CI and render farms (no display server).
 
+✅ **Done (2026-10-26):**
+- **CLI** (`parse_args.gd`, `cli/cli_tools.gd`). See [command_line.rst](material_maker/doc/command_line.rst).
+  - New modes: `--render --node <node[:output]>` writes PNG or EXR, `--bake --maps <...>` bakes mesh maps, and `--list-parameters` lists what can be set.
+  - Every mode accepts `--set name=value` (repeatable). The name is a remote parameter's name or label, or `node:parameter`.
+  - `--seed n` and `--variations n` cover the mutator use case. Variation files get a `_v<i>` suffix, and `--seed 3` reproduces variation 0 of `--variations` with the same seed.
+  - Options after `--` also work. Godot itself takes `-t` (always on top) and `--help`, so the docs use `--target`.
+  - The existing exports are byte-identical to before.
+- **JSON-RPC server** (`tools/rpc/rpc_server.gd`). Start it with `--rpc-port <port>` alongside the user interface, or `--rpc` without it. It listens on 127.0.0.1 only and takes one JSON-RPC 2.0 request per line.
+  - Methods: load, save, new graph, list nodes, connections and parameters, set parameters, create, delete, connect and disconnect nodes, reseed, render, list export targets, export, undo/redo, and quit.
+  - In the user interface, edits act on the current graph and go through undo. Parameter changes use the same `setparams` actions as the node UI.
+- **Python client** (`python/material_maker_client`, no dependencies), with `launch()` to start MM, and an example (`python/examples/variations.py`). See [scripting.rst](material_maker/doc/scripting.rst).
+- Tested end to end: 20 checks without the user interface and 10 with it, including undo/redo.
+- Still missing:
+  - A plugin system.
+  - Truly headless runs. Godot's `--headless` has no RenderingDevice, so a minimized window is still needed.
+  - `mm-cook`, which depends on §5.1.
+- **Upstream bug found:** baking ambient occlusion, thickness and bent normals segfaults in Godot 4.7.2 on an AMD Radeon 780M (Vulkan), both in the CLI and with the full user interface, and also on the upstream base commit. Curvature, position, normal and the other raster maps bake fine.
+
 ### 5.3 Standards interop — **M–L**
 - **MaterialX** export: baked texture sets now, and the procedural node subset later. Also MaterialX import of common nodes.
 - **USD** (UsdPreviewSurface/OpenPBR) material export.
 - **glTF** with KHR material extensions. Then OpenEXR multi-layer, DDS (already in 1.5), KTX2, and TX.
 - **✔ checked:** export presets already exist for Godot 3/4 (Standard, ORM, CanvasItem, Dynamic Sky), Unity (3D, URP, HDRP), Unreal 4/5, and Blender. What's left is user-editable naming templates and custom channel-packing presets. There is no MaterialX, USD, or OCIO code anywhere in the tree.
+
+✅ **Done (2026-10-26): MaterialX and USD texture-set export.** There are three new targets on the Material node (`nodes/material.mmg`): *MaterialX/Standard Surface* (1.38), *MaterialX/OpenPBR* (1.39) and *USD/UsdPreviewSurface*.
+- **What's exported:** maps are written only for connected inputs (albedo + opacity, metallic, roughness, normal, emission, height, and AO for USD). The Material node's color and multipliers are applied in the graph, and the normal map uses the OpenGL convention.
+- **Validation:** the files pass MaterialX 1.39.5 `validate()` and MaterialX GLSL generation. They also open in USD (`usd-core`) with every connection and texture resolved, tested on three graphs including one with every input connected.
+- Still missing: procedural MaterialX export, MaterialX import, and glTF KHR extensions.
 
 ### 5.4 Scan and photo workflows — **L (niche)**
 - Multi-angle-to-material and photometric-stereo normal reconstruction.
@@ -267,7 +296,7 @@ What it means for this plan:
 |---|---|---|
 | **M1: Engine** | 2.1 cooking/cache, 2.2 per-node size/format, 2.3 reductions, 2.4 profiler | Everything else (FX-Map, auto levels, large graphs, runtime packages) depends on it |
 | **M2: Authoring + migration** | 3.1 function graphs (shared IR with sbsar2ptex), 3.3 top-priority nodes (Splatter v2, Non-Uniform Blur, Distance, Spline Mapper, Histogram Scan), 3.4 instancing/versioning, 5.6 *Import .sbsar* (baked first) | Removes the main reasons SD artists bounce off MM, and gives them a way to bring their libraries over |
-| **M3: Pipeline core** | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
+| **M3: Pipeline core** ✅ (2026-10-26, OCIO and plugins deferred) | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
 | **M4: 3D** | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
 | **M5: Runtime** | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
 | **M6: Exceed** | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
