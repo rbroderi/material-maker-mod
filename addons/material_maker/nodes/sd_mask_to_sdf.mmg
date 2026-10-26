@@ -91,7 +91,7 @@
 				"autostop": false,
 				"f32": false,
 				"filter": false,
-				"iterations": 30.0,
+				"iterations": 12.0,
 				"mipmap": false,
 				"shrink": false,
 				"size": 10.0
@@ -130,12 +130,15 @@
 					"\tvec2 best_coord = vec2(0.0);",
 					"\tfloat iter = $in(uv).b;",
 					"\titer += 0.01;",
-					"\tfloat step_width = size / 4.0 / (iter * 100.0);",
+					"\t// Jump flooding: the step is halved at each iteration (size/2, size/4, ...,",
+					"\t// 1), then stays at 1 for the last iterations",
+					"\tfloat step_width = max(1.0, size/pow(2.0, round(iter*100.0)));",
 					"\t",
 					"\tfor (int x = -1; x <= 1; x++) {",
 					"\t\tfor (int y = -1; y <= 1; y++) {",
 					"\t\t\tivec2 offsetUV = int_uv + ivec2(x, y) * int(step_width);",
-					"\t\t\tvec2 float_uv = vec2(offsetUV) / size;",
+					"\t\t\t// Sample at the pixel's center, so filtering does not mix coordinates",
+					"\t\t\tvec2 float_uv = (vec2(offsetUV)+vec2(0.5)) / size;",
 					"\t\t\tvec2 offset_pos = $in(float_uv).rg;",
 					"\t\t\t",
 					"\t\t\tif (offset_pos.x != 0.0 && offset_pos.y != 0.0) {",
@@ -372,7 +375,7 @@
 			},
 			"parameters": {
 				"param0": 10.0,
-				"param1": 30.0,
+				"param1": 12.0,
 				"param2": true,
 				"param3": 0.0
 			},
@@ -412,7 +415,7 @@
 							"widget": "iterations"
 						}
 					],
-					"longdesc": "The number of iterations the jump flood algorithm performs to calculate the distances",
+					"longdesc": "The number of iterations the jump flood algorithm performs to calculate the distances: at least log2(size)+1 (e.g. 11 for 1024)",
 					"name": "param1",
 					"shortdesc": "Iterations",
 					"type": "linked_control"
@@ -571,7 +574,7 @@
 	],
 	"parameters": {
 		"param0": 10.0,
-		"param1": 30.0,
+		"param1": 12.0,
 		"param2": true,
 		"param3": 0.0
 	},
