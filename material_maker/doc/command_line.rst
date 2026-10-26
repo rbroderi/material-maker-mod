@@ -12,6 +12,7 @@ modes. The window is minimized (rendering needs a GPU), unless **--show-window**
 
  material_maker --export-material [options] <input_files>
  material_maker --render --node <node[:output]> [options] <input_files>
+ material_maker --export-volume --node <node[:output]> [options] <input_files>
  material_maker --bake [--maps <map,...>] [options] <mesh_files>
  material_maker --list-parameters <input_files>
  material_maker --export-mmr [options] <input_files>
@@ -28,6 +29,10 @@ Modes
 * **--render** renders an output of a node (outputs are numbered from 0, the Material
   node's outputs are the exported maps: 0 is albedo, 2 emission, 3 normal, 12 metallic,
   13 roughness...)
+* **--export-volume** exports a 3D texture or SDF output as a volume (see :ref:`export-section`),
+  named <input>_<node>.<format>, with **--format** vdb (the default), dds or ktx2, **--voxels**
+  (the resolution, 128 by default), **--extent** (the size of the sampled box, 1 by default) and,
+  for dds and ktx2, **--texel-format** (rgba16f, rgba32f, rgba8, r16f or r32f)
 * **--bake** bakes mesh maps (position, normal, tangent, ambient_occlusion, bent_normals,
   thickness, curvature, seams, adjacency) to files named <mesh>_<map>.png
 * **--list-parameters** lists the parameters that can be set with **--set**

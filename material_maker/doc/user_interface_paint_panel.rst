@@ -163,3 +163,10 @@ The 3D view of this dialog can be configured to show the ID map, the mask,
 or a mix of both.
 
 It is also possible to reset the mask so the whole object can be painted.
+
+Using paintings in material graphs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The **Simple/Paint Layer** node reads the layers of a saved paint project in a material graph,
+so painted masks, colors or heights can drive procedural effects. It follows the project when it
+is saved again.

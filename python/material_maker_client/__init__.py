@@ -181,6 +181,13 @@ class MaterialMaker:
         """Renders an output of a node to an image file (.png or .exr)"""
         return self.call("render", node=node, path=_path(path), output=output, size=size)
 
+    def export_volume(self, node, path, output=0, resolution=128, extent=1.0, texel_format=""):
+        """Exports a 3D texture or SDF output as a volume: OpenVDB (.vdb), 3D DDS
+        (.dds) or KTX2 (.ktx2), sampled in a box of the given extent centered on
+        the origin"""
+        return self.call("export_volume", node=node, path=_path(path), output=output,
+                         resolution=resolution, extent=extent, texel_format=texel_format)
+
     def list_export_targets(self):
         return self.call("list_export_targets")
 

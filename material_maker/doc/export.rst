@@ -113,6 +113,24 @@ The **USD/UsdPreviewSurface** target generates a .usda file with a UsdPreviewSur
 named /Material and its textures (including ambient occlusion). It can be referenced from USD
 stages, or imported in applications that support USD materials.
 
+Volumes
+-------
+
+3D textures (TEX3D outputs, for example of the 3D/Texture nodes) and 3D signed distance fields
+(SDF3D outputs, for example of the 3D/SDF nodes) can be exported as volumes, from the export menu
+of the 2D preview (when it shows such an output), from the command line (**--export-volume**) or
+from Python scripts (**export_volume**). The output is sampled at the centers of a grid of voxels
+covering a box centered on the origin (from -0.5 to 0.5 by default).
+
+* **OpenVDB** (.vdb) files can be used in Blender, Houdini, Unreal Engine and most renderers.
+  SDFs become narrow band level sets (a grid named *surface*), grayscale 3D textures fog volumes
+  (*density*), and color 3D textures a *color* grid with a *density* grid (the average of the
+  color). Only voxels that matter are stored: non zero densities, and distances within 3 voxels
+  of the surface.
+* **3D DDS** (.dds) and **KTX2** (.ktx2) files are 3D textures for game engines, in 16 bits float
+  (the default), 32 bits float or 8 bits, with 4 channels (colors) or 1 channel (grayscale
+  textures and SDFs).
+
 Runtime packages
 ----------------
 

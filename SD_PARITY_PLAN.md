@@ -419,9 +419,18 @@ What it means for this plan:
 
 ## 6. Where MM can exceed SD (lean into these)
 
-1. **Integrated painting plus procedural graph**: SD needs Painter for this. Make painted layers first-class graph inputs, and graph outputs paintable.
+1. **Integrated painting plus procedural graph**: SD needs Painter for this. Make painted layers first-class graph inputs, and graph outputs paintable. ✅ **Painted layers as inputs done (2026-10-26):**
+   - The **Paint Layer** node (`engine/nodes/gen_paint_layer.gd`, *Simple/Paint Layer*) reads a channel of a paint project (.mmpp): albedo, metallic, roughness, emission, normal, depth or occlusion.
+   - It reads one layer, or all visible layers composited as the painter does (masks, channel opacities, normal and occlusion backgrounds), in the node's generated shader.
+   - It follows the project when it is saved again.
+   - Painting with graphs already existed as procedural layers. Not done: live updates while painting, without saving.
 2. **Graph → native shader export**: runtime-procedural materials with no plugin at all.
-3. **True 3D/volumetric textures and SDF scenes**: MM's SDF and raymarching heritage is ahead of SD 16's new SDF nodes. Add 3D texture export (VDB, 3D DDS/KTX) for volumetrics.
+3. **True 3D/volumetric textures and SDF scenes**: MM's SDF and raymarching heritage is ahead of SD 16's new SDF nodes. Add 3D texture export (VDB, 3D DDS/KTX) for volumetrics. ✅ **Done (2026-10-26):** `engine/volume_export.gd` samples TEX3D and SDF3D outputs (all slices in one compute pass) and writes:
+   - **OpenVDB** (format 224, uncompressed, sparse 5-4-3 trees): SDFs as narrow band level sets, grayscale textures as fog volumes, colors as a vec3 grid plus density.
+   - **3D DDS** (DX10 header) and **KTX2** (with a data format descriptor), in 16F, 32F or 8 bits.
+   - Available from the 2D preview's export menu, the CLI (`--export-volume`) and RPC (`export_volume`).
+   - **Verified:** OpenVDB 13 (Blender 5.2's Python module) reads the files with exact level set values, transform and active voxels. Blender imports them as Volume objects. DDS and KTX2 headers and voxels match an independent reader written from the specifications (`pyktx` does not build here, so KTX-Software's validator was not run).
+   - **Speed:** 128³ in about 7 s and 256³ in 18 s, including startup.
 4. **Animated and time-based materials**: `$time`-driven graphs, flipbook and sprite-sheet export, and live animated previews (sky, water, fire). ✅ **Done (2026-10-26):**
    - `--render --frames n [--duration s] [--columns c]` renders sprite sheets. The time is fixed per frame (`MMComputeShader.fixed_time`), and buffers, including automatic ones, are rendered again for each frame.
    - Runtime packages have a `time` parameter on the passes that use `$time`, so engines can animate them.

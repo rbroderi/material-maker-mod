@@ -103,12 +103,13 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
-const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--export-mmr", "--rpc", "--help" ]
+const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--export-volume", "--bake", "--list-parameters", "--export-mmr", "--rpc", "--help" ]
 
 const HELP : String = """Material Maker command line
 
   material_maker --export-material [options] <files>   export materials for an engine
   material_maker --render --node <node[:output]> [options] <files>   render a node output
+  material_maker --export-volume --node <node[:output]> [options] <files>   export a 3D texture or SDF as a volume
   material_maker --bake [--maps <map,...>] [--high <mesh>] [options] <meshes>   bake mesh maps
   material_maker --list-parameters <files>   list the parameters that can be set
   material_maker --export-mmr [options] <files>   export runtime packages (.mmr)
@@ -126,7 +127,10 @@ Options:
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
-  --format <png|exr>         image format of --render
+  --format <png|exr>         image format of --render, or volume format of --export-volume (vdb, dds or ktx2)
+  --voxels <n>               voxels in each direction of --export-volume (default: 128)
+  --extent <size>            size of the box sampled by --export-volume (default: 1, the box is centered)
+  --texel-format <format>    texel format of --export-volume to dds or ktx2 (rgba16f, rgba32f, rgba8, r16f, r32f)
   --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
   --duration <seconds>       duration of the animation of --frames (default: 1)
   --columns <n>              columns of the sprite sheet of --frames (default: square sheet)
@@ -231,6 +235,15 @@ func _ready():
 			"--frames":
 				options.frames = max(1, int(value))
 				i += 1
+			"--voxels":
+				options.resolution = int(value)
+				i += 1
+			"--extent":
+				options.extent = float(value)
+				i += 1
+			"--texel-format":
+				options.texel_format = value
+				i += 1
 			"--duration":
 				options.duration = float(value)
 				i += 1
@@ -258,6 +271,8 @@ func _ready():
 			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, options.size, options)
 		"--render":
 			await render_files(expand_files(files), options)
+		"--export-volume":
+			await export_volume_files(expand_files(files), options)
 		"--bake":
 			await bake_files(files, options)
 		"--list-parameters":
@@ -364,6 +379,36 @@ func render_files(files : Array, options : Dictionary) -> void:
 		if gen == null:
 			continue
 		await for_each_variation(gen, options, render_variation.bind(gen, f, options))
+		gen.queue_free()
+	print("Done")
+	get_tree().quit()
+
+func export_volume_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
+	await MMCliTools.wait_for_renders(get_tree())
+	var node_path : String = options.node.get_slice(":", 0)
+	var output : int = options.node.get_slice(":", 1).to_int() if options.node.contains(":") else 0
+	var generator = gen.get_node_or_null(NodePath(node_path))
+	if not generator is MMGenBase:
+		show_error("ERROR: %s: node '%s' not found" % [ f.get_file(), node_path ])
+		return
+	var format : String = options.format if options.format in MMVolumeExport.FORMATS else "vdb"
+	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), options.node.replace("/", "_").replace(":", "_"), suffix, format ])
+	var error : String = await MMVolumeExport.export_volume(generator, output, file_name, options.get("resolution", 128), options.get("extent", 1.0), options.get("texel_format", ""))
+	if error != "":
+		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
+	else:
+		print("Exported %s" % file_name)
+
+func export_volume_files(files : Array, options : Dictionary) -> void:
+	if options.node == "":
+		show_error("ERROR: --export-volume requires --node <node[:output]>")
+		get_tree().quit(1)
+		return
+	for f : String in files:
+		var gen : MMGenBase = await load_graph(f, options)
+		if gen == null:
+			continue
+		await for_each_variation(gen, options, export_volume_variation.bind(gen, f, options))
 		gen.queue_free()
 	print("Done")
 	get_tree().quit()

@@ -12,11 +12,65 @@ const RESOLUTION_CUSTOM := 8
 
 var additional_ids : Dictionary[String, String] = {"$node":"unnamed"}
 
+var volume_section : VBoxContainer
+var volume_resolution : OptionButton
+var volume_format : OptionButton
+
+const VOLUME_RESOLUTIONS : Array[int] = [ 32, 64, 128, 256 ]
+const VOLUME_FORMATS : Array = [ [ "OpenVDB (.vdb)", "vdb" ], [ "3D DDS (.dds)", "dds" ], [ "KTX2 (.ktx2)", "ktx2" ] ]
+
 func _ready() -> void:
 	for val in export_settings.values():
 		val = val.replace("$SUFFIX", owner.config_var_suffix)
 
 	owner.generator_changed.connect(update)
+	add_volume_section()
+
+## Export of 3D textures and SDFs as volumes (see MMVolumeExport)
+func add_volume_section() -> void:
+	volume_section = VBoxContainer.new()
+	volume_section.visible = false
+	var label : Label = Label.new()
+	label.text = "Volume (3D texture or SDF)"
+	volume_section.add_child(label)
+	var hbox : HBoxContainer = HBoxContainer.new()
+	volume_section.add_child(hbox)
+	volume_resolution = OptionButton.new()
+	volume_resolution.tooltip_text = "The number of voxels in each direction"
+	for r in VOLUME_RESOLUTIONS:
+		volume_resolution.add_item("%d³" % r)
+	volume_resolution.selected = 2
+	hbox.add_child(volume_resolution)
+	volume_format = OptionButton.new()
+	for f in VOLUME_FORMATS:
+		volume_format.add_item(f[0])
+	hbox.add_child(volume_format)
+	var button : Button = Button.new()
+	button.text = "Export volume..."
+	button.tooltip_text = "Samples the 3D output in a [-0.5, 0.5]³ box and saves it as a volume"
+	button.pressed.connect(_on_volume_pressed)
+	volume_section.add_child(button)
+	get_node("VBox").add_child(volume_section)
+
+func _on_volume_pressed() -> void:
+	if owner.generator == null:
+		return
+	var extension : String = VOLUME_FORMATS[volume_format.selected][1]
+	var file_dialog := preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instantiate()
+	file_dialog.access = FileDialog.ACCESS_FILESYSTEM
+	file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	file_dialog.title = "Export volume"
+	file_dialog.add_filter("*.%s; %s" % [ extension, VOLUME_FORMATS[volume_format.selected][0] ])
+	file_dialog.current_dir = mm_globals.config.get_value("path", "save_preview", mm_globals.get_home_directory())
+	var files = await file_dialog.select_files()
+	if files.size() == 0:
+		return
+	var path : String = files[0]
+	if path.get_extension().to_lower() != extension:
+		path += "."+extension
+	export_notification("Exporting...")
+	var error : String = await MMVolumeExport.export_volume(owner.generator, owner.output, path, VOLUME_RESOLUTIONS[volume_resolution.selected])
+	export_notification("Exported to "+path if error == "" else "Error: "+error)
 
 
 func _notification(what: int) -> void:
@@ -51,6 +105,8 @@ func _open() -> void:
 
 func update() -> void:
 	additional_ids["$node"] = mm_globals.get_node_title_from_gen(owner.generator)
+	if volume_section != null:
+		volume_section.visible = owner.generator != null and MMVolumeExport.is_volume_output(owner.generator, owner.output)
 
 	if not is_visible_in_tree():
 		return

@@ -63,6 +63,8 @@ graph (and in **list_nodes**).
 * **render(node, output, size, path)** renders a node output to a PNG or EXR file
 * **list_export_targets()** and **export(target, prefix, size)** export the material
 * **export_mmr(path, size)** exports a runtime package (.mmr) of the material
+* **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
+  SDF output as a volume (.vdb, .dds or .ktx2)
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 

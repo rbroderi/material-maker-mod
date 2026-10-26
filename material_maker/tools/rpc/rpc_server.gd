@@ -393,6 +393,18 @@ func api_render(params : Dictionary):
 			error = "buffers failed to render: "+", ".join(failed)
 	return fail(error) if error != "" else params.path
 
+## Exports a 3D texture or SDF output as a volume (.vdb, .dds or .ktx2)
+func api_export_volume(params : Dictionary):
+	if not require(params, [ "node", "path" ]):
+		return null
+	var graph : MMGenGraph = await get_graph()
+	var generator : MMGenBase = get_generator(graph, params.node)
+	if generator == null:
+		return null
+	await MMCliTools.wait_for_renders(get_tree())
+	var error : String = await MMVolumeExport.export_volume(generator, int(params.get("output", 0)), params.path, int(params.get("resolution", 128)), float(params.get("extent", 1.0)), params.get("texel_format", ""))
+	return fail(error) if error != "" else params.path
+
 func get_material(graph : MMGenGraph) -> MMGenBase:
 	var top : Node = graph
 	while top.get_parent() is MMGenGraph:

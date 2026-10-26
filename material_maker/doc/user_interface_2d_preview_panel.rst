@@ -34,7 +34,8 @@ The 2D preview panel has a context menu that can be used to:
 * select the view mode (extend, repeat, clamp or temporal antoaliasing)
   of the preview
 
-* export the previewed node to a file
+* export the previewed node to a file (and, for 3D textures and SDFs, as a volume: OpenVDB,
+  3D DDS or KTX2)
 
 * export the previewed node's animation to a set of files or a spritesheet
 
