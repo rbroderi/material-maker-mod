@@ -174,6 +174,29 @@ func wait_for_rendering_device() -> RenderingDevice:
 		await get_tree().process_frame
 	return rendering_device
 
+# GPU memory budget (see MMTexture and design/hybrid_evaluator.md)
+
+var texture_budget_check_scheduled : bool = false
+var texture_budget_check_running : bool = false
+
+func request_texture_budget_check() -> void:
+	if not texture_budget_check_scheduled:
+		texture_budget_check_scheduled = true
+		check_texture_budget.call_deferred()
+
+func check_texture_budget() -> void:
+	texture_budget_check_scheduled = false
+	if texture_budget_check_running:
+		# Check again when the current check is done
+		request_texture_budget_check.call_deferred()
+		return
+	var budget_mb : float = float(mm_globals.get_config("gpu_memory_budget")) if mm_globals else 0.0
+	if budget_mb <= 0.0:
+		return
+	texture_budget_check_running = true
+	await MMTexture.enforce_budget(int(budget_mb*1048576.0))
+	texture_budget_check_running = false
+
 func destroy_rendering_device():
 	pass
 

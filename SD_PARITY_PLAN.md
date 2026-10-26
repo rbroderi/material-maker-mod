@@ -46,13 +46,23 @@ Today the graph compiles into large monolithic shaders. That causes slow recompi
 - A **GPU memory budget** with LRU eviction and spill-to-RAM.
 - Reuse the existing compute path for passes that need reductions or scatter.
 
-**Started (2026-10-25):** design in [design/hybrid_evaluator.md](design/hybrid_evaluator.md), with milestones 1–5. **Milestone 1 is done:**
-- **Automatic buffers** (`engine/nodes/gen_auto_buffer.gd`, `MMGenShader.get_function_input_source()`). A function input whose source would inline at least *N* nodes (default 4) is sampled through a hidden, unsaved 2^10 buffer.
-- It's opt-in, under *Preferences → Graph → Automatic Buffers*.
-- Automatic buffers show up in the buffer icon menu and in *Tools → Show buffer render times*.
-- Measured: a 16-sample blur of a 6-node chain at 2048² went from about 400 ms to about 220 ms. The buffered output differs by up to 0.03 on high-frequency detail (the resampling trade-off).
+✅ **Done (2026-10-25), milestones 1–5.** See [design/hybrid_evaluator.md](design/hybrid_evaluator.md).
+- **Automatic buffers** (`gen_auto_buffer.gd`) are chosen by a **cost model** (`MMGenShader.get_cost_model()`, `estimate_cost()`, `should_auto_buffer()`). It counts calls × parsed loop bounds × samples per input. Inputs that will themselves be buffered count as one fetch.
+- An input is buffered when inlining it costs at least *min gain* × the buffered cost. The buffer uses the consumer's own Size parameter as its resolution.
+- **Shader splitting:** any input costing more than the shader budget is buffered, which cuts monolithic shaders.
+- **Incremental recompilation:** an upstream edit behind a buffer regenerates only that buffer.
+- **Per-connection pins** (Always/Never) are set with Alt+right-click on a connection. They're saved with the graph, undoable, and drawn as markers.
+- **GPU memory budget:** the least recently used compute textures are spilled to RAM and re-uploaded on demand, with no re-render.
+- Preferences are under *Graph*. Automatic buffers are still opt-in.
 
-Next: milestone 2, a cost model of instructions × samples and resolution taken from the consumer.
+Measured:
+- A 16-sample blur of a 6-node chain went from about 360 ms to about 90–180 ms.
+- 0 downstream recompiles after an upstream edit behind a buffer.
+- 192 MB was evicted down to a 4 MB budget with pixel-identical results.
+
+Tests: `test/test_auto_buffer.gd` (5 GUT tests), plus GPU harness runs.
+
+Not done: pins are dropped when nodes are grouped into a subgraph, cost weights aren't calibrated against measured timings yet, and per-node *format* control is §2.2.
 
 ### 2.2 Per-node output size and format — **L**
 - Output size modes: *relative to parent*, *relative to input*, *absolute*. Support **non-square** sizes up to 16k (and 32k via tiling).

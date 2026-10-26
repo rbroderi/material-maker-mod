@@ -45,7 +45,30 @@ Automatic buffers
 +++++++++++++++++
 
 When *Automatic Buffers* are enabled in the preferences (Graph tab), Material Maker inserts
-buffers by itself in front of node inputs that are sampled at arbitrary positions (such as
-blur, warp and pixel processor inputs) when they depend on at least the configured number
-of nodes. Automatic buffers are not saved with the graph; they are listed in
-*Tools > Show buffer render times*. This feature is experimental and disabled by default.
+buffers by itself where they make rendering cheaper:
+
+* in front of inputs that are sampled many times (blur, warp, normal map, pixel processor...)
+  when their source is expensive to evaluate,
+
+* in front of any input whose source would make the generated shader too large (the
+  *shader budget*). This splits very large materials into several smaller shaders, and
+  editing a node only recompiles the part of the graph after it up to the next buffer.
+
+Automatic buffers use the resolution of the node they feed when it has a size parameter.
+They are not saved with the graph, and are listed in *Tools > Show buffer render times*.
+
+Connection buffers
+++++++++++++++++++
+
+*Alt + right click* on a connection shows a menu to choose whether it is buffered
+*automatically*, *always* or *never*. This setting is saved with the graph, and *always*
+works even when automatic buffers are disabled. Buffered connections are marked with a
+blue (automatic) or orange (always) *B*, and connections that are never buffered with a
+grey *-*.
+
+GPU memory budget
++++++++++++++++++
+
+When a GPU memory budget is set in the preferences, the least recently used buffers are
+copied back to the main memory when the budget is exceeded, and uploaded again when they
+are needed. Their content is kept, so nothing has to be rendered again.

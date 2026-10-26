@@ -1430,6 +1430,9 @@ func show_buffer_render_times():
 		accept_dialog("This graph has no buffers.")
 		return
 	var text : String = tr("%d buffer(s), %d ms in total (last render of each)") % [ buffers.size(), total_time ]
+	var gpu_memory : Dictionary = MMTexture.get_gpu_memory_usage()
+	var budget : float = float(mm_globals.get_config("gpu_memory_budget"))
+	text += "\n" + tr("GPU memory: %d MB in %d texture(s), budget: %s") % [ gpu_memory.bytes/1048576, gpu_memory.count, (tr("%d MB") % budget) if budget > 0.0 else tr("unlimited") ]
 	text += "\n\n" + "\n".join(lines)
 	accept_dialog(text)
 
