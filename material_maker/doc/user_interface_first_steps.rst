@@ -21,6 +21,10 @@ in the Project panel, and select a node from the list. The library menu will als
 shown when connecting a node output into an empty space in the graph (in this case,
 the newly created node will be connected automatically).
 
+The search is tolerant: words with a typo (such as *blurr*) and abbreviations whose
+letters appear in order (such as *nrml map*) still find nodes, after the exact matches.
+With an empty search, the nodes created most recently are shown first.
+
 .. image:: images/create_node_menu.gif
   :align: center
 

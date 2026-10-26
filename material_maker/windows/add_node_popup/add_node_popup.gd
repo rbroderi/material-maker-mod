@@ -167,7 +167,17 @@ func update_list(filter_text : String = "") -> void:
 	var idx : int = 0
 
 	var items : Array = library_manager.get_items(filter_text, true)
+	# Recently created items come first among equally good matches
+	var recent_items : Array = library_manager.get_recent_items()
+	for i in items:
+		var recent_index : int = recent_items.find(i.name)
+		if recent_index != -1:
+			i.quality += 0.05*(1.0-float(recent_index)/recent_items.size())
 	items.sort_custom(SortMenu.sort_function(item_sort_mode, library_manager.item_usage))
+	if filter_text == "" and item_sort_mode == SortMenu.Sorting.QUALITY_DESCENDING:
+		var recent : Array = items.filter(func(i): return i.name in recent_items)
+		recent.sort_custom(func(a, b): return recent_items.find(a.name) < recent_items.find(b.name))
+		items = recent+items.filter(func(i): return not i.name in recent_items)
 
 	# Add sub-node items
 	idx = sub_node_create_items(idx, filter_text)

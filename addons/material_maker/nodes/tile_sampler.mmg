@@ -1,0 +1,442 @@
+{
+	"name": "tile_sampler",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"x_count": 8.0,
+		"y_count": 8.0,
+		"scale": 0.8,
+		"scale_random": 0.0,
+		"rotation": 0.0,
+		"rotation_random": 0.0,
+		"position_random": 0.0,
+		"row_offset": 0.0,
+		"displacement": 0.1,
+		"drop": 0.0,
+		"value_random": 0.0,
+		"pattern_count": 1.0,
+		"pattern_mode": 0,
+		"symmetry": 0,
+		"blend": 0
+	},
+	"shader_model": {
+		"code": "float $(name_uv)_id;\nvec4 $(name_uv)_ts = $(name)_sample($uv, $(name_uv)_id);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0)*4.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 1 (its alpha is the coverage of instances)",
+				"name": "in1",
+				"shortdesc": "Pattern 1",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0)*4.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 2",
+				"name": "in2",
+				"shortdesc": "Pattern 2",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0)*4.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 3",
+				"name": "in3",
+				"shortdesc": "Pattern 3",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0)*4.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 4",
+				"name": "in4",
+				"shortdesc": "Pattern 4",
+				"type": "rgba"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "The probability that an instance is kept, sampled at its position",
+				"name": "mask",
+				"shortdesc": "Mask",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Multiplies the scale of instances, sampled at their position",
+				"name": "scale_map",
+				"shortdesc": "Scale map",
+				"type": "f"
+			},
+			{
+				"default": "0.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Adds a rotation (1 is a full turn), sampled at the position of instances",
+				"name": "rotation_map",
+				"shortdesc": "Rotation map",
+				"type": "f"
+			},
+			{
+				"default": "0.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Selects the pattern of instances (with the By map pattern selection)",
+				"name": "pattern_map",
+				"shortdesc": "Pattern map",
+				"type": "f"
+			},
+			{
+				"default": "vec3(0.5)",
+				"function": true,
+				"label": "",
+				"longdesc": "A vector map (red and green, 0.5 is no displacement) that moves instances",
+				"name": "displacement_map",
+				"shortdesc": "Displacement map",
+				"type": "rgb"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_pattern(int index, vec2 uv) {",
+			"\tif (index <= 0) {",
+			"\t\treturn $in1(uv);",
+			"\t} else if (index == 1) {",
+			"\t\treturn $in2(uv);",
+			"\t} else if (index == 2) {",
+			"\t\treturn $in3(uv);",
+			"\t}",
+			"\treturn $in4(uv);",
+			"}",
+			"",
+			"vec4 $(name)_sample(vec2 uv, out float instance_id) {",
+			"\tvec2 count = max(floor(vec2($x_count, $y_count)), vec2(1.0));",
+			"\tvec2 cell = floor(uv*count);",
+			"\tvec4 result = vec4(0.0);",
+			"\tfloat best_height = -1.0;",
+			"\tinstance_id = 0.0;",
+			"\tint pattern_count = clamp(int($pattern_count), 1, 4);",
+			"\tfor (int dy = -1; dy <= 1; ++dy) {",
+			"\t\tfor (int dx = -1; dx <= 1; ++dx) {",
+			"\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\t// Random values depend on the wrapped cell, so the result tiles",
+			"\t\t\tvec2 tile = mod(c, count);",
+			"\t\t\tvec2 s = tile+vec2($seed*17.31, $seed*5.13);",
+			"\t\t\tvec4 r1 = vec4(rand(s+vec2(0.13, 0.37)), rand(s+vec2(1.71, 2.93)), rand(s+vec2(3.31, 4.17)), rand(s+vec2(5.97, 6.71)));",
+			"\t\t\tvec4 r2 = vec4(rand(s+vec2(7.13, 8.31)), rand(s+vec2(9.73, 10.97)), rand(s+vec2(11.37, 12.11)), rand(s+vec2(13.93, 14.79)));",
+			"\t\t\tvec2 r3 = vec2(rand(s+vec2(15.31, 16.17)), rand(s+vec2(17.97, 18.33)));",
+			"\t\t\tfloat row_offset = mod(tile.y, 2.0)*$row_offset;",
+			"\t\t\tvec2 center = (c+vec2(0.5+row_offset, 0.5)+$position_random*(r1.xy-vec2(0.5)))/count;",
+			"\t\t\tvec2 map_uv = fract(center);",
+			"\t\t\tcenter += $displacement*($displacement_map(map_uv).xy-vec2(0.5));",
+			"\t\t\tif (r1.z >= $mask(map_uv)*(1.0-$drop)) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat scale = max($scale*$scale_map(map_uv)*(1.0-$scale_random*r1.w), 0.0001);",
+			"\t\t\tfloat a = radians($rotation+360.0*$rotation_map(map_uv)+180.0*$rotation_random*(2.0*r2.x-1.0));",
+			"\t\t\tvec2 local = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*((uv-center)*count)/scale+vec2(0.5);",
+			"\t\t\tif ($symmetry == 1 || $symmetry == 3) {",
+			"\t\t\t\tlocal.x = r2.y < 0.5 ? 1.0-local.x : local.x;",
+			"\t\t\t}",
+			"\t\t\tif ($symmetry == 2 || $symmetry == 3) {",
+			"\t\t\t\tlocal.y = r2.z < 0.5 ? 1.0-local.y : local.y;",
+			"\t\t\t} else if ($symmetry == 4) {",
+			"\t\t\t\tint quarter = int(floor(r2.y*4.0));",
+			"\t\t\t\tlocal = quarter == 1 ? vec2(local.y, 1.0-local.x) : (quarter == 2 ? vec2(1.0)-local : (quarter == 3 ? vec2(1.0-local.y, local.x) : local));",
+			"\t\t\t}",
+			"\t\t\tif (any(lessThan(local, vec2(0.0))) || any(greaterThan(local, vec2(1.0)))) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tint index = int(floor(r2.w*float(pattern_count)));",
+			"\t\t\tif ($pattern_mode == 1) {",
+			"\t\t\t\tindex = int(floor(clamp($pattern_map(map_uv), 0.0, 0.9999)*float(pattern_count)));",
+			"\t\t\t} else if ($pattern_mode == 2) {",
+			"\t\t\t\tindex = int(mod(tile.x+tile.y*count.x, float(pattern_count)));",
+			"\t\t\t}",
+			"\t\t\tvec4 color = $(name)_pattern(index, local);",
+			"\t\t\tcolor.rgb *= 1.0-$value_random*r3.x;",
+			"\t\t\tfloat alpha = clamp(color.a, 0.0, 1.0);",
+			"\t\t\tif (alpha <= 0.0) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tif ($blend == 0) {",
+			"\t\t\t\tif (dot(color.rgb, vec3(1.0))*alpha > dot(result.rgb, vec3(1.0))) {",
+			"\t\t\t\t\tinstance_id = r3.y;",
+			"\t\t\t\t}",
+			"\t\t\t\tresult = vec4(max(result.rgb, color.rgb*alpha), max(result.a, alpha));",
+			"\t\t\t} else if ($blend == 1) {",
+			"\t\t\t\tif (r3.y > best_height) {",
+			"\t\t\t\t\tbest_height = r3.y;",
+			"\t\t\t\t\tresult = vec4(mix(result.rgb, color.rgb, alpha), max(result.a, alpha));",
+			"\t\t\t\t\tinstance_id = r3.y;",
+			"\t\t\t\t} else {",
+			"\t\t\t\t\t// Below an instance that is higher: only shows where that one is transparent",
+			"\t\t\t\t\tresult = vec4(mix(color.rgb, result.rgb, result.a), max(result.a, alpha));",
+			"\t\t\t\t}",
+			"\t\t\t} else if ($blend == 2) {",
+			"\t\t\t\tresult = vec4(mix(result.rgb, color.rgb, alpha), alpha+result.a*(1.0-alpha));",
+			"\t\t\t\tinstance_id = r3.y;",
+			"\t\t\t} else {",
+			"\t\t\t\tresult += vec4(color.rgb*alpha, alpha);",
+			"\t\t\t\tinstance_id = r3.y;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn vec4(result.rgb, min(result.a, 1.0));",
+			"}"
+		],
+		"longdesc": "Places pattern instances on a grid, with random or map driven position, scale, rotation, pattern choice, symmetry and value, and several ways to stack overlapping instances",
+		"name": "Tile Sampler",
+		"outputs": [
+			{
+				"rgba": "$(name_uv)_ts",
+				"longdesc": "The sampled patterns",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name_uv)_id",
+				"longdesc": "A random value for each instance (of the instance that is shown)",
+				"shortdesc": "Instance",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "X count",
+				"longdesc": "The number of columns",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "x_count",
+				"shortdesc": "X count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Y count",
+				"longdesc": "The number of rows",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "y_count",
+				"shortdesc": "Y count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.8,
+				"label": "Scale",
+				"longdesc": "The size of instances, relative to a cell",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the scale",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation",
+				"longdesc": "The rotation of instances, in degrees",
+				"max": 180.0,
+				"min": -180.0,
+				"name": "rotation",
+				"shortdesc": "Rotation",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation (1 is up to half a turn either way)",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Position random",
+				"longdesc": "The random offset of instances in their cell",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "position_random",
+				"shortdesc": "Position random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Row offset",
+				"longdesc": "The offset of odd rows, in cells (0.5 for bricks)",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "row_offset",
+				"shortdesc": "Row offset",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Displacement",
+				"longdesc": "The amount of displacement by the displacement map",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "displacement",
+				"shortdesc": "Displacement",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Drop",
+				"longdesc": "The proportion of instances that are removed at random",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "drop",
+				"shortdesc": "Drop",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Value random",
+				"longdesc": "The random darkening of instances",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "value_random",
+				"shortdesc": "Value random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Patterns",
+				"longdesc": "The number of pattern inputs that are used",
+				"max": 4.0,
+				"min": 1.0,
+				"name": "pattern_count",
+				"shortdesc": "Patterns",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Pattern selection",
+				"longdesc": "How the pattern of each instance is chosen",
+				"name": "pattern_mode",
+				"shortdesc": "Pattern selection",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Random",
+						"value": "0"
+					},
+					{
+						"name": "By map",
+						"value": "1"
+					},
+					{
+						"name": "Sequence",
+						"value": "2"
+					}
+				]
+			},
+			{
+				"default": 0,
+				"label": "Symmetry",
+				"longdesc": "Random symmetries applied to instances",
+				"name": "symmetry",
+				"shortdesc": "Symmetry",
+				"type": "enum",
+				"values": [
+					{
+						"name": "None",
+						"value": "0"
+					},
+					{
+						"name": "Random mirror X",
+						"value": "1"
+					},
+					{
+						"name": "Random mirror Y",
+						"value": "2"
+					},
+					{
+						"name": "Random mirror X and Y",
+						"value": "3"
+					},
+					{
+						"name": "Random 90 degree rotation",
+						"value": "4"
+					}
+				]
+			},
+			{
+				"default": 0,
+				"label": "Blend",
+				"longdesc": "How overlapping instances are combined. Height ordered shows the instance with the highest random height on top",
+				"name": "blend",
+				"shortdesc": "Blend",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Max",
+						"value": "0"
+					},
+					{
+						"name": "Height ordered",
+						"value": "1"
+					},
+					{
+						"name": "Alpha over",
+						"value": "2"
+					},
+					{
+						"name": "Add",
+						"value": "3"
+					}
+				]
+			}
+		],
+		"shortdesc": "Tile Sampler"
+	}
+}

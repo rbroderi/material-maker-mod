@@ -147,17 +147,33 @@ uniform vec4 background_color = vec4(0.0);
 uniform vec4 background_color_1 = vec4(0.0);
 uniform vec4 background_color_2 = vec4(1.0);
 uniform float checker_size = 32.0;
+uniform int channel = 0;
+uniform bool compare_enabled = false;
+uniform float compare_split = 0.5;
+uniform sampler2D compare_texture : filter_linear;
 
 void fragment() {
 	vec2 ratio = preview_2d_size;
 	vec2 uv = preview_2d_center+(UV-0.5)*preview_2d_scale*ratio/min(ratio.x, ratio.y);
-	if (mode == 2 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
+	if (compare_enabled && abs(UV.x-compare_split)*preview_2d_size.x < 1.0) {
+		COLOR = vec4(1.0, 0.8, 0.2, 1.0);
+	} else if (mode == 2 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
 		COLOR = background_color;
 	} else {
 		if (mode == 1) {
 			uv = fract(uv);
 		}
-		vec4 image = preview_2d_postprocessed(uv);
+		vec4 image;
+		if (compare_enabled && UV.x < compare_split) {
+			image = textureLod(compare_texture, fract(uv), 0.0);
+		} else {
+			image = preview_2d_postprocessed(uv);
+		}
+		if (channel >= 1 && channel <= 4) {
+			image = vec4(vec3(image[channel-1]), 1.0);
+		} else if (channel == 5) {
+			image = vec4(vec3(dot(image.rgb, vec3(0.2126, 0.7152, 0.0722))), 1.0);
+		}
 		float checkerboard = mod(floor(uv.x*checker_size)+floor(uv.y*checker_size), 2.0);
 		vec3 image_with_background = mix(mix(background_color_1, background_color_2, checkerboard).rgb, image.rgb, image.a);
 		COLOR = vec4(image_with_background, 1.0);

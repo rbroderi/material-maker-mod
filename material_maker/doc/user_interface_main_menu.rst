@@ -153,6 +153,9 @@ Tools menu
   definition (graphs and custom shaders saved in a library), and shows which ones are
   outdated (their library item changed since they were created) or were modified locally.
   Outdated nodes can be updated: their parameter values and connections are kept.
+  *Show changes* shows what updating the selected node would change: its output before and
+  after (rendered with unconnected inputs), and the differences of its definition (nodes,
+  connections, parameters, inputs, outputs, and shader code line by line).
 
 * *Add current brush to library* is only visible when the current
   project is a paint project. It first prompts for an item name. If a name is entered and

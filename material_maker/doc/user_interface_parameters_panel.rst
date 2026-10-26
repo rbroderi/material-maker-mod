@@ -7,6 +7,9 @@ and can be used to modify them.
 .. image:: images/parameters_panel.png
   :align: center
 
+Color pickers show swatches: click the **+** button of the swatches to add the current
+color. Swatches are shared by all color pickers and kept between sessions.
+
 Parameters whose label is written **Group::Label** are shown under a collapsible
 header. Click the header to show or hide the group's parameters.
 

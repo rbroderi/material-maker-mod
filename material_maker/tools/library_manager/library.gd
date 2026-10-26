@@ -106,6 +106,10 @@ func get_items(filter : String, disabled_sections : Array, aliased_items : Array
 					if not word in i.tree_item.to_lower():
 						include = false
 
+			if not include:
+				result_quality = max(fuzzy_quality(filter, i.display_name.to_lower()), fuzzy_quality(filter, i.tree_item.to_lower()))
+				include = result_quality > 0.0
+
 		if include:
 			var slash_pos = i.tree_item.find("/")
 			var section_name = i.tree_item.left(slash_pos) if slash_pos != -1 else i.tree_item
@@ -113,6 +117,48 @@ func get_items(filter : String, disabled_sections : Array, aliased_items : Array
 				array.push_back({ name=i.tree_item, item=i, icon=library_icons[i.tree_item], quality=result_quality})
 	return array
 
+
+## Fuzzy matching, for filters that match nothing exactly: returns a quality
+## (lower than exact matches) if each word of the filter is a word of the text
+## with at most one typo, or if the characters of the filter appear in order
+## in the text, and 0 otherwise
+static func fuzzy_quality(filter : String, text : String) -> float:
+	if filter.length() < 3:
+		return 0.0
+	var text_words : PackedStringArray = text.replace("/", " ").split(" ", false)
+	var all_words_match : bool = true
+	for word in filter.split(" ", false):
+		var found : bool = false
+		for text_word in text_words:
+			if word.length() >= 4 and (edit_distance(word, text_word) <= 1 or edit_distance(word, text_word.left(word.length())) <= 1):
+				found = true
+				break
+		if not found:
+			all_words_match = false
+			break
+	if all_words_match:
+		return 0.35
+	# Subsequence: the more compact the match, the better
+	var characters : String = filter.replace(" ", "")
+	var position : int = -1
+	var first : int = -1
+	for c in characters:
+		position = text.find(c, position+1)
+		if position == -1:
+			return 0.0
+		if first == -1:
+			first = position
+	return 0.1+0.2*float(characters.length())/float(position-first+1)
+
+## Levenshtein distance
+static func edit_distance(a : String, b : String) -> int:
+	var previous : PackedInt32Array = PackedInt32Array(range(b.length()+1))
+	for i in a.length():
+		var current : PackedInt32Array = PackedInt32Array([ i+1 ])
+		for j in b.length():
+			current.append(mini(mini(previous[j+1]+1, current[j]+1), previous[j]+(0 if a[i] == b[j] else 1)))
+		previous = current
+	return previous[b.length()]
 
 func generate_node_sections(node_sections : Dictionary) -> void:
 	for i in library_items:

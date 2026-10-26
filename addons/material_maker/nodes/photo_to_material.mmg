@@ -1,0 +1,212 @@
+{
+	"name": "photo_to_material",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"size": 10,
+		"radius": 0.05,
+		"delight": 1.0,
+		"height_contrast": 2.0,
+		"invert": false,
+		"normal_strength": 1.0,
+		"roughness_min": 0.4,
+		"roughness_max": 0.9,
+		"ao": 1.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(0.4+0.3*sin($uv.x*40.0)*sin($uv.y*40.0)+0.2*$uv.x), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The photo of a surface, ideally lit evenly from the front",
+				"name": "in",
+				"shortdesc": "Photo",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"float $(name)_luminance(vec2 uv) {",
+			"\treturn dot($in(uv).rgb, vec3(0.2126, 0.7152, 0.0722));",
+			"}",
+			"",
+			"// Average around uv, on two rings (large scale lighting)",
+			"vec3 $(name)_blur(vec2 uv, float radius) {",
+			"\tvec3 sum = $in(uv).rgb;",
+			"\tfor (int i = 0; i < 12; ++i) {",
+			"\t\tfloat a = float(i)*0.5235987756;",
+			"\t\tvec2 d = vec2(cos(a), sin(a))*radius;",
+			"\t\tsum += $in(fract(uv+d)).rgb+$in(fract(uv+0.5*d.yx)).rgb;",
+			"\t}",
+			"\treturn sum/25.0;",
+			"}",
+			"",
+			"vec3 $(name)_albedo(vec2 uv) {",
+			"\tvec3 c = $in(uv).rgb;",
+			"\tfloat lighting = dot($(name)_blur(uv, 2.0*$radius), vec3(0.2126, 0.7152, 0.0722));",
+			"\treturn clamp(mix(c, c*0.5/max(lighting, 0.01), $delight), vec3(0.0), vec3(1.0));",
+			"}",
+			"",
+			"float $(name)_height(vec2 uv) {",
+			"\tfloat detail = $(name)_luminance(uv)-dot($(name)_blur(uv, $radius), vec3(0.2126, 0.7152, 0.0722));",
+			"\tfloat h = clamp(0.5+$height_contrast*detail, 0.0, 1.0);",
+			"\treturn $invert ? 1.0-h : h;",
+			"}",
+			"",
+			"vec3 $(name)_normal(vec2 uv) {",
+			"\tfloat e = 1.0/$size;",
+			"\tfloat dx = ($(name)_height(fract(uv+vec2(e, 0.0)))-$(name)_height(fract(uv-vec2(e, 0.0))))*$size/16.0;",
+			"\tfloat dy = ($(name)_height(fract(uv+vec2(0.0, e)))-$(name)_height(fract(uv-vec2(0.0, e))))*$size/16.0;",
+			"\treturn mm_normal_encode(normalize(vec3($normal_strength*vec2(dx, dy), 1.0)));",
+			"}"
+		],
+		"longdesc": "Generates material maps from a single photo: a delit albedo, and height, normal, roughness and ambient occlusion maps estimated from its details",
+		"name": "Photo to Material",
+		"outputs": [
+			{
+				"rgb": "$(name)_albedo($uv)",
+				"longdesc": "The photo without large scale lighting variations",
+				"shortdesc": "Albedo",
+				"type": "rgb"
+			},
+			{
+				"f": "$(name)_height($uv)",
+				"longdesc": "The height estimated from the photo's details (bright is high)",
+				"shortdesc": "Height",
+				"type": "f"
+			},
+			{
+				"rgb": "$(name)_normal($uv)",
+				"longdesc": "A normal map computed from the height",
+				"shortdesc": "Normal",
+				"type": "rgb"
+			},
+			{
+				"f": "mix($roughness_min, $roughness_max, 1.0-$(name)_luminance($uv))",
+				"longdesc": "The roughness estimated from the brightness (bright, shiny areas are smoother)",
+				"shortdesc": "Roughness",
+				"type": "f"
+			},
+			{
+				"f": "clamp(1.0-2.0*$ao*max(0.5-$(name)_height($uv), 0.0), 0.0, 1.0)",
+				"longdesc": "The ambient occlusion estimated from the cavities of the height",
+				"shortdesc": "Ambient occlusion",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": 10,
+				"first": 4,
+				"label": "Size",
+				"last": 13,
+				"longdesc": "The resolution used for pixel based effects",
+				"name": "size",
+				"shortdesc": "Size",
+				"type": "size"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Detail radius",
+				"longdesc": "The size of the details that make the height; larger variations are considered lighting",
+				"max": 0.25,
+				"min": 0.005,
+				"name": "radius",
+				"shortdesc": "Detail radius",
+				"step": 0.005,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Delight",
+				"longdesc": "How much large scale lighting is removed from the albedo",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "delight",
+				"shortdesc": "Delight",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Height contrast",
+				"longdesc": "The contrast of the height map",
+				"max": 8.0,
+				"min": 0.0,
+				"name": "height_contrast",
+				"shortdesc": "Height contrast",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": false,
+				"label": "Invert height",
+				"longdesc": "Makes dark areas high instead of low",
+				"name": "invert",
+				"shortdesc": "Invert height",
+				"type": "boolean"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Normal strength",
+				"longdesc": "The strength of the normal map",
+				"max": 4.0,
+				"min": 0.0,
+				"name": "normal_strength",
+				"shortdesc": "Normal strength",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.4,
+				"label": "Roughness min",
+				"longdesc": "The roughness of the brightest areas",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "roughness_min",
+				"shortdesc": "Roughness min",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.9,
+				"label": "Roughness max",
+				"longdesc": "The roughness of the darkest areas",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "roughness_max",
+				"shortdesc": "Roughness max",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "AO strength",
+				"longdesc": "The strength of the ambient occlusion",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "ao",
+				"shortdesc": "AO strength",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Photo to Material",
+		"includes": [
+			"normal_normalize"
+		]
+	}
+}

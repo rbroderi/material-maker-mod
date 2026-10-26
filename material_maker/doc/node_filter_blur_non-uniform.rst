@@ -37,6 +37,9 @@ The **Non-Uniform Blur** node has the following parameters:
 * The number of *samples* taken for each pixel. More samples give a smoother result,
   but are slower.
 
+* The number of *blades* of the aperture: 0 gives a round blur, and 3 or more a polygonal
+  (bokeh) shape, whose orientation is the *blade rotation*.
+
 * Whether a *32 Bit* buffer is used to sample the input.
   Reduces banding artifacts but could result in higher video memory usage.
 

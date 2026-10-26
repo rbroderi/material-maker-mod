@@ -1,0 +1,120 @@
+{
+	"name": "weathering_water_level",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"level": 0.4,
+		"shore": 0.05,
+		"softness": 0.005,
+		"ripples": 0.2,
+		"noise_scale": 8.0
+	},
+	"shader_model": {
+		"code": "float $(name_uv)_h = $height($uv)+0.1*$ripples*(mm_weathering_fbm($uv, $noise_scale, 5, $seed)-0.5);\nfloat $(name_uv)_water = 1.0-smoothstep($level-$softness, $level+$softness+0.00001, $(name_uv)_h);\nfloat $(name_uv)_wet = 1.0-smoothstep($level, $level+$shore+0.00001, $(name_uv)_h);\nfloat $(name_uv)_depth = clamp(($level-$(name_uv)_h)/max($level, 0.0001), 0.0, 1.0);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "0.5+0.3*sin($uv.x*6.2832)*sin($uv.y*6.2832)",
+				"function": true,
+				"label": "",
+				"longdesc": "The height map",
+				"name": "height",
+				"shortdesc": "Height",
+				"type": "f"
+			}
+		],
+		"instance": [],
+		"longdesc": "Generates masks of water filling the low areas of a height map, of the wet band above it, and of the water's depth, with optional ripples",
+		"name": "Water Level",
+		"outputs": [
+			{
+				"f": "$(name_uv)_water",
+				"longdesc": "1 where the height is below the water level",
+				"shortdesc": "Water",
+				"type": "f"
+			},
+			{
+				"f": "$(name_uv)_wet",
+				"longdesc": "1 in the water and fading out in a band above it",
+				"shortdesc": "Wetness",
+				"type": "f"
+			},
+			{
+				"f": "$(name_uv)_depth",
+				"longdesc": "The depth of the water, relative to the level",
+				"shortdesc": "Depth",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.4,
+				"label": "Level",
+				"longdesc": "The height of the water surface",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "level",
+				"shortdesc": "Level",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Shore",
+				"longdesc": "The height of the wet band above the water",
+				"max": 0.5,
+				"min": 0.0,
+				"name": "shore",
+				"shortdesc": "Shore",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.005,
+				"label": "Softness",
+				"longdesc": "The softness of the water's edge",
+				"max": 0.1,
+				"min": 0.0,
+				"name": "softness",
+				"shortdesc": "Softness",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.2,
+				"label": "Ripples",
+				"longdesc": "How much noise perturbs the water's edge",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "ripples",
+				"shortdesc": "Ripples",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Noise scale",
+				"longdesc": "The scale of the noise",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "noise_scale",
+				"shortdesc": "Noise scale",
+				"step": 1.0,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Water Level",
+		"includes": [
+			"weathering_grunge"
+		]
+	}
+}

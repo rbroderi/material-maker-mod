@@ -43,6 +43,31 @@ The 2D preview panel has a context menu that can be used to:
 * select a post process filter (available filters are useful to create
   pixel art textures in different resolutions)
 
+* show a single channel (red, green, blue, alpha or luminance) as grayscale
+
+* show the values of the pixel under the mouse (with float precision)
+
+* take a snapshot of the preview and compare it with the current preview
+
+Inspecting outputs
+~~~~~~~~~~~~~~~~~~
+
+The **View** menu has tools to inspect the previewed output:
+
+* **Channel** shows one channel of the output as grayscale, which is useful to check
+  packed maps such as ORM textures.
+
+* **Show pixel values** shows the coordinates and the RGBA values of the pixel under
+  the mouse, read from a 1024x1024 float rendering of the output.
+
+* **Snapshot** keeps the current image, and **Compare** shows it left of a split that can
+  be dragged, with the current output on the right. Take a snapshot, then change parameters
+  (or preview another node) to compare before and after. Pixel values are read from the
+  snapshot on its side of the split.
+
+Previews can also be pinned (see above), and the **Repeat** view mode shows the output
+tiled, to check that it wraps correctly.
+
 Exporting animations
 ~~~~~~~~~~~~~~~~~~~~
 

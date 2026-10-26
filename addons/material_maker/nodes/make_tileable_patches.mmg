@@ -1,0 +1,119 @@
+{
+	"name": "make_tileable_patches",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"cells": 4.0,
+		"softness": 0.35,
+		"contrast": 1.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(fract(sin(dot(floor($uv*16.0), vec2(12.9898, 78.233)))*43758.5453)), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"// Average of the image (uv is unused, node functions need a parameter)",
+			"vec4 $(name)_mean(vec2 uv) {",
+			"\tvec4 sum = vec4(0.0);",
+			"\tfor (int y = 0; y < 4; ++y) {",
+			"\t\tfor (int x = 0; x < 4; ++x) {",
+			"\t\t\tvec2 sample_uv = (vec2(float(x), float(y))+vec2(0.5))/4.0;",
+			"\t\t\tsum += $in(sample_uv);",
+			"\t\t}",
+			"\t}",
+			"\treturn sum/16.0;",
+			"}",
+			"",
+			"vec4 $(name)_patches(vec2 uv) {",
+			"\tvec2 cells = vec2(max(floor($cells), 1.0));",
+			"\tvec2 p = uv*cells;",
+			"\tvec2 cell = floor(p);",
+			"\tvec4 sum = vec4(0.0);",
+			"\tfloat weight_sum = 0.0;",
+			"\tfloat weight2_sum = 0.0;",
+			"\tfor (int dy = -1; dy <= 1; ++dy) {",
+			"\t\tfor (int dx = -1; dx <= 1; ++dx) {",
+			"\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\tvec2 s = mod(c, cells)+vec2($seed*7.13, $seed*3.37);",
+			"\t\t\tvec2 center = c+vec2(0.5)+0.5*(vec2(rand(s+vec2(0.13, 0.71)), rand(s+vec2(1.97, 2.31)))-vec2(0.5));",
+			"\t\t\t// Each patch shows a random area of the image, away from its edges",
+			"\t\t\tvec2 source = mix(vec2(0.25), vec2(0.75), vec2(rand(s+vec2(3.71, 4.13)), rand(s+vec2(5.31, 6.97))));",
+			"\t\t\tvec2 d = p-center;",
+			"\t\t\tfloat w = exp(-dot(d, d)/(2.0*$softness*$softness));",
+			"\t\t\tvec2 source_uv = clamp(source+d/cells, vec2(0.0), vec2(1.0));",
+			"\t\t\tsum += w*$in(source_uv);",
+			"\t\t\tweight_sum += w;",
+			"\t\t\tweight2_sum += w*w;",
+			"\t\t}",
+			"\t}",
+			"\tvec4 average = sum/max(weight_sum, 0.000001);",
+			"\tvec4 mean = $(name)_mean(uv);",
+			"\tvec4 preserving = mean+(sum-weight_sum*mean)/sqrt(max(weight2_sum, 0.000001));",
+			"\treturn clamp(mix(average, preserving, $contrast), vec4(0.0), vec4(1.0));",
+			"}"
+		],
+		"longdesc": "Makes an image tileable by recombining random patches of it, blended with soft edges while keeping its contrast (works best on stochastic textures such as gravel, grass or noise)",
+		"name": "Patch Tiling",
+		"outputs": [
+			{
+				"rgba": "$(name)_patches($uv)",
+				"longdesc": "The tileable image",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 4.0,
+				"label": "Patches",
+				"longdesc": "The number of patches in each direction",
+				"max": 16.0,
+				"min": 2.0,
+				"name": "cells",
+				"shortdesc": "Patches",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.35,
+				"label": "Softness",
+				"longdesc": "The softness of the transitions between patches",
+				"max": 1.0,
+				"min": 0.05,
+				"name": "softness",
+				"shortdesc": "Softness",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Keep contrast",
+				"longdesc": "Keeps the contrast of the image where patches are blended (histogram preserving blending), instead of averaging them",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "contrast",
+				"shortdesc": "Keep contrast",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Patch Tiling"
+	}
+}

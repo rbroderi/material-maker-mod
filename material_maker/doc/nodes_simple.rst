@@ -24,3 +24,5 @@ The simple nodes are nodes that do not accept any input and generate one or seve
 	node_simple_sixteen_segment_display
 	node_simple_roman_numerals
 	node_simple_pixels
+	node_simple_spline_bridge
+	node_simple_ribbon

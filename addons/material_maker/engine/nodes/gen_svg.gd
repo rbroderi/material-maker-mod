@@ -25,8 +25,13 @@ func get_description() -> String:
 
 func get_parameter_defs() -> Array:
 	return [
+		{ name="source", type="enum", label="Source", default=0,
+			values=[ { name="Path data", value="path" }, { name="Shape (edit in 2D preview)", value="shape" }, { name="File", value="file" } ],
+			longdesc="What is rendered: the path data, the shape (a polygon edited in the 2D preview), or the SVG file" },
 		{ name="file", type="file", label="SVG file", filters=[ "*.svg;SVG file" ], default="",
-			longdesc="An SVG file, used when the path data is empty" },
+			longdesc="An SVG file, used with the File source, or when the path data is empty" },
+		{ name="shape", type="polygon", label="Shape", default={ type="Polygon", points=[ { x=0.5, y=0.1 }, { x=0.9, y=0.85 }, { x=0.1, y=0.85 } ] },
+			longdesc="A polygon, edited in the 2D preview, used with the Shape source" },
 		{ name="path", type="string", label="Path data", default="M 50 10 L 61 39 L 92 39 L 67 58 L 76 88 L 50 70 L 24 88 L 33 58 L 8 39 L 39 39 Z",
 			longdesc="SVG path data (the d attribute of an SVG path) on a 100x100 canvas, e.g. M 10 10 L 90 10 L 50 90 Z" },
 		{ name="fill", type="color", label="Fill", default=Color(1.0, 1.0, 1.0, 1.0), longdesc="The fill color of the path" },
@@ -47,7 +52,8 @@ static func color_to_svg(c : Color) -> String:
 
 ## The SVG document that is rendered
 func get_svg() -> String:
-	var path : String = get_parameter("path")
+	var source : int = int(get_parameter("source"))
+	var path : String = get_parameter("path") if source == 0 else (get_shape_path() if source == 1 else "")
 	if path.strip_edges() == "":
 		var file_name : String = get_parameter("file")
 		if file_name == "" or not FileAccess.file_exists(file_name):
@@ -59,6 +65,19 @@ func get_svg() -> String:
 	if get_parameter("stroke_width") > 0.0 and stroke.a > 0.0:
 		stroke_attributes = " stroke=\"#%s\" stroke-opacity=\"%f\" stroke-width=\"%f\"" % [ stroke.to_html(false), stroke.a, get_parameter("stroke_width") ]
 	return "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\" viewBox=\"0 0 100 100\"><path d=\"%s\" %s%s/></svg>" % [ path.xml_escape(), color_to_svg(fill), stroke_attributes ]
+
+## SVG path data of the shape parameter, on the 100x100 canvas
+func get_shape_path() -> String:
+	var shape = get_parameter("shape")
+	if shape is Dictionary:
+		shape = MMType.deserialize_value(shape)
+	if not shape is MMPolygon or shape.points.size() < 2:
+		return ""
+	var commands : PackedStringArray = PackedStringArray()
+	for i in shape.points.size():
+		commands.append("%s %f %f" % [ "M" if i == 0 else "L", 100.0*shape.points[i].x, 100.0*shape.points[i].y ])
+	commands.append("Z")
+	return " ".join(commands)
 
 func update_texture() -> void:
 	update_pending = false

@@ -66,6 +66,40 @@ var checker_brightness: int = 1:
 		material.set_shader_parameter("background_color_2", color_b)
 		mm_globals.set_config("preview"+config_var_suffix+"_checker_brightness", checker_brightness)
 
+## Channel isolation: 0 = RGBA, 1-4 = R, G, B, A, 5 = luminance
+const CHANNEL_OPTIONS : Array[String] = [ "RGBA", "Red", "Green", "Blue", "Alpha", "Luminance" ]
+var channel : int = 0:
+	set(v):
+		channel = v
+		material.set_shader_parameter("channel", channel)
+
+## Side-by-side compare with a snapshot (left of the split)
+var snapshot : Texture2D = null
+var snapshot_image : Image = null
+var compare_enabled : bool = false:
+	set(v):
+		compare_enabled = v and snapshot != null
+		material.set_shader_parameter("compare_enabled", compare_enabled)
+		queue_redraw()
+var compare_split : float = 0.5:
+	set(v):
+		compare_split = clampf(v, 0.0, 1.0)
+		material.set_shader_parameter("compare_split", compare_split)
+var dragging_split : bool = false
+
+## Pixel values under the mouse, read from a float render of the output
+const PIXEL_PICK_SIZE : int = 1024
+var show_pixel_values : bool = false:
+	set(v):
+		show_pixel_values = v
+		pixel_image = null
+		if pixel_label != null:
+			pixel_label.visible = v
+var pixel_image : Image = null
+var pixel_image_rendering : bool = false
+var pixel_label : Label = null
+var pixel_position : Vector2
+
 const POSTPROCESS_OPTIONS : Array = [
 	{ name="None", function="preview_2d(uv)" },
 	{ name="Lowres 32x32", function="preview_2d((floor(uv*32.0)+vec2(0.5))/32.0)" },
@@ -110,6 +144,18 @@ func _notification(what: int) -> void:
 
 func clear() -> void:
 	set_generator(null)
+	if pixel_label == null:
+		pixel_label = Label.new()
+		pixel_label.name = "PixelValues"
+		pixel_label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		var style : StyleBoxFlat = StyleBoxFlat.new()
+		style.bg_color = Color(0.0, 0.0, 0.0, 0.6)
+		style.set_content_margin_all(4)
+		pixel_label.add_theme_stylebox_override("normal", style)
+		pixel_label.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_LEFT)
+		pixel_label.grow_vertical = Control.GROW_DIRECTION_BEGIN
+		pixel_label.visible = false
+		add_child(pixel_label)
 	%PreviewLocked.button_pressed = false
 
 	%PreviewLocked.visible = false
@@ -127,6 +173,7 @@ func get_shader_custom_functions():
 
 func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 	super.set_generator(g, o, force)
+	pixel_image = null
 	update_shader_options()
 
 	%PreviewLocked.visible = g != null and preview_mode != Modes.CUSTOM_PREVIEW
@@ -149,6 +196,11 @@ func update_material(source):
 			color.call(CHECKER_BRIGHTNESS_OPTIONS[checker_brightness][1]))
 	
 	material.set_shader_parameter("checker_size", CHECKER_SIZE_OPTIONS[checker_size])
+	material.set_shader_parameter("channel", channel)
+	material.set_shader_parameter("compare_enabled", compare_enabled)
+	material.set_shader_parameter("compare_split", compare_split)
+	if snapshot != null:
+		material.set_shader_parameter("compare_texture", snapshot)
 	if view_transform != "":
 		material.set_shader_parameter("mm_ocio_lut", MMColorManagement.get_view_lut(view_transform))
 
@@ -158,6 +210,7 @@ func set_preview_shader_parameter(parameter_name, value):
 
 func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
 	super.on_dep_update_value(buffer_name, parameter_name, value)
+	pixel_image = null
 	return false
 
 
@@ -282,7 +335,77 @@ func _input(event):
 	if event.is_pressed():
 		mm_globals.propagate_shortcuts(self, event)
 
+func on_parameter_changed(n : String, v) -> void:
+	super.on_parameter_changed(n, v)
+	pixel_image = null
+
+## Renders the current output into a snapshot, shown left of the split when
+## comparing
+func take_snapshot() -> void:
+	if generator == null:
+		return
+	snapshot_image = await render_output_image()
+	snapshot = ImageTexture.create_from_image(snapshot_image)
+	material.set_shader_parameter("compare_texture", snapshot)
+	compare_enabled = true
+
+## Renders the current output with float precision, once the buffers it
+## depends on are rendered
+func render_output_image() -> Image:
+	generator.get_shader_code("uv", output, MMGenContext.new())
+	await MMCliTools.wait_for_renders(get_tree())
+	var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(PIXEL_PICK_SIZE, PIXEL_PICK_SIZE))
+	return (await texture.get_texture()).get_image()
+
+## UV of a position in the preview
+func pos_to_uv(pos : Vector2) -> Vector2:
+	var uv : Vector2 = pos_to_value(pos)+Vector2(0.5, 0.5)
+	if view_mode == 1:
+		uv = Vector2(fposmod(uv.x, 1.0), fposmod(uv.y, 1.0))
+	return uv
+
+func update_pixel_values(pos : Vector2) -> void:
+	pixel_position = pos
+	var uv : Vector2 = pos_to_uv(pos)
+	if uv.x < 0.0 or uv.x >= 1.0 or uv.y < 0.0 or uv.y >= 1.0 or generator == null:
+		pixel_label.text = ""
+		pixel_label.visible = false
+		return
+	pixel_label.visible = true
+	var from_snapshot : bool = compare_enabled and pos.x < compare_split*size.x
+	var image : Image = snapshot_image if from_snapshot else pixel_image
+	if image == null:
+		pixel_label.text = "Reading values..."
+		if not pixel_image_rendering:
+			pixel_image_rendering = true
+			pixel_image = await render_output_image()
+			pixel_image_rendering = false
+			update_pixel_values(pixel_position)
+		return
+	var pixel : Vector2i = Vector2i(uv*Vector2(image.get_size()))
+	var c : Color = image.get_pixelv(pixel)
+	pixel_label.text = "%s(%d, %d)\nR %.4f  G %.4f\nB %.4f  A %.4f" % [ "Snapshot " if from_snapshot else "", pixel.x, pixel.y, c.r, c.g, c.b, c.a ]
+
 func _on_gui_input(event):
+	if compare_enabled:
+		# The split between the snapshot and the current output can be dragged
+		if event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
+			if event.pressed and abs(event.position.x-compare_split*size.x) < 6.0:
+				dragging_split = true
+				accept_event()
+				return
+			elif not event.pressed and dragging_split:
+				dragging_split = false
+				accept_event()
+				return
+		elif event is InputEventMouseMotion:
+			if dragging_split:
+				compare_split = event.position.x/size.x
+				accept_event()
+				return
+			mouse_default_cursor_shape = Control.CURSOR_HSIZE if abs(event.position.x-compare_split*size.x) < 6.0 else Control.CURSOR_ARROW
+	if show_pixel_values and event is InputEventMouseMotion:
+		update_pixel_values(event.position)
 	var need_update : bool = false
 	var new_center : Vector2 = center
 	var multiplier : float = min(size.x, size.y)

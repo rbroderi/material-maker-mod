@@ -597,6 +597,13 @@ func should_auto_buffer(index : int, source_cost : float, sample_count : float) 
 	var inputs : Array = shader_model_preprocessed.get("inputs", [])
 	if index >= inputs.size() or not inputs[index].type in AUTO_BUFFER_TYPES:
 		return false
+	# Buffers can only store sources of these types (not for example the
+	# fill data of Fill nodes, that is converted where it is sampled)
+	var source : OutputPort = get_source(index)
+	if source != null:
+		var output_defs : Array = source.generator.get_output_defs()
+		if source.output_index < output_defs.size() and not output_defs[source.output_index].get("type", "rgba") in AUTO_BUFFER_TYPES:
+			return false
 	match get_buffer_pin(index):
 		"always":
 			return true

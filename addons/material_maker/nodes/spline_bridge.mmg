@@ -1,0 +1,258 @@
+{
+	"name": "spline_bridge",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"curve_a": {
+			"points": [
+				{
+					"x": 0.1,
+					"y": 0.25
+				},
+				{
+					"x": 0.35,
+					"y": 0.1
+				},
+				{
+					"x": 0.65,
+					"y": 0.3
+				},
+				{
+					"x": 0.9,
+					"y": 0.15
+				}
+			],
+			"type": "Polygon"
+		},
+		"curve_b": {
+			"points": [
+				{
+					"x": 0.1,
+					"y": 0.75
+				},
+				{
+					"x": 0.35,
+					"y": 0.9
+				},
+				{
+					"x": 0.65,
+					"y": 0.7
+				},
+				{
+					"x": 0.9,
+					"y": 0.85
+				}
+			],
+			"type": "Polygon"
+		},
+		"repeat_x": 4.0,
+		"repeat_y": 1.0,
+		"steps": 64.0
+	},
+	"shader_model": {
+		"code": "vec4 $(name_uv)_b = $(name)_bridge($uv);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(0.25+0.75*mod(floor($uv.x*8.0)+floor($uv.y*2.0), 2.0)), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern mapped between the curves",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec2 $(name)_a(float t) {",
+			"\tvec2 v[] = $curve_a;",
+			"\tint l = v.length();",
+			"\tif (l < 2) {",
+			"\t\treturn v[0];",
+			"\t}",
+			"\tfloat x = clamp(t, 0.0, 1.0)*float(l-1);",
+			"\tint i = min(int(x), l-2);",
+			"\treturn mix(v[i], v[i+1], x-float(i));",
+			"}",
+			"",
+			"vec2 $(name)_b(float t) {",
+			"\tvec2 v[] = $curve_b;",
+			"\tint l = v.length();",
+			"\tif (l < 2) {",
+			"\t\treturn v[0];",
+			"\t}",
+			"\tfloat x = clamp(t, 0.0, 1.0)*float(l-1);",
+			"\tint i = min(int(x), l-2);",
+			"\treturn mix(v[i], v[i+1], x-float(i));",
+			"}",
+			"",
+			"// Distance from uv to the segment between the curves at t: (s, distance)",
+			"vec2 $(name)_segment(vec2 uv, float t) {",
+			"\tvec2 a = $(name)_a(t);",
+			"\tvec2 ab = $(name)_b(t)-a;",
+			"\tfloat s = clamp(dot(uv-a, ab)/max(dot(ab, ab), 0.00000001), 0.0, 1.0);",
+			"\treturn vec2(s, length(uv-a-s*ab));",
+			"}",
+			"",
+			"// (t along the curves, s between them, distance, mask)",
+			"vec4 $(name)_bridge(vec2 uv) {",
+			"\tint steps = clamp(int($steps), 2, 256);",
+			"\tfloat best_t = 0.0;",
+			"\tvec2 best = vec2(0.0, 1000000.0);",
+			"\tfor (int k = 0; k <= 256; ++k) {",
+			"\t\tif (k > steps) {",
+			"\t\t\tbreak;",
+			"\t\t}",
+			"\t\tfloat t = float(k)/float(steps);",
+			"\t\tvec2 d = $(name)_segment(uv, t);",
+			"\t\tif (d.y < best.y) {",
+			"\t\t\tbest = d;",
+			"\t\t\tbest_t = t;",
+			"\t\t}",
+			"\t}",
+			"\t// Refine around the best step",
+			"\tfloat dt = 1.0/float(steps);",
+			"\tfor (int k = 0; k < 10; ++k) {",
+			"\t\tdt *= 0.5;",
+			"\t\tfor (int side = -1; side <= 1; side += 2) {",
+			"\t\t\tfloat t = clamp(best_t+float(side)*dt, 0.0, 1.0);",
+			"\t\t\tvec2 d = $(name)_segment(uv, t);",
+			"\t\t\tif (d.y < best.y) {",
+			"\t\t\t\tbest = d;",
+			"\t\t\t\tbest_t = t;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn vec4(best_t, best.x, best.y, 1.0-smoothstep(0.0005, 0.0015, best.y));",
+			"}",
+			"",
+			"vec4 $(name)_output(vec2 uv) {",
+			"\tvec4 b = $(name)_bridge(uv);",
+			"\tvec2 pattern_uv = fract(vec2(b.x*$repeat_x, b.y*$repeat_y));",
+			"\tvec4 c = $in(pattern_uv);",
+			"\treturn vec4(c.rgb, c.a*b.w);",
+			"}"
+		],
+		"longdesc": "Fills the area between two curves, and maps a pattern on it: its x axis goes along the curves, and its y axis from the first curve to the second",
+		"name": "Spline Bridge",
+		"outputs": [
+			{
+				"rgba": "$(name)_output($uv)",
+				"longdesc": "The pattern mapped between the curves",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"rgb": "vec3($(name_uv)_b.xy, $(name_uv)_b.w)",
+				"longdesc": "The coordinates between the curves (red along them, green across) and the mask (blue)",
+				"shortdesc": "UV",
+				"type": "rgb"
+			},
+			{
+				"f": "$(name_uv)_b.w",
+				"longdesc": "The area between the curves",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"points": [
+						{
+							"x": 0.1,
+							"y": 0.25
+						},
+						{
+							"x": 0.35,
+							"y": 0.1
+						},
+						{
+							"x": 0.65,
+							"y": 0.3
+						},
+						{
+							"x": 0.9,
+							"y": 0.15
+						}
+					],
+					"type": "Polygon"
+				},
+				"label": "First curve",
+				"longdesc": "The first curve, edited in the 2D preview",
+				"name": "curve_a",
+				"shortdesc": "First curve",
+				"type": "polyline"
+			},
+			{
+				"default": {
+					"points": [
+						{
+							"x": 0.1,
+							"y": 0.75
+						},
+						{
+							"x": 0.35,
+							"y": 0.9
+						},
+						{
+							"x": 0.65,
+							"y": 0.7
+						},
+						{
+							"x": 0.9,
+							"y": 0.85
+						}
+					],
+					"type": "Polygon"
+				},
+				"label": "Second curve",
+				"longdesc": "The second curve, edited in the 2D preview",
+				"name": "curve_b",
+				"shortdesc": "Second curve",
+				"type": "polyline"
+			},
+			{
+				"control": "None",
+				"default": 4.0,
+				"label": "Repeat X",
+				"longdesc": "The number of repetitions of the pattern along the curves",
+				"max": 32.0,
+				"min": 1.0,
+				"name": "repeat_x",
+				"shortdesc": "Repeat X",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Repeat Y",
+				"longdesc": "The number of repetitions of the pattern between the curves",
+				"max": 32.0,
+				"min": 1.0,
+				"name": "repeat_y",
+				"shortdesc": "Repeat Y",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 64.0,
+				"label": "Precision",
+				"longdesc": "The number of steps used to find each pixel's position between the curves",
+				"max": 256.0,
+				"min": 8.0,
+				"name": "steps",
+				"shortdesc": "Precision",
+				"step": 1.0,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Spline Bridge"
+	}
+}

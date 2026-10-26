@@ -1,0 +1,235 @@
+{
+	"name": "spline_ribbon",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"curve": {
+			"points": [
+				{
+					"x": 0.1,
+					"y": 0.5
+				},
+				{
+					"x": 0.3,
+					"y": 0.2
+				},
+				{
+					"x": 0.6,
+					"y": 0.8
+				},
+				{
+					"x": 0.9,
+					"y": 0.5
+				}
+			],
+			"type": "Polygon"
+		},
+		"width": 0.05,
+		"taper_start": 0.0,
+		"taper_end": 0.0,
+		"twist": 0.0,
+		"repeat": 4.0
+	},
+	"shader_model": {
+		"code": "vec4 $(name_uv)_r = $(name)_ribbon($uv);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(0.6+0.4*step(0.5, fract($uv.x*2.0)))*(1.0-0.6*abs(2.0*$uv.y-1.0)), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern mapped along the ribbon (x along it, y across it)",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "rgba"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Multiplies the width along the ribbon (its x coordinate goes from 0 at the start to 1 at the end)",
+				"name": "width_map",
+				"shortdesc": "Width map",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"vec2 $(name)_catmull_rom(vec2 p0, vec2 p1, vec2 p2, vec2 p3, float t) {",
+			"\treturn 0.5*(2.0*p1+(p2-p0)*t+(2.0*p0-5.0*p1+4.0*p2-p3)*t*t+(3.0*p1-p0-3.0*p2+p3)*t*t*t);",
+			"}",
+			"",
+			"// (u along the ribbon, v across it, mask, length)",
+			"vec4 $(name)_ribbon(vec2 uv) {",
+			"\tvec2 v[] = $curve;",
+			"\tint l = v.length();",
+			"\tconst int SUBDIVISIONS = 12;",
+			"\t// Length of the curve",
+			"\tfloat total = 0.0;",
+			"\tvec2 previous = v[0];",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\tfor (int j = 1; j <= SUBDIVISIONS; ++j) {",
+			"\t\t\tvec2 p = $(name)_catmull_rom(v[max(i-1, 0)], v[i], v[i+1], v[min(i+2, l-1)], float(j)/float(SUBDIVISIONS));",
+			"\t\t\ttotal += length(p-previous);",
+			"\t\t\tprevious = p;",
+			"\t\t}",
+			"\t}",
+			"\t// Closest point, with its signed distance",
+			"\tfloat along = 0.0;",
+			"\tfloat best_distance = 1000000.0;",
+			"\tfloat best_u = 0.0;",
+			"\tfloat best_side = 0.0;",
+			"\tbool beyond_end = false;",
+			"\tprevious = v[0];",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\tfor (int j = 1; j <= SUBDIVISIONS; ++j) {",
+			"\t\t\tvec2 p = $(name)_catmull_rom(v[max(i-1, 0)], v[i], v[i+1], v[min(i+2, l-1)], float(j)/float(SUBDIVISIONS));",
+			"\t\t\tvec2 segment = p-previous;",
+			"\t\t\tfloat segment_length = length(segment);",
+			"\t\t\tfloat raw_s = dot(uv-previous, segment)/max(segment_length*segment_length, 0.00000001);",
+			"\t\t\tfloat s = clamp(raw_s, 0.0, 1.0);",
+			"\t\t\tvec2 d = uv-previous-s*segment;",
+			"\t\t\tfloat distance = length(d);",
+			"\t\t\tif (distance < best_distance) {",
+			"\t\t\t\tbest_distance = distance;",
+			"\t\t\t\tbest_u = (along+s*segment_length)/max(total, 0.00000001);",
+			"\t\t\t\tbest_side = sign(segment.x*d.y-segment.y*d.x);",
+			"\t\t\t\tbeyond_end = (i == 0 && j == 1 && raw_s < 0.0) || (i == l-2 && j == SUBDIVISIONS && raw_s > 1.0);",
+			"\t\t\t}",
+			"\t\t\talong += segment_length;",
+			"\t\t\tprevious = p;",
+			"\t\t}",
+			"\t}",
+			"\tfloat twist = cos(3.14159265*$twist*best_u);",
+			"\tvec2 width_uv = vec2(best_u, 0.5);",
+			"\tfloat width = $width*$width_map(width_uv)*(1.0-$taper_start*(1.0-best_u))*(1.0-$taper_end*best_u)*abs(twist);",
+			"\tfloat across = best_side*best_distance/max(width, 0.00001)*sign(twist+0.000001);",
+			"\tfloat mask = (beyond_end || abs(across) > 1.0) ? 0.0 : 1.0;",
+			"\treturn vec4(best_u, 0.5+0.5*across, mask, total);",
+			"}",
+			"",
+			"vec4 $(name)_output(vec2 uv) {",
+			"\tvec4 r = $(name)_ribbon(uv);",
+			"\tvec2 pattern_uv = vec2(fract(r.x*$repeat), clamp(r.y, 0.0, 1.0));",
+			"\tvec4 c = $in(pattern_uv);",
+			"\treturn vec4(c.rgb, c.a*r.z);",
+			"}"
+		],
+		"longdesc": "Draws a ribbon along a smooth curve, with tapering and twisting, and maps a pattern along it (which also warps an image along the curve)",
+		"name": "Ribbon",
+		"outputs": [
+			{
+				"rgba": "$(name)_output($uv)",
+				"longdesc": "The ribbon",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"rgb": "$(name_uv)_r.xyz",
+				"longdesc": "The ribbon's coordinates (red along it, green across) and its mask (blue)",
+				"shortdesc": "UV",
+				"type": "rgb"
+			},
+			{
+				"f": "$(name_uv)_r.z",
+				"longdesc": "The ribbon's mask",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"points": [
+						{
+							"x": 0.1,
+							"y": 0.5
+						},
+						{
+							"x": 0.3,
+							"y": 0.2
+						},
+						{
+							"x": 0.6,
+							"y": 0.8
+						},
+						{
+							"x": 0.9,
+							"y": 0.5
+						}
+					],
+					"type": "Polygon"
+				},
+				"label": "Curve",
+				"longdesc": "The curve, edited in the 2D preview. It goes smoothly through its points",
+				"name": "curve",
+				"shortdesc": "Curve",
+				"type": "polyline"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Width",
+				"longdesc": "The half width of the ribbon",
+				"max": 0.5,
+				"min": 0.0,
+				"name": "width",
+				"shortdesc": "Width",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Taper start",
+				"longdesc": "How much the ribbon narrows at its start",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "taper_start",
+				"shortdesc": "Taper start",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Taper end",
+				"longdesc": "How much the ribbon narrows at its end",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "taper_end",
+				"shortdesc": "Taper end",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Twist",
+				"longdesc": "The number of half turns of the ribbon along the curve",
+				"max": 16.0,
+				"min": 0.0,
+				"name": "twist",
+				"shortdesc": "Twist",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 4.0,
+				"label": "Repeat",
+				"longdesc": "The number of repetitions of the pattern along the ribbon",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "repeat",
+				"shortdesc": "Repeat",
+				"step": 1.0,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Ribbon"
+	}
+}

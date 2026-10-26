@@ -89,3 +89,6 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_weathering_dust
 	node_filter_bitmap_delight
 	node_filter_bitmap_clone_patch
+	node_filter_weathering_water_level
+	node_filter_bitmap_patch_tiling
+	node_filter_bitmap_photo_to_material

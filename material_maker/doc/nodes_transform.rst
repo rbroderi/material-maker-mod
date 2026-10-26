@@ -37,3 +37,6 @@ The transform nodes are nodes that affect the geometry of their input.
 	node_transform_atlas_splitter
 	node_transform_atlas_creator
 	node_transform_atlas_scatter
+	node_transform_tile_sampler
+	node_transform_atlas_islands
+	node_transform_atlas_island_scatter

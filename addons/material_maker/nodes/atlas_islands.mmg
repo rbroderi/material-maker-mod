@@ -1,0 +1,149 @@
+{
+	"name": "atlas_islands",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"pick_x": 0.25,
+		"pick_y": 0.25,
+		"margin": 0.05,
+		"rotate": 1
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "The atlas: separate items on a background",
+				"name": "atlas",
+				"shortdesc": "Atlas",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The output of a Fill node that finds the atlas items: its input must be white between the items (for example the inverted alpha of the atlas)",
+				"name": "fill",
+				"shortdesc": "Fill",
+				"type": "fill"
+			}
+		],
+		"instance": [
+			"// Maps uv in the output square to the island's bounding box bb (from a",
+			"// Fill node: corner and size), keeping its aspect ratio, optionally rotated",
+			"// so its long side is horizontal. Returns -1 outside of the island's box",
+			"vec2 $(name)_fit(vec2 uv, vec4 bb, bool rotate) {",
+			"\tvec2 size = rotate ? bb.wz : bb.zw;",
+			"\tvec2 q = uv;",
+			"\tif (size.x > size.y) {",
+			"\t\tq.y = (q.y-0.5)*size.x/size.y+0.5;",
+			"\t} else {",
+			"\t\tq.x = (q.x-0.5)*size.y/size.x+0.5;",
+			"\t}",
+			"\tif (any(lessThan(q, vec2(0.0))) || any(greaterThan(q, vec2(1.0)))) {",
+			"\t\treturn vec2(-1.0);",
+			"\t}",
+			"\tif (rotate) {",
+			"\t\tq = vec2(q.y, 1.0-q.x);",
+			"\t}",
+			"\treturn fract(bb.xy+q*bb.zw);",
+			"}",
+			"",
+			"// The atlas at p if p belongs to the island bb",
+			"vec4 $(name)_island_color(vec2 p, vec4 bb) {",
+			"\tif (p.x < 0.0 || length($fill(p)-bb) > 0.001) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\treturn $atlas(p);",
+			"}",
+			"",
+			"vec4 $(name)_extract(vec2 uv) {",
+			"\tvec2 pick = vec2($pick_x, $pick_y);",
+			"\tvec4 bb = $fill(pick);",
+			"\tif (bb.z <= 0.0 || bb.w <= 0.0) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\tbool rotate = $rotate == 2 || ($rotate == 1 && bb.w > bb.z);",
+			"\treturn $(name)_island_color($(name)_fit((uv-vec2(0.5))/(1.0-2.0*$margin)+vec2(0.5), bb, rotate), bb);",
+			"}"
+		],
+		"longdesc": "Extracts an item of an atlas whose items are not on a grid (found by a Fill node), scaled to fit the output",
+		"name": "Atlas Islands",
+		"outputs": [
+			{
+				"rgba": "$(name)_extract($uv)",
+				"longdesc": "The extracted item",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.25,
+				"label": "Pick X",
+				"longdesc": "A point of the item to extract",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "pick_x",
+				"shortdesc": "Pick X",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.25,
+				"label": "Pick Y",
+				"longdesc": "A point of the item to extract",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "pick_y",
+				"shortdesc": "Pick Y",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Margin",
+				"longdesc": "The margin around the item",
+				"max": 0.25,
+				"min": 0.0,
+				"name": "margin",
+				"shortdesc": "Margin",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 1,
+				"label": "Rotate to fit",
+				"longdesc": "Rotates items by a quarter turn so they fit the output better",
+				"name": "rotate",
+				"shortdesc": "Rotate to fit",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Never",
+						"value": "0"
+					},
+					{
+						"name": "If taller than wide",
+						"value": "1"
+					},
+					{
+						"name": "Always",
+						"value": "2"
+					}
+				]
+			}
+		],
+		"shortdesc": "Atlas Islands"
+	}
+}
