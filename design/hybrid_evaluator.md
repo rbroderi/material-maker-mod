@@ -60,10 +60,32 @@ Costs are rough per-pixel estimates in "function calls" (`MMGenShader`):
   - buffer when `samples × cost ≥ min_gain × (samples × fetch + cost + overhead)`
     (sampling repeatedly costs much more than rendering once and sampling the result);
   - otherwise buffer when `cost > shader_budget` (**shader splitting**, milestone 4).
+  - never for sources that are already textures, nor for inputs read through their
+    attributes (`$in.texture`, `$in.size`), which name the source's own texture.
 
 Calibration on the bundled examples: typical material inputs cost 200–4000 units; the
 largest (raymarching, pile of bricks, donuts) 10 000–380 000. The Normal Map node samples
 its input 8 times; in *stylized_wall* that is 26 000 inlined vs ~3 300 buffered.
+
+**Weights, measured (2026-10-26)** on a Radeon 780M (integrated, so bandwidth limited):
+130 library nodes were rendered alone at 1024² and 4096², and the difference gives the
+per-pixel GPU time of each, without the fixed cost of a pass. A buffer sampled K times
+gives the cost of a fetch.
+
+| Measure | Per pixel | In cost units |
+|---|---|---|
+| One function call (slope of time vs estimated cost) | ~0.0005 ns | 1 |
+| A texture fetch of a nearby texel | ~0.024 ns | 48 (`COST_TEXTURE_FETCH`, was 1) |
+| Writing a pixel of a pass (any node, even a constant) | ~2.5 ns | ~5 000 (`COST_BUFFER_OVERHEAD`, was 16) |
+
+Memory traffic dominates: a cheap node costs as much as an expensive one per pixel, so a
+buffer only pays off when the inlined work is large (about 10 000 units or more). The
+estimated node cost only roughly predicts arithmetic time (rank correlation 0.27; the
+slowest nodes are the splatters and FX-Maps, whose loops are underestimated). Scattered
+fetches cost much more than nearby ones (64 fetches spread over the image: about 8 times
+the linear estimate), which the model does not distinguish. Discrete GPUs have more
+bandwidth, which lowers the real overhead; *min gain* in the preferences adjusts for it.
+The harness is `test/calibration/calibrate_costs.gd` and `fit_costs.py`.
 
 **Resolution**: the consumer's own `size` parameter when it has one (e.g. the Material
 node's output size, or a library filter's grid size), otherwise `auto_buffer_size`.
@@ -102,7 +124,9 @@ Measured: editing a node upstream of a buffered input caused 0 downstream regene
   The change is undoable (`set_connection_buffer` undo action).
 - **Markers** are drawn on top of the graph (`graph_edit.gd`, overlay control): blue "B"
   for an automatic buffer, orange "B" for a pinned buffer, grey "–" for "never".
-- Limitation: pins are not carried over when nodes are grouped into a subgraph.
+- Grouping nodes into a subgraph keeps pins: on a connection that crosses the subgraph's
+  boundary, the pin moves to the new connection that feeds the reading node (inside the
+  subgraph from `gen_inputs`, or outside from the subgraph).
 
 ## GPU memory budget (milestone 5)
 
@@ -143,6 +167,7 @@ everywhere.
 
 ## Possible follow-ups
 
-- Use measured render times (`rendering_time`) to calibrate the cost weights.
-- Carry pins over when grouping nodes; show the estimated cost in node tooltips.
+- Estimate loop costs better (parameter-driven loops in splatters and FX-Maps), and
+  distinguish scattered from nearby fetches.
+- Show the estimated cost in node tooltips.
 - Count the CPU-side `ImageTexture` copies in the memory budget.

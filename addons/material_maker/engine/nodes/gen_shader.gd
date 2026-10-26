@@ -498,10 +498,16 @@ func generate_parameter_declarations(rv : ShaderCode) -> void:
 #
 # Automatic buffers (see design/hybrid_evaluator.md)
 #
-# Costs are rough estimates of GPU work per pixel, in "function calls"
+# Costs are rough estimates of GPU work per pixel, in "function calls".
+# The weights of texture fetches and buffers were calibrated against measured
+# GPU times of 130 library nodes rendered at 1024 and 4096 (2026-10-26, Radeon
+# 780M): a function call costs about 0.0005 ns per pixel, a texture fetch of a
+# nearby texel about 0.024 ns, and writing each pixel of a pass (the overhead
+# of a buffer) about 2.5 ns, so memory traffic dominates. See
+# design/hybrid_evaluator.md.
 
-const COST_TEXTURE_FETCH : float = 1.0
-const COST_BUFFER_OVERHEAD : float = 16.0
+const COST_TEXTURE_FETCH : float = 48.0
+const COST_BUFFER_OVERHEAD : float = 5000.0
 const COST_OTHER_GENERATOR : float = 10.0
 const DEFAULT_LOOP_ITERATIONS : float = 16.0
 
@@ -593,6 +599,15 @@ func get_buffer_pin(index : int) -> String:
 
 ## Decides whether an input should be sampled through an automatic buffer,
 ## given the estimated cost of its source and how many times it is sampled
+## Returns true if the node's code reads attributes of an input (such as
+## $in.texture or $in.size)
+func uses_input_attributes(input_name : String) -> bool:
+	for f in [ "global", "instance", "code" ]:
+		var code = shader_model_preprocessed.get(f, "")
+		if code is String and (code.contains("$"+input_name+".texture") or code.contains("$"+input_name+".size")):
+			return true
+	return false
+
 func should_auto_buffer(index : int, source_cost : float, sample_count : float) -> bool:
 	var inputs : Array = shader_model_preprocessed.get("inputs", [])
 	if index >= inputs.size() or not inputs[index].type in AUTO_BUFFER_TYPES:
@@ -604,6 +619,13 @@ func should_auto_buffer(index : int, source_cost : float, sample_count : float) 
 		var output_defs : Array = source.generator.get_output_defs()
 		if source.output_index < output_defs.size() and not output_defs[source.output_index].get("type", "rgba") in AUTO_BUFFER_TYPES:
 			return false
+		# Sources that are already textures gain nothing from a buffer
+		if source.generator is MMGenTexture:
+			return false
+	# Inputs read through their attributes ($in.texture, $in.size) need the
+	# source's own texture
+	if uses_input_attributes(inputs[index].name):
+		return false
 	match get_buffer_pin(index):
 		"always":
 			return true

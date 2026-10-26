@@ -92,6 +92,40 @@ func get_buffer_size() -> int:
 			return clamp(output_size+int(get_parameter("size_offset")), 0, 14)
 	return int(get_parameter("size"))
 
+## The size and format of the buffer, shown under the node
+func get_badge() -> String:
+	var format : String = "16F"
+	if version == VERSION_COMPLEX:
+		if get_parameter("f32"):
+			format = "32F"
+		elif get_parameter("f8"):
+			format = "8 bits"
+	return "%d px  %s %s" % [ 1 << get_buffer_size(), format, "gray" if is_greyscale else "RGBA" ]
+
+## A warning when an 8 bits buffer stores data that needs more precision:
+## grayscale data (usually heights or masks used as heights), or data used
+## to compute normals or heights
+func get_precision_warning() -> String:
+	if version != VERSION_COMPLEX or get_parameter("f32") or not get_parameter("f8"):
+		return ""
+	if is_greyscale:
+		return "8 bits: loses height precision"
+	var parent = get_parent()
+	if parent is MMGenGraph:
+		for c in parent.connections:
+			if c.from != name or not parent.has_node(NodePath(c.to)):
+				continue
+			var consumer = parent.get_node(NodePath(c.to))
+			var input_defs : Array = consumer.get_input_defs()
+			var input_name : String = ""
+			if c.to_port < input_defs.size():
+				input_name = (input_defs[c.to_port].get("name", "")+" "+input_defs[c.to_port].get("shortdesc", "")).to_lower()
+			# Library nodes are identified by their model (e.g. normal_map2), others by their type
+			var consumer_type : String = (consumer.model if consumer.model is String else consumer.get_type())+" "+consumer.get_type_name()
+			if consumer_type.to_lower().contains("normal") or input_name.contains("height") or input_name.contains("normal"):
+				return "8 bits: loses normal precision"
+	return ""
+
 ## Called when the material's size changes
 func on_output_size_changed() -> void:
 	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:

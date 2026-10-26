@@ -245,6 +245,18 @@ func _draw() -> void:
 		draw_string_outline(buffer_timing_font, Vector2i(0, size.y+12), str(generator.rendering_time)+"ms", HORIZONTAL_ALIGNMENT_CENTER, size.x, 12, 4, Color.BLACK)
 		draw_string(buffer_timing_font, Vector2i(0, size.y+12), str(generator.rendering_time)+"ms", HORIZONTAL_ALIGNMENT_CENTER, size.x, 12, time_color)
 		@warning_ignore_restore("narrowing_conversion")
+	# Size and format of buffers, and precision warnings
+	if generator.has_method("get_badge"):
+		var badge_font : Font = preload("res://material_maker/theme/font_rubik/Rubik-416.ttf")
+		var y : int = int(size.y)+(26 if generator.rendering_time > 0 else 12)
+		var lines : Array = [ [ generator.get_badge(), Color(0.75, 0.75, 0.75) ] ]
+		var warning : String = generator.get_precision_warning()
+		if warning != "":
+			lines.append([ warning, Color(1.0, 0.65, 0.2) ])
+		for l in lines:
+			draw_string_outline(badge_font, Vector2i(0, y), l[0], HORIZONTAL_ALIGNMENT_CENTER, int(size.x), 12, 4, Color.BLACK)
+			draw_string(badge_font, Vector2i(0, y), l[0], HORIZONTAL_ALIGNMENT_CENTER, int(size.x), 12, l[1])
+			y += 14
 	if generator != null and generator.preview >= 0 and get_output_port_count() > 0:
 		var conn_pos = get_output_port_position(generator.preview)
 		draw_circle(conn_pos, 3, portpreview_color, true)
@@ -271,6 +283,9 @@ func draw_portgroup_stylebox(first_port : Vector2, last_port : Vector2) -> void:
 func set_generator(g) -> void:
 	super.set_generator(g)
 	g.rendering_time_updated.connect(self.update_rendering_time)
+	if g.has_method("get_badge"):
+		# The badge shows parameters (size, format) and the output type
+		g.parameter_changed.connect(func(_n, _v): queue_redraw())
 
 func update_rendering_time(_t : int) -> void:
 	queue_redraw()

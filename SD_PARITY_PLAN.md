@@ -62,7 +62,14 @@ Measured:
 
 Tests: `test/test_auto_buffer.gd` (5 GUT tests), plus GPU harness runs.
 
-Not done: pins are dropped when nodes are grouped into a subgraph, cost weights aren't calibrated against measured timings yet, and per-node *format* control is §2.2.
+✅ **Done (2026-10-26):**
+- **Pins and grouping:** grouping nodes into a subgraph keeps pins. A pin on a connection that crosses the boundary moves to the connection that feeds the reading node.
+- **Calibrated weights:** 130 library nodes were timed at 1024² and 4096² on a Radeon 780M, plus a buffer sampled K times (`test/calibration/`). One estimated cost unit is about 0.0005 ns per pixel, a nearby texture fetch about 0.024 ns (48 units, was 1), and writing a pixel of a pass about 2.5 ns (about 5 000 units, was 16).
+  - Memory traffic dominates on this GPU, so automatic buffers are now only inserted when the inlined work is large.
+  - The estimated node cost only roughly predicts arithmetic time (rank correlation 0.27): loops driven by parameters (splatters, FX-Maps) are underestimated, and scattered fetches cost more than nearby ones.
+  - Fixed along the way: automatic buffers no longer wrap sources that are already textures, or inputs read through `$in.texture`/`$in.size`. These break, because the attribute names the original texture, and a low shader budget triggered them.
+
+Per-node *format* control is §2.2.
 
 ### 2.2 Per-node output size and format — **L**
 - Output size modes: *relative to parent*, *relative to input*, *absolute*. Support **non-square** sizes up to 16k (and 32k via tiling).
@@ -77,8 +84,7 @@ Not done: pins are dropped when nodes are grouped into a subgraph, cost weights 
 
 Not done:
 - Non-square sizes: every texture-size uniform and the size widgets assume square textures, so this is a separate refactor.
-- Size and format badges on nodes (the render-times dialog shows memory instead).
-- Precision-loss warnings.
+- ✅ **Done (2026-10-26): badges and warnings.** Advanced Buffers show their resolution and format under the node, for example *512 px 8 bits gray*. An orange warning appears when an 8-bit buffer stores grayscale data (heights) or feeds a node that computes normals or reads heights.
 
 ### 2.3 GPU reductions and analysis — **M**
 SD-style Auto Levels, Histogram Scan/Range, and "normalize" all need min, max, mean, or histogram over the whole image.
@@ -142,7 +148,10 @@ A recursive quadrant/iterate/switch splatting system with per-instance random se
   - Position, scale, rotation, value, opacity and pattern are expressions of the instance index `i`, the count `n`, `t = i/(n-1)`, random values `r1` to `r4` and `$seed`. They can sample inputs, such as a map.
   - Each property can be a function graph (§3.1). The parameter function editor exposes `i`, `n`, `t` and `r1` to `r4` to the graph through a new `expression_variables` field on shader parameters.
   - The pattern expression acts as SD's Switch node, picking one of 4 inputs per instance. Alpha-over, add and max blending, and an instance output.
-  - Not done: nested iterations (an Iterate inside a quadrant level). Chaining FX-Map Iterate nodes covers most uses.
+  - ✅ **Done (2026-10-26): nested iterations.** With *Count in group* above 1, each instance becomes a group of instances (an Iterate inside an Iterate).
+    - Groups have their own position, scale and rotation expressions (of i, n, t and the group random values g1, g2).
+    - Instances are placed in their group's space, with j, m and u = j/(m-1).
+    - Graphs without groups render as before.
 
 ### 3.3 Node library parity — **L (ongoing)**
 Audit against SD's library. Priority gaps to check or build:
@@ -162,7 +171,7 @@ Audit against SD's library. Priority gaps to check or build:
 
   Histogram Scan/Shift/Select are done (§2.3). ✅ **Done (2026-10-26):** **Normal Normalize** (`nodes/normal_normalize.mmg`), **Normal Combine** with RNM, Whiteout and UDN modes (`nodes/normal_combine.mmg`; Normal Blend only mixes linearly), and **Posterize (Dithered)** with a 4×4 Bayer matrix (`nodes/posterize_dither.mmg`).
 - **Atlas tooling**: Atlas Splitter, Atlas Scatter, Atlas Creator, rotate-to-fit, per-atlas-item IDs. ✅ **Done (2026-10-26):** *Transform/Atlas/Splitter* extracts one item of a grid atlas, *Creator* packs 4 inputs into a 2×2 atlas, and *Scatter* splats random items of an atlas, with an item ID output. ✅ **Done (2026-10-26):** non-grid atlases, with items found by a Fill node: *Atlas Islands* extracts an item (picked by a point), fitted with its aspect ratio, and *Atlas Island Scatter* scatters random items. Both can rotate items by a quarter turn to fit (rotate-to-fit).
-- **✔ checked:** a **Text node** exists (`gen_text.gd`). ✅ **Done (2026-10-26): SVG node** (`engine/nodes/gen_svg.gd`, *Simple/SVG*). It renders an SVG file, or a path (SVG `d` syntax on a 100×100 canvas) with fill and stroke colors and stroke width. ✅ **Done (2026-10-26):** a *Shape* source, a polygon edited in the 2D preview. Not done: editing Bézier curves.
+- **✔ checked:** a **Text node** exists (`gen_text.gd`). ✅ **Done (2026-10-26): SVG node** (`engine/nodes/gen_svg.gd`, *Simple/SVG*). It renders an SVG file, or a path (SVG `d` syntax on a 100×100 canvas) with fill and stroke colors and stroke width. ✅ **Done (2026-10-26):** a *Shape* source, a polygon edited in the 2D preview. ✅ **Done (2026-10-26):** a *Curves* source, Bézier curves edited in the 2D preview with the Splines editor. Curves whose ends meet are joined, and closed outlines are filled.
 - **Weathering and material generators**: edge wear, dirt, grunge, water-level, moss and dust (the "Material Filters" family). ✅ **Done (2026-10-26):** *Filter/Weathering* has Edge Wear (from curvature), Dirt (ambient occlusion and curvature), Grunge, Moss (normal direction and cavities) and Dust (upward-facing areas). They're masks broken up by shared noise (`nodes/weathering_*.mmg`). ✅ **Done (2026-10-26): Water Level** (`nodes/weathering_water_level.mmg`): water, wetness and depth masks from a height map, with ripples.
 - **Bitmap-to-material**: delight, crop/tile-fix, make-it-tile (patch-based), clone patch, and PBR from photo. ✅ **Done (2026-10-26):** **Delight** (`nodes/delight.mmg`, *Filter/Bitmap/Delight*) divides by a large blur to remove baked lighting, and **Clone Patch** (`nodes/clone_patch.mmg`) copies a soft-edged patch over a defect. Make Tileable already existed. ✅ **Done (2026-10-26):** **Patch Tiling** (`nodes/make_tileable_patches.mmg`) makes an image tileable from random patches blended with histogram-preserving (variance-preserving) blending, and **Photo to Material** (`nodes/photo_to_material.mmg`) estimates a delit albedo and height, normal, roughness and AO maps from one photo. Photometric stereo (§5.4) gives better normals from 4 photos.
 
@@ -333,7 +342,7 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
 - **Still missing:**
   - CI builds of the C++ runtime for each platform.
   - Blender, Unreal, Unity and Houdini plugins.
-  - Live link, presets, and exposed seeds.
+  - Live link and exposed seeds. (Presets were done in M7: the `presets` in the manifest, `apply_preset` in the Godot runtime, and `--preset` in `mmr_render`.)
   - Runtime-resizable outputs.
 
 ### 5.2 Scripting and automation — **L, high**
@@ -439,6 +448,7 @@ What it means for this plan:
 | **M6: Exceed** ✅ first slice (2026-10-26: FX-Map, photometric stereo, flipbooks and animated packages, ptex diff/merge, library validation) | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
 | **M7: Authoring parity** ✅ (2026-10-26: programmable FX-Map, function graph undo, weathering/atlas/normal/bitmap nodes, SVG, parameter groups, hard ranges, presets, engine templates) | 3.1–3.4 remaining items | Closes most of the day-to-day authoring gaps with SD |
 | **M8: UX and node gaps** ✅ (2026-10-26: 2D inspection, fuzzy search, swatches, instance diffs, Tile Sampler, Spline Bridge, Ribbon, blur blades, water level, atlas islands, Patch Tiling, Photo to Material, SVG shapes) | 3.3 and 3.4 remaining items | Finishes the authoring phase |
+| **M9: Engine follow-ups** ✅ (2026-10-26: nested FX-Map iterations, SVG Bézier curves, pins kept when grouping, calibrated buffer costs, buffer badges and precision warnings) | Leftovers of 2.1, 2.2, 3.2 and 3.3 | Closes the small gaps left in phases 0 and 1 |
 
 **Quick wins** (status as of 2026-10-25):
 1. ✅ **Profiler summary**: Iterate Buffer timing, plus *Tools → Show buffer render times* (§2.4).

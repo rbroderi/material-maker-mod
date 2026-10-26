@@ -26,12 +26,14 @@ func get_description() -> String:
 func get_parameter_defs() -> Array:
 	return [
 		{ name="source", type="enum", label="Source", default=0,
-			values=[ { name="Path data", value="path" }, { name="Shape (edit in 2D preview)", value="shape" }, { name="File", value="file" } ],
-			longdesc="What is rendered: the path data, the shape (a polygon edited in the 2D preview), or the SVG file" },
+			values=[ { name="Path data", value="path" }, { name="Shape (edit in 2D preview)", value="shape" }, { name="File", value="file" }, { name="Curves (edit in 2D preview)", value="curves" } ],
+			longdesc="What is rendered: the path data, the shape (a polygon edited in the 2D preview), the SVG file, or the curves (Bézier curves edited in the 2D preview)" },
 		{ name="file", type="file", label="SVG file", filters=[ "*.svg;SVG file" ], default="",
 			longdesc="An SVG file, used with the File source, or when the path data is empty" },
 		{ name="shape", type="polygon", label="Shape", default={ type="Polygon", points=[ { x=0.5, y=0.1 }, { x=0.9, y=0.85 }, { x=0.1, y=0.85 } ] },
 			longdesc="A polygon, edited in the 2D preview, used with the Shape source" },
+		{ name="curves", type="splines", label="Curves", default={ type="Splines", values=[ 0.85, 0.5, 0.01, 0.0, 0.85, 0.6933, 0.01, 0.0, 0.6933, 0.85, 0.01, 0.0, 0.5, 0.85, 0.01, 0.0, 0.5, 0.85, 0.01, 0.0, 0.3067, 0.85, 0.01, 0.0, 0.15, 0.6933, 0.01, 0.0, 0.15, 0.5, 0.01, 0.0, 0.15, 0.5, 0.01, 0.0, 0.15, 0.3067, 0.01, 0.0, 0.3067, 0.15, 0.01, 0.0, 0.5, 0.15, 0.01, 0.0, 0.5, 0.15, 0.01, 0.0, 0.6933, 0.15, 0.01, 0.0, 0.85, 0.3067, 0.01, 0.0, 0.85, 0.5, 0.01, 0.0 ], point_groups=[ [ 3, 4 ], [ 7, 8 ], [ 11, 12 ], [ 15, 0 ] ] },
+			longdesc="Cubic Bézier curves, edited in the 2D preview, used with the Curves source. Curves whose ends meet are joined, and closed outlines are filled" },
 		{ name="path", type="string", label="Path data", default="M 50 10 L 61 39 L 92 39 L 67 58 L 76 88 L 50 70 L 24 88 L 33 58 L 8 39 L 39 39 Z",
 			longdesc="SVG path data (the d attribute of an SVG path) on a 100x100 canvas, e.g. M 10 10 L 90 10 L 50 90 Z" },
 		{ name="fill", type="color", label="Fill", default=Color(1.0, 1.0, 1.0, 1.0), longdesc="The fill color of the path" },
@@ -53,7 +55,14 @@ static func color_to_svg(c : Color) -> String:
 ## The SVG document that is rendered
 func get_svg() -> String:
 	var source : int = int(get_parameter("source"))
-	var path : String = get_parameter("path") if source == 0 else (get_shape_path() if source == 1 else "")
+	var path : String = ""
+	match source:
+		0:
+			path = get_parameter("path")
+		1:
+			path = get_shape_path()
+		3:
+			path = get_curves_path()
 	if path.strip_edges() == "":
 		var file_name : String = get_parameter("file")
 		if file_name == "" or not FileAccess.file_exists(file_name):
@@ -77,6 +86,30 @@ func get_shape_path() -> String:
 	for i in shape.points.size():
 		commands.append("%s %f %f" % [ "M" if i == 0 else "L", 100.0*shape.points[i].x, 100.0*shape.points[i].y ])
 	commands.append("Z")
+	return " ".join(commands)
+
+## SVG path data of the curves parameter: curves whose ends meet are joined,
+## and outlines that end where they start are closed
+func get_curves_path() -> String:
+	var curves = get_parameter("curves")
+	if curves is Dictionary:
+		curves = MMType.deserialize_value(curves)
+	if not curves is MMSplines or curves.splines.is_empty():
+		return ""
+	var commands : PackedStringArray = PackedStringArray()
+	var start : Vector2
+	var last : Vector2
+	for i in curves.splines.size():
+		var points : Array = curves.splines[i].points.map(func(p): return 100.0*p.position)
+		if i == 0 or points[0].distance_to(last) > 0.01:
+			if i > 0 and last.distance_to(start) < 0.01:
+				commands.append("Z")
+			commands.append("M %f %f" % [ points[0].x, points[0].y ])
+			start = points[0]
+		commands.append("C %f %f %f %f %f %f" % [ points[1].x, points[1].y, points[2].x, points[2].y, points[3].x, points[3].y ])
+		last = points[3]
+	if last.distance_to(start) < 0.01:
+		commands.append("Z")
 	return " ".join(commands)
 
 func update_texture() -> void:

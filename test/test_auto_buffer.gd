@@ -54,9 +54,9 @@ func test_decisions() -> void:
 		parameters=[], code="", instance=""
 	})
 	# Sampling an expensive source many times is buffered
-	assert_true(shader.should_auto_buffer(0, 1000.0, 8.0))
+	assert_true(shader.should_auto_buffer(0, 4000.0, 8.0))
 	# Sampling it once is not, unless it exceeds the shader budget
-	assert_false(shader.should_auto_buffer(0, 1000.0, 1.0))
+	assert_false(shader.should_auto_buffer(0, 4000.0, 1.0))
 	assert_true(shader.should_auto_buffer(0, 5000.0, 1.0))
 	# Cheap sources are never buffered
 	assert_false(shader.should_auto_buffer(0, 3.0, 8.0))
@@ -65,6 +65,17 @@ func test_decisions() -> void:
 	# Automatic buffers can be disabled
 	mm_globals.set_config("auto_buffer", false)
 	assert_false(shader.should_auto_buffer(0, 1000.0, 8.0))
+
+func test_inputs_read_through_attributes_are_not_buffered() -> void:
+	var shader : MMGenShader = make_shader({
+		inputs=[ { name="in", type="rgba", function=true, default="vec4(0.0)" } ],
+		outputs=[ { rgba="$(name)_blur($uv)", type="rgba" } ],
+		instance="vec4 $(name)_blur(vec2 uv) {\nreturn textureLod($in.texture, uv, 2.0)+$in(uv);\n}",
+		parameters=[], code=""
+	})
+	assert_true(shader.uses_input_attributes("in"))
+	# $in.texture is the source's own texture, that a buffer would replace
+	assert_false(shader.should_auto_buffer(0, 100000.0, 64.0))
 
 func test_size_parameter_sets_buffer_size() -> void:
 	var shader : MMGenShader = make_shader({

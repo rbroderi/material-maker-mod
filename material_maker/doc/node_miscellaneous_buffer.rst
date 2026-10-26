@@ -50,6 +50,11 @@ The **Advanced Buffer** node has 3 parameters:
   size of the graph's material multiplied by 2 to the power of *size offset*, so the buffer
   follows the output resolution when it is changed
 
+Advanced Buffer nodes show their resolution and format (16F, 32F or 8 bits, grayscale or RGBA)
+under the node. An orange warning is shown when an 8 bits buffer stores grayscale data (such as
+heights) or feeds a node that computes normals or uses heights, because 256 levels are usually
+not enough for them (steps become visible in normal maps).
+
 Automatic buffers
 +++++++++++++++++
 

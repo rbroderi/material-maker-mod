@@ -18,10 +18,13 @@ Outputs
 Parameters
 ++++++++++
 
-* **Source**: what is rendered: the path data, the shape, or the SVG file
+* **Source**: what is rendered: the path data, the shape, the SVG file, or the curves
 * **SVG file**: an SVG file, used with the *File* source, or when the path data is empty
 * **Shape**: a polygon, edited in the 2D preview (drag its points, and add or remove points),
   used with the *Shape* source
+* **Curves**: cubic Bézier curves, edited in the 2D preview like the curves of the Splines
+  node, used with the *Curves* source. Curves whose ends meet are joined into one outline, and
+  outlines that end where they start are closed and filled. The default is a circle
 * **Path data**: SVG path data (the *d* attribute of an SVG path) on a 100x100 canvas, for
   example *M 10 10 L 90 10 L 50 90 Z*. The default is a star
 * **Fill** and **Stroke**: the colors of the path
