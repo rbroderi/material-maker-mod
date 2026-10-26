@@ -781,7 +781,8 @@ func replace_input(input_name : String, suffix : String, parameters : String, va
 	var source = get_source(input)
 	if source == null:
 		var old_uv = variables.uv
-		variables.uv = parameters
+		# $in.variation(uv, variation) passes more than the uv
+		variables.uv = split_parameters(parameters)[0] if suffix == "variation" else parameters
 		var replaced : String = replace_variables(input_def.default, variables, rv, context)
 		variables.uv = old_uv
 		return replaced

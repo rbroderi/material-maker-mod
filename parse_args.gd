@@ -124,6 +124,9 @@ Options:
   --seed <n>                 change the seeds of all nodes that are not locked
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
   --format <png|exr>         image format of --render
+  --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
+  --duration <seconds>       duration of the animation of --frames (default: 1)
+  --columns <n>              columns of the sprite sheet of --frames (default: square sheet)
   --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position,
                              or normal_tangent,height with --high)
   --high <mesh>              high poly mesh for --bake, that adds the normal_tangent, normal_object, height,
@@ -218,6 +221,15 @@ func _ready():
 				i += 1
 			"--samples":
 				options.samples = max(1, int(value))
+				i += 1
+			"--frames":
+				options.frames = max(1, int(value))
+				i += 1
+			"--duration":
+				options.duration = float(value)
+				i += 1
+			"--columns":
+				options.columns = int(value)
 				i += 1
 			"--maps":
 				options.maps = Array(value.split(",", false))
@@ -323,7 +335,11 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 	await MMCliTools.wait_for_renders(get_tree())
 	var node_name : String = options.node.replace("/", "_").replace(":", "_")
 	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), node_name, suffix, options.format ])
-	var error : String = await MMCliTools.render_node(gen, options.node, options.size, file_name)
+	var error : String
+	if options.get("frames", 1) > 1:
+		error = await MMCliTools.render_flipbook(gen, options.node, options.size, options.frames, options.get("duration", 1.0), options.get("columns", 0), file_name)
+	else:
+		error = await MMCliTools.render_node(gen, options.node, options.size, file_name)
 	if error != "":
 		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
 	else:

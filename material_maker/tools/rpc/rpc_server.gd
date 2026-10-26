@@ -268,10 +268,13 @@ func set_parameters(values : Dictionary):
 ## Creates a node from a generator type (e.g. "perlin") or a library item
 ## path (e.g. "Noise/Perlin", main window only)
 func api_create_node(params : Dictionary):
-	if not require(params, [ "type" ]):
+	if not params.has("item") and not require(params, [ "type" ]):
 		return null
-	var data : Dictionary = { type=params.type, parameters=params.get("parameters", {}) }
-	if mm_globals.main_window != null:
+	var data : Dictionary = { type=params.get("type", ""), parameters=params.get("parameters", {}) }
+	if params.get("item") is Dictionary:
+		# A library item, as stored in library files
+		data = params.item.duplicate(true)
+	elif mm_globals.main_window != null:
 		var item = mm_globals.main_window.node_library_manager.get_item(params.type)
 		if item != null:
 			data = item.item.duplicate(true)
@@ -286,7 +289,7 @@ func api_create_node(params : Dictionary):
 		else:
 			nodes = await mm_loader.add_to_gen_graph(graph, data.get("nodes", []), data.get("connections", []), position)
 		if nodes.generators.is_empty():
-			return fail("cannot create node of type '%s'" % params.type)
+			return fail("cannot create node of type '%s'" % data.get("type", ""))
 		var generator : MMGenBase = nodes.generators[0]
 		if data.has("tree_item") and MMLibraryInstances.embeds_definition(data):
 			MMLibraryInstances.tag(generator, data)
@@ -339,6 +342,10 @@ func api_render(params : Dictionary):
 	var graph : MMGenGraph = await get_graph()
 	await MMCliTools.wait_for_renders(get_tree())
 	var error : String = await MMCliTools.render_node(graph, "%s:%d" % [ params.node, int(params.get("output", 0)) ], int(params.get("size", 1024)), params.path)
+	if error == "":
+		var failed : PackedStringArray = mm_deps.get_failed_buffers(graph)
+		if not failed.is_empty():
+			error = "buffers failed to render: "+", ".join(failed)
 	return fail(error) if error != "" else params.path
 
 func get_material(graph : MMGenGraph) -> MMGenBase:
@@ -349,6 +356,24 @@ func get_material(graph : MMGenGraph) -> MMGenBase:
 		if c.has_method("get_export_profiles"):
 			return c
 	return null
+
+## Buffers that are not rendered yet (or failed), to diagnose renders that
+## never finish
+func api_render_queue(_params : Dictionary):
+	var queue : Array = []
+	for b in mm_deps.buffers.keys():
+		var buffer = mm_deps.buffers[b]
+		if buffer.status == buffer.Updated:
+			continue
+		var pending : Array = []
+		for d in buffer.dependencies:
+			if mm_deps.buffers.has(d) and mm_deps.buffers[d].status != buffer.Updated:
+				pending.append(d)
+		var object_name : String = ""
+		if is_instance_valid(buffer.object) and buffer.object.has_method("get_hier_name"):
+			object_name = buffer.object.get_hier_name()
+		queue.append({ name=b, node=object_name, status=buffer.STATUS[buffer.status], pending=pending })
+	return queue
 
 func api_list_export_targets(_params : Dictionary):
 	var material : MMGenBase = get_material(await get_graph())

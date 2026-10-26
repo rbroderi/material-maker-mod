@@ -89,9 +89,10 @@ var time_current_time : int = 0
 
 var output_parameters : Dictionary
 
-## Preprocessed sources of the last compiled shader, by stage (used to
-## export runtime packages)
+## Preprocessed sources and SPIR-V of the last compiled shader, by stage
+## (used to export runtime packages)
 var compiled_sources : Dictionary = {}
+var compiled_spirv : Dictionary = {}
 
 func time(desc : String = ""):
 	return
@@ -115,6 +116,8 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 		src["source_"+k] = mm_preprocessor.preprocess(shader_text[k], replaces)
 		compiled_sources[k] = src["source_"+k]
 	var spirv : RDShaderSPIRV = rd.shader_compile_spirv_from_source(src)
+	for k in shader_text.keys():
+		compiled_spirv[k] = spirv["bytecode_"+k]
 	var shader : RID = RID()
 	for k in shader_text.keys():
 		var error : String = spirv["compile_error_"+k]

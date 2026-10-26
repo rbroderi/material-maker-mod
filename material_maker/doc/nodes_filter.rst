@@ -27,6 +27,7 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_color_pick
 	node_filter_swap_channels
 	node_filter_normal_map
+	node_filter_photometric_stereo
 	node_filter_normal_convert
 	node_filter_normal_blend
 	node_filter_blur

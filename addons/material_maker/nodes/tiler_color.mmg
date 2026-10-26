@@ -27,7 +27,7 @@
 		"global": "",
 		"inputs": [
 			{
-				"default": "0.0",
+				"default": "vec4(0.0)",
 				"function": true,
 				"label": "",
 				"longdesc": "The input image or atlas of 4 or 16 input images",

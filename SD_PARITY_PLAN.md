@@ -132,6 +132,12 @@ Not done: milestone 5 (sbsar2ptex emitting the IR) is on hold, there's no undo i
 ### 3.2 FX-Map equivalent — **L**
 A recursive quadrant/iterate/switch splatting system with per-instance random seeds, blend modes, and pattern inputs. Implement as a compute-based instancing pass (it pairs with §2.1). MM's tile and splatter nodes cover the common cases. The gap is the general-purpose programmable version.
 
+✅ **Done (2026-10-26), quadrant FX-Map:** an **FX-Map** node (`nodes/fx_map.mmg`, *Transform/FX-Map*).
+- Up to 10 quadrant levels, with one optional instance per cell. Instances get a random offset, scale, rotation and value, and a per-level opacity falloff.
+- 4 pattern inputs, chosen at random or by level.
+- Alpha-over, add and max blending, an instance ID output, and seamless tiling.
+- Still missing: SD's fully programmable FX-Map, with per-instance function graphs for every property, and iterate/switch nodes. That needs function graphs (§3.1) wired into an instancing pass.
+
 ### 3.3 Node library parity — **L (ongoing)**
 Audit against SD's library. Priority gaps to check or build:
 - **Shape Splatter v2 parity**. **✔ checked:** MM's Splatter and Circle Splatter take count, scale, rotation, value, variations, and a mask input, and that's all. Missing: Poisson disc and uniform distributions, a density map, per-instance control maps, height-ordered blending, and data outputs (position, rotation, scale, ID maps). ✅ **Done (2026-10-26): Shape Splatter** (`nodes/splatter_v2.mmg`, *Transform/Shape Splatter*):
@@ -292,8 +298,14 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - `MMRPackage` reads packages, `MMRRenderer` runs the passes on a local RenderingDevice, and `MMRMaterial` builds a StandardMaterial3D with the same channel mapping as the Godot 4 export.
   - A parameter change re-renders only the dependent passes (3 of 19 for bricks' Hue, in 9 ms).
 - **Verified:** the runtime output is pixel-identical (max difference 0/255) to MM's renders of the same Material outputs for bricks, rusted_metal, wood, medieval_wall and lava. For bricks this also holds after changing Hue at runtime, compared with `--set Hue=0.5`.
+- ✅ **Standalone C++ renderer** (`runtime/cpp`, 2026-10-26): a C++17 library and the `mmr_render` tool.
+  - It runs passes with Vulkan compute. volk loads the driver's Vulkan loader, so no SDK is needed.
+  - It uses SPIR-V that the exporter now stores next to the GLSL, so no GLSL compiler is needed either.
+  - Dependencies (Vulkan-Headers, volk, miniz, nlohmann/json, tinyexr) are fetched by CMake.
+  - **Verified:** its PNGs are byte-identical to MM's for all 23 outputs of 5 examples, including after a runtime Hue change. Animated materials match MM's flipbook frames exactly at 4 times.
+  - **Speed:** bricks renders in 18 ms on a Radeon 780M, and a Hue change re-renders 3 of 19 passes in 3.7 ms.
 - **Still missing:**
-  - The standalone C++/Vulkan renderer. MSVC Build Tools were being installed on 2026-10-26.
+  - CI builds of the C++ runtime for each platform.
   - Blender, Unreal, Unity and Houdini plugins.
   - Live link, presets, and exposed seeds.
   - Runtime-resizable outputs.
@@ -339,13 +351,21 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
 - Still missing: procedural MaterialX export, MaterialX import, and glTF KHR extensions.
 
 ### 5.4 Scan and photo workflows — **L (niche)**
-- Multi-angle-to-material and photometric-stereo normal reconstruction.
+- Multi-angle-to-material and photometric-stereo normal reconstruction. ✅ **Photometric stereo done (2026-10-26):** a **Photometric Stereo** node (*Filter/Photometric Stereo*) reconstructs a normal map, in MM's convention, and an albedo map from 4 photos lit from the right, top, left and bottom at a known elevation. On synthetic Lambertian renders it recovers albedo 0.698 (true value 0.7), and normals are within 0.006 of the true ones.
 - AxF import.
 - ML-assisted delighting and image-to-PBR (optional ONNX runtime). Ship models with permissive licences only.
 
 ### 5.5 Asset ecosystem — **M + community**
 - A curated **official library** with a consistent quality bar, tags, and previews. SD's advantage here is the size of the Substance Assets catalogue.
-- Package versioning and update notifications on the MM website. Submissions validated in CI by rendering with `mm-render`.
+- Package versioning and update notifications on the MM website. Submissions validated in CI by rendering with `mm-render`. ✅ **Validation done (2026-10-26):** `python/validate_library.py` creates every library node and renders it, and renders the example materials, through the RPC server. RPC `create_node` now accepts library item dictionaries.
+  - **Upstream bugs found and fixed by the validation run:**
+    - Deleting a node while one of its buffers was rendering (closing a project, replacing a graph) dropped the coroutine the dependency update loop was awaiting. The loop stayed "updating" forever: no buffer was rendered again, and every render or export waited until its timeout. A new loop now takes over, and a generation counter stops the old one if it ever resumes (`dependencies.gd`).
+    - Buffers that failed to render counted as pending forever. They're no longer counted, and RPC renders report them.
+    - `render_node` (CLI and RPC) could render before the automatic buffers that its own shader generation had just created. It now waits for them.
+    - An Iterate Buffer without inputs never compiled its shaders (only source changes did), and with an unconnected loop input it never finished iterating. It now compiles on ready, and stops after one loop pass when the loop input doesn't use the loop output.
+    - Unconnected inputs read with `$in.variation(uv, v)` replaced `$uv` with the whole argument list, so Kaleidoscope (and other nodes using variations) didn't compile until connected (`gen_shader.gd`).
+    - Tiler Color and Layer Color had float defaults on RGBA inputs, which didn't compile when unconnected.
+    - With these fixes, all 345 library items and 43 examples render.
 - Packages for weathering filters, smart masks, and engine output templates.
 
 ### 5.6 Substance migration path with sbsar2ptex — **M–L, high leverage**
@@ -368,8 +388,14 @@ What it means for this plan:
 1. **Integrated painting plus procedural graph**: SD needs Painter for this. Make painted layers first-class graph inputs, and graph outputs paintable.
 2. **Graph → native shader export**: runtime-procedural materials with no plugin at all.
 3. **True 3D/volumetric textures and SDF scenes**: MM's SDF and raymarching heritage is ahead of SD 16's new SDF nodes. Add 3D texture export (VDB, 3D DDS/KTX) for volumetrics.
-4. **Animated and time-based materials**: `$time`-driven graphs, flipbook and sprite-sheet export, and live animated previews (sky, water, fire).
-5. **Open, diff-friendly file format**: `.ptex` is JSON. Add a stable schema, a merge tool, and a git diff/merge driver for graphs.
+4. **Animated and time-based materials**: `$time`-driven graphs, flipbook and sprite-sheet export, and live animated previews (sky, water, fire). ✅ **Done (2026-10-26):**
+   - `--render --frames n [--duration s] [--columns c]` renders sprite sheets. The time is fixed per frame (`MMComputeShader.fixed_time`), and buffers, including automatic ones, are rendered again for each frame.
+   - Runtime packages have a `time` parameter on the passes that use `$time`, so engines can animate them.
+5. **Open, diff-friendly file format**: `.ptex` is JSON. Add a stable schema, a merge tool, and a git diff/merge driver for graphs. ✅ **Done (2026-10-26), except the schema:** `python/ptex_tools.py` has three commands.
+   - `normalize` gives a canonical order, for use as git's textconv.
+   - `diff` is semantic: nodes, parameters and connections, recursively into subgraphs.
+   - `merge` is a three-way merge: nodes are matched by name, connections are sets, and parameters and subgraphs merge recursively. Conflicts are reported. It can serve as git's merge driver.
+   - It comes with unit tests.
 6. **Free, MIT, native on Linux, macOS, and Windows, and on Steam**: no licence server, so it can be used on farms and in CI at no cost.
 7. **AI-assisted authoring**: describe a material in text and get a starting graph built from the node library. Also "explain this graph" and LLM-generated GLSL custom nodes, validated by compiling them.
 8. **Web export**: a WebGPU/WebGL runtime for `.mmr` packages, so procedural materials can be previewed and tweaked in a browser.
@@ -384,8 +410,8 @@ What it means for this plan:
 | **M2: Authoring + migration** | 3.1 function graphs (shared IR with sbsar2ptex), 3.3 top-priority nodes (Splatter v2, Non-Uniform Blur, Distance, Spline Mapper, Histogram Scan), 3.4 instancing/versioning, 5.6 *Import .sbsar* (baked first) | Removes the main reasons SD artists bounce off MM, and gives them a way to bring their libraries over |
 | **M3: Pipeline core** ✅ (2026-10-26, OCIO and plugins deferred) | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
 | **M4: 3D** ✅ (2026-10-26, UDIM, hardware RT, path tracer and OpenPBR preview deferred) | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
-| **M5: Runtime** ✅ first slice (2026-10-26: format, exporter, Godot runtime; C++ renderer and other plugins pending) | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
-| **M6: Exceed** | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
+| **M5: Runtime** ✅ (2026-10-26: format, exporter, Godot runtime, C++/Vulkan runtime; Blender/Unreal/Unity plugins pending) | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
+| **M6: Exceed** ✅ first slice (2026-10-26: FX-Map, photometric stereo, flipbooks and animated packages, ptex diff/merge, library validation) | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
 
 **Quick wins** (status as of 2026-10-25):
 1. ✅ **Profiler summary**: Iterate Buffer timing, plus *Tools → Show buffer render times* (§2.4).

@@ -23,6 +23,7 @@ const MATERIAL_PARAMETERS : Array[String] = [ "albedo_color", "metallic", "rough
 
 var passes : Array[Dictionary] = []
 var shaders : Dictionary = {}
+var spirv : Dictionary = {}
 var textures : Dictionary = {}
 var pass_by_texture : Dictionary = {}
 var file_by_texture : Dictionary = {}
@@ -81,6 +82,9 @@ func do_export(graph : MMGenGraph, path : String, size : int) -> PackedStringArr
 	write_zip_file(zip, "manifest.json", JSON.stringify(manifest, "\t").to_utf8_buffer())
 	for s in shaders.keys():
 		write_zip_file(zip, "shaders/%s.glsl" % s, shaders[s].to_utf8_buffer())
+	# SPIR-V, for runtimes that don't have a GLSL compiler
+	for s in spirv.keys():
+		write_zip_file(zip, "shaders/%s.spv" % s, spirv[s])
 	for t in textures.keys():
 		write_zip_file(zip, t, textures[t])
 	zip.close()
@@ -137,16 +141,25 @@ func add_pass(compute_shader : MMComputeShader, size : Vector2i) -> String:
 		parameters[p] = { type=parameter.type, offset=parameter.offset, array_size=parameter.array_size }
 	var pass_name : String = "p%d" % passes.size()
 	shaders[pass_name] = compute_shader.compiled_sources.compute
+	if compute_shader.compiled_spirv.has("compute"):
+		spirv[pass_name] = compute_shader.compiled_spirv.compute
 	passes.append({
 		name=pass_name,
 		size=[ size.x, size.y ],
 		format=MMPipeline.TEXTURE_TYPE[compute_shader.output_textures[0].type].decl,
 		local_size=compute_shader.local_size,
 		parameters=parameters,
-		parameter_data=Marshalls.raw_to_base64(compute_shader.parameter_values),
+		parameter_data=Marshalls.raw_to_base64(get_parameter_data(compute_shader)),
 		inputs=inputs
 	})
 	return pass_name
+
+## The parameter buffer of a pass, with the time ($time) set to 0
+static func get_parameter_data(compute_shader : MMComputeShader) -> PackedByteArray:
+	var data : PackedByteArray = compute_shader.parameter_values.duplicate()
+	if compute_shader.parameters.has("elapsed_time"):
+		data.encode_float(compute_shader.parameters.elapsed_time.offset, 0.0)
+	return data
 
 func add_buffer_pass(buffer : MMGenBuffer) -> String:
 	if not pass_by_texture.has(buffer.texture):
@@ -228,6 +241,14 @@ func get_runtime_parameters(graph : MMGenGraph) -> Dictionary:
 				if def.has(k):
 					parameter[k] = def[k]
 			parameters.append(parameter)
+	# Animated materials ($time) have a time parameter, in seconds
+	var time_targets : Array = []
+	for p in passes:
+		# The uniform is always declared, it is only used if it appears again
+		if p.parameters.has("elapsed_time") and shaders[p.name].count("elapsed_time") > 1:
+			time_targets.append({ "pass": p.name, "parameter": "elapsed_time" })
+	if not time_targets.is_empty():
+		parameters.append({ name="time", label="Time", type="float", default=0.0, min=0.0, max=60.0, step=0.01, targets=time_targets })
 	return { parameters=parameters, baked=baked }
 
 ## Returns the [ generator, parameter ] pairs that a parameter drives,

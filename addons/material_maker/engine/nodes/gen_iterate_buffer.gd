@@ -39,6 +39,12 @@ func _init():
 	iteration_param_name = "o%d_iteration" % get_instance_id()
 	set_current_iteration(0)
 
+func _ready() -> void:
+	super._ready()
+	# Shaders are otherwise only generated when sources change, so an
+	# iterate buffer without inputs would never render
+	update_shaders()
+
 func _exit_tree() -> void:
 	exiting = true
 
@@ -137,7 +143,9 @@ func do_update_shaders() -> void:
 			var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
 			var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 			await shader_compute.compute_shader.set_shader_from_shadercode_ext(shader_template, sources[i], output_textures, [], false, [])
-		mm_deps.buffer_create_compute_material(buffer_name, shader_compute)
+		await mm_deps.buffer_create_compute_material(buffer_name, shader_compute)
+		# The input may have been rendered (and failed) before its shader was set
+		mm_deps.buffer_invalidate(buffer_name)
 	if new_is_greyscale != is_greyscale:
 		is_greyscale = new_is_greyscale
 		notify_output_change(0)
@@ -252,8 +260,17 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		mm_deps.dependency_update(buffer_name, null, true)
 	if current_iteration > iterations:
 		mm_deps.dependency_update(buffer_name_output, texture, true)
+	elif mm_deps.dependencies.get(buffer_name_loop_output, []).has(buffer_name_loop_input):
+		# The loop input uses the loop output, so it is invalidated by this update
+		mm_deps.dependency_update(buffer_name_loop_output, texture, true)
+	elif not first_iteration:
+		# The loop input does not use the loop output (e.g. it is not
+		# connected): more iterations would give the same result
+		set_current_iteration(iterations+1)
+		mm_deps.dependency_update(buffer_name_output, texture, true)
 	else:
 		mm_deps.dependency_update(buffer_name_loop_output, texture, true)
+		mm_deps.buffer_invalidate(buffer_name_loop_input)
 	
 	#print("done ", status)
 	

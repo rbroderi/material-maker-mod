@@ -1,7 +1,7 @@
 # Runtime packages (`.mmr`) and engine runtimes
 
-Status: first slice implemented (2026-10-26): exporter, format v1, Godot runtime.
-Deferred: standalone C++/Vulkan renderer, Blender/Unreal/Unity plugins, live link.
+Status (2026-10-26): exporter, format v1, Godot runtime and C++/Vulkan runtime done.
+Deferred: Blender/Unreal/Unity plugins, live link, CI builds of the C++ runtime.
 
 ## Goal
 
@@ -31,6 +31,7 @@ A zip file:
 ```
 manifest.json
 shaders/<pass>.glsl        compute shader source, ready to compile
+shaders/<pass>.spv         the same shader compiled to SPIR-V (Vulkan 1.0+)
 textures/<name>.exr|.png   embedded textures (images, mesh maps, results
                            of nodes that are not exported as passes)
 ```
@@ -128,12 +129,13 @@ CLI: `material_maker --export-mmr [--size n] -o <dir> <files>`.
 - `MMRMaterial`: a `StandardMaterial3D` built from the outputs, with
   `set_parameter(name, value)`.
 
-### Standalone renderer (deferred)
+### Standalone renderer (done)
 
-A C++ library with the same pass runner on Vulkan (or wgpu for WebGPU), with
-SPIR-V compiled at export time (the format would get a `shaders/*.spv`
-alternative), so plugins don't need a GLSL compiler. It needs a C++
-toolchain and CI builds per platform.
+`runtime/cpp`: a C++17 library and the `mmr_render` tool, with the same pass
+runner on Vulkan (loaded with volk, so only the driver's loader is needed),
+using the SPIR-V stored in packages. Its output is byte-identical to Material
+Maker's on the tested examples, including after parameter and time changes.
+CI builds per platform are still to do.
 
 ### Blender, Unreal, Unity (deferred)
 
@@ -154,3 +156,4 @@ needs `set_parameter`, so a live link is a small bridge between the two.
   nodes are embedded as textures, so they don't react to parameters.
 - Pass sizes are fixed at export time.
 - Random seeds are baked (seed uniforms could be exposed later).
+- Animated materials (`$time`) get a `time` runtime parameter, in seconds.

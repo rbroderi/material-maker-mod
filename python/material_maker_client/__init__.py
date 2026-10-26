@@ -121,10 +121,11 @@ class MaterialMaker:
         """Returns the parameters as "name (label) = value" and "node:parameter = value" lines"""
         return self.call("list_parameters")
 
-    def create_node(self, type, name=None, position=None, parameters=None):
-        """Creates a node from a generator type ("perlin") or, when the user
-        interface is running, a library item ("Noise/Perlin"). Returns its name."""
-        params = {"type": type}
+    def create_node(self, type=None, name=None, position=None, parameters=None, item=None):
+        """Creates a node from a generator type ("perlin"), a library item
+        dictionary (item=...) or, when the user interface is running, a
+        library item path ("Noise/Perlin"). Returns its name."""
+        params = {"type": type} if item is None else {"item": item}
         if name is not None:
             params["name"] = name
         if position is not None:
@@ -184,6 +185,12 @@ def launch(command, port=DEFAULT_PORT, graph=None, show_window=False, timeout=12
     """
     if isinstance(command, str):
         command = [command]
+    # Another server on this port would answer instead of the new one
+    try:
+        socket.create_connection(("127.0.0.1", port), timeout=1).close()
+        raise RuntimeError("port %d is already used (is Material Maker already running?)" % port)
+    except OSError:
+        pass
     args = list(command) + ["--rpc", "--rpc-port", str(port)]
     if show_window:
         args.append("--show-window")

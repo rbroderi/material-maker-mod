@@ -62,3 +62,29 @@ graph (and in **list_nodes**).
 * **quit()** (without user interface only)
 
 Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).
+
+Version control
+---------------
+
+The **python/ptex_tools.py** script helps storing graphs in git:
+
+* **ptex_tools.py diff old.ptex new.ptex** lists the nodes, parameters and connections that changed
+* **ptex_tools.py merge base.ptex ours.ptex theirs.ptex -o merged.ptex** merges independent changes
+  (nodes are matched by name, connections are merged as sets, and subgraphs and parameters are
+  merged recursively), and lists conflicting changes
+* **ptex_tools.py normalize file.ptex** prints the graph with nodes and connections in a stable order
+
+It can be used as git's diff and merge driver for .ptex files:
+
+ git config diff.ptex.textconv "python python/ptex_tools.py normalize"
+ git config merge.ptex.driver "python python/ptex_tools.py merge %O %A %B -o %A"
+
+with **\*.ptex diff=ptex merge=ptex** in **.gitattributes**.
+
+Validating libraries
+--------------------
+
+**python/validate_library.py** creates every node of a library and renders it, and renders
+example materials, so node libraries can be checked in CI:
+
+ python python/validate_library.py --mm "material_maker" --examples material_maker/examples

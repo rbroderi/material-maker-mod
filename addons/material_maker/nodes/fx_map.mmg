@@ -1,0 +1,314 @@
+{
+	"name": "fx_map",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"seed_int": 0,
+	"type": "shader",
+	"parameters": {
+		"levels": 4.0,
+		"start_level": 0.0,
+		"level_opacity": 0.8,
+		"scale": 1.0,
+		"scale_random": 0.3,
+		"offset_random": 0.5,
+		"rotation_random": 180.0,
+		"probability": 0.8,
+		"value_random": 0.3,
+		"pattern_count": 1.0,
+		"pattern_mode": 0,
+		"blend": 0
+	},
+	"shader_model": {
+		"code": "float $(name_uv)_id;\nvec4 $(name_uv)_fx = $(name)_fx_map($uv, $(name_uv)_id);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 1 (its alpha is the coverage of instances)",
+				"name": "in1",
+				"shortdesc": "Pattern 1",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 2 (its alpha is the coverage of instances)",
+				"name": "in2",
+				"shortdesc": "Pattern 2",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 3 (its alpha is the coverage of instances)",
+				"name": "in3",
+				"shortdesc": "Pattern 3",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "Pattern 4 (its alpha is the coverage of instances)",
+				"name": "in4",
+				"shortdesc": "Pattern 4",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"// Recursive quadrant splatting: level L splits the texture in 2^L x 2^L",
+			"// cells, with one (optional) instance per cell. Each pixel checks the",
+			"// instances of the neighboring cells of each level.",
+			"vec4 $(name)_pattern(int index, vec2 uv) {",
+			"\tif (index == 0) {",
+			"\t\treturn $in1(uv);",
+			"\t} else if (index == 1) {",
+			"\t\treturn $in2(uv);",
+			"\t} else if (index == 2) {",
+			"\t\treturn $in3(uv);",
+			"\t}",
+			"\treturn $in4(uv);",
+			"}",
+			"",
+			"vec4 $(name)_fx_map(vec2 uv, out float instance_id) {",
+			"\tvec4 result = vec4(0.0);",
+			"\tinstance_id = 0.0;",
+			"\tint first_level = int($start_level);",
+			"\tint last_level = min(int($levels), 10)-1;",
+			"\tint pattern_count = clamp(int($pattern_count), 1, 4);",
+			"\t// Instances can extend over neighboring cells",
+			"\tint range = clamp(int(ceil($scale*0.7072+$offset_random*0.5+0.5))-1, 1, 2);",
+			"\tfor (int level = first_level; level <= last_level; ++level) {",
+			"\t\tfloat cells = exp2(float(level));",
+			"\t\tvec2 cell = floor(uv*cells);",
+			"\t\tfloat level_opacity = pow($level_opacity, float(level-first_level));",
+			"\t\tfor (int dy = -range; dy <= range; ++dy) {",
+			"\t\t\tfor (int dx = -range; dx <= range; ++dx) {",
+			"\t\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\t\t// Random values depend on the wrapped cell, so the result tiles",
+			"\t\t\t\tvec2 seed = mod(c, cells)+vec2($seed*13.7+float(level)*101.3, $seed*29.1+float(level)*57.9);",
+			"\t\t\t\tif (rand(seed) >= $probability) {",
+			"\t\t\t\t\tcontinue;",
+			"\t\t\t\t}",
+			"\t\t\t\tvec2 offset = (vec2(rand(seed+vec2(1.3, 7.1)), rand(seed+vec2(5.9, 2.3)))-vec2(0.5))*$offset_random;",
+			"\t\t\t\tvec2 p = (c+vec2(0.5)+offset)/cells;",
+			"\t\t\t\tfloat s = $scale*(1.0-$scale_random*rand(seed+vec2(3.7, 9.1)))/cells;",
+			"\t\t\t\tfloat a = radians($rotation_random*(2.0*rand(seed+vec2(8.3, 4.4))-1.0));",
+			"\t\t\t\tvec2 local = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*(uv-p)/max(s, 0.000001);",
+			"\t\t\t\tif (abs(local.x) > 0.5 || abs(local.y) > 0.5) {",
+			"\t\t\t\t\tcontinue;",
+			"\t\t\t\t}",
+			"\t\t\t\tint pattern;",
+			"\t\t\t\tif ($pattern_mode == 0) {",
+			"\t\t\t\t\tpattern = int(floor(rand(seed+vec2(6.6, 1.1))*float(pattern_count))) % pattern_count;",
+			"\t\t\t\t} else {",
+			"\t\t\t\t\tpattern = (level-first_level) % pattern_count;",
+			"\t\t\t\t}",
+			"\t\t\t\tvec4 color = $(name)_pattern(pattern, local+vec2(0.5));",
+			"\t\t\t\tcolor.rgb *= 1.0-$value_random*rand(seed+vec2(2.2, 8.8));",
+			"\t\t\t\tfloat opacity = clamp(color.a*level_opacity, 0.0, 1.0);",
+			"\t\t\t\tif (opacity <= 0.0) {",
+			"\t\t\t\t\tcontinue;",
+			"\t\t\t\t}",
+			"\t\t\t\tif ($blend == 0) {",
+			"\t\t\t\t\t// Alpha over: finer levels are drawn over coarser ones",
+			"\t\t\t\t\tresult = vec4(mix(result.rgb, color.rgb, opacity), opacity+result.a*(1.0-opacity));",
+			"\t\t\t\t} else if ($blend == 1) {",
+			"\t\t\t\t\tresult = vec4(result.rgb+color.rgb*opacity, max(result.a, opacity));",
+			"\t\t\t\t} else {",
+			"\t\t\t\t\tresult = max(result, vec4(color.rgb*opacity, opacity));",
+			"\t\t\t\t}",
+			"\t\t\t\tinstance_id = rand(seed+vec2(4.9, 3.3));",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn result;",
+			"}"
+		],
+		"longdesc": "Recursively splats patterns in quadrants: each level splits the texture in 4 times more cells, with one random instance of a pattern per cell, like Substance Designer's FX-Map quadrant nodes",
+		"name": "FX-Map",
+		"outputs": [
+			{
+				"longdesc": "The splatted patterns",
+				"rgba": "$(name_uv)_fx",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name_uv)_id",
+				"longdesc": "A random value for the topmost instance",
+				"shortdesc": "Instance ID",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 4.0,
+				"label": "Levels",
+				"longdesc": "The number of quadrant levels (level n has 2^n x 2^n cells)",
+				"max": 10.0,
+				"min": 1.0,
+				"name": "levels",
+				"shortdesc": "Levels",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Start level",
+				"longdesc": "The first level that has instances",
+				"max": 9.0,
+				"min": 0.0,
+				"name": "start_level",
+				"shortdesc": "Start level",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.8,
+				"label": "Level opacity",
+				"longdesc": "Multiplies the opacity of each level relative to the previous one",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "level_opacity",
+				"shortdesc": "Level opacity",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Scale",
+				"longdesc": "The size of instances, relative to their cell",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the size of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Offset random",
+				"longdesc": "The random offset of each instance, relative to its cell",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "offset_random",
+				"shortdesc": "Offset random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 180.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each instance, in degrees",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.8,
+				"label": "Probability",
+				"longdesc": "The probability that a cell has an instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "probability",
+				"shortdesc": "Probability",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Value random",
+				"longdesc": "The random darkening of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "value_random",
+				"shortdesc": "Value random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Patterns",
+				"longdesc": "The number of pattern inputs that are used",
+				"max": 4.0,
+				"min": 1.0,
+				"name": "pattern_count",
+				"shortdesc": "Patterns",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Pattern choice",
+				"longdesc": "How the pattern of each instance is chosen",
+				"name": "pattern_mode",
+				"shortdesc": "Pattern choice",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Random",
+						"value": "0"
+					},
+					{
+						"name": "By level",
+						"value": "1"
+					}
+				]
+			},
+			{
+				"default": 0,
+				"label": "Blend",
+				"longdesc": "How instances are combined",
+				"name": "blend",
+				"shortdesc": "Blend",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Alpha over",
+						"value": "0"
+					},
+					{
+						"name": "Add",
+						"value": "1"
+					},
+					{
+						"name": "Max",
+						"value": "2"
+					}
+				]
+			}
+		],
+		"shortdesc": "FX-Map"
+	}
+}

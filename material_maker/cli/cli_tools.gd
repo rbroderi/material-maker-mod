@@ -135,10 +135,54 @@ static func render_node(graph : MMGenBase, node_spec : String, size : int, file_
 	# Material nodes only show their (export) outputs with show_hidden
 	if output < 0 or output >= generator.get_output_defs(true).size():
 		return "node '%s' has no output %d" % [ node_path, output ]
+	# Generating the shader creates the automatic buffers it needs, that must
+	# be rendered first
+	generator.get_shader_code("uv", output, MMGenContext.new())
+	await wait_for_renders(generator.get_tree())
 	var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(size, size))
 	if await texture.save_to_file(file_name) != OK:
 		return "could not save '%s'" % file_name
 	return ""
+
+## Renders animation frames of a node output ($time from 0 to duration) in a
+## sprite sheet with the given number of columns (rows are filled first)
+static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, frames : int, duration : float, columns : int, file_name : String) -> String:
+	var node_path : String = node_spec.get_slice(":", 0)
+	var output : int = node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0
+	var generator = graph.get_node_or_null(NodePath(node_path))
+	if not generator is MMGenBase:
+		return "node '%s' not found" % node_path
+	if columns <= 0:
+		columns = int(ceil(sqrt(float(frames))))
+	var rows : int = (frames+columns-1)/columns
+	var sheet : Image = null
+	var buffers : Array = []
+	collect_buffers(graph, buffers)
+	for frame in frames:
+		MMComputeShader.fixed_time = duration*float(frame)/float(frames)
+		# Buffers (including automatic ones) are rendered again at this time
+		for b in buffers:
+			var buffer_name : String = "o%d_tex" % b.get_instance_id()
+			if mm_deps.buffers.has(buffer_name):
+				mm_deps.buffer_invalidate(buffer_name)
+		mm_deps.update()
+		await wait_for_renders(generator.get_tree())
+		var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(size, size))
+		var image : Image = (await texture.get_texture()).get_image()
+		if sheet == null:
+			sheet = Image.create(size*columns, size*rows, false, image.get_format())
+		sheet.blit_rect(image, Rect2i(0, 0, size, size), Vector2i((frame%columns)*size, (frame/columns)*size))
+	MMComputeShader.fixed_time = -1.0
+	if sheet == null:
+		return "no frame rendered"
+	var error : Error = sheet.save_exr(file_name) if file_name.get_extension() == "exr" else sheet.save_png(file_name)
+	return "could not save '%s'" % file_name if error != OK else ""
+
+static func collect_buffers(generator : Node, buffers : Array) -> void:
+	for c in generator.get_children():
+		if c is MMGenBuffer:
+			buffers.append(c)
+		collect_buffers(c, buffers)
 
 ## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors.
 ## With a high poly mesh (options.high), maps are baked from it (see
