@@ -54,14 +54,16 @@ static func load_fbx_mesh(file_path) -> ArrayMesh:
 		return null
 	return mesh_instances[0].mesh
 
-static func load_mesh(path : String) -> ArrayMesh:
+## Loads a mesh. With split_materials, OBJ materials are separate surfaces
+## (glTF and FBX meshes always have a surface per material).
+static func load_mesh(path : String, split_materials : bool = false) -> ArrayMesh:
 	if path == null:
 		return null
 	var ext : String = path.get_extension()
 	var mesh : ArrayMesh = null
 	if ext.matchn("obj"):
 		var obj_loader = load("res://addons/material_maker/loaders/obj_loader.gd")
-		mesh = obj_loader.load_obj_file(path)
+		mesh = obj_loader.load_obj_file(path, split_materials)
 	elif ext.matchn("glb") or ext.matchn("gltf"):
 		mesh = load_gltf_mesh(path)
 	elif ext.matchn("fbx"):

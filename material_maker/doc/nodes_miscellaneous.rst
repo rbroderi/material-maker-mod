@@ -26,4 +26,5 @@ Miscellaneous nodes
 	node_miscellaneous_variations_layer_color
 	node_miscellaneous_randomize
 	node_miscellaneous_mesh_map
+	node_miscellaneous_high_poly_bake
 	node_miscellaneous_mesh_triplanar

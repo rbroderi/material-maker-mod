@@ -25,6 +25,12 @@ Inputs
 The **Material** node has an input for each supported property (albedo, metallic,
 roughness, emissive, normal, ambient occlusion, depth maps and subsurface scattering) of the material.
 
+The coat, coat roughness, anisotropy, sheen and transmission inputs are multiplied by
+the corresponding parameters, and when they are not connected the parameter value is used
+alone. In the 3D preview, they are shown using Godot's clear coat, anisotropy, rim and
+back light, and they are exported to MaterialX (standard surface and OpenPBR) and, for
+coat and coat roughness, to USD.
+
 Outputs
 +++++++
 

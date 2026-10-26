@@ -1,15 +1,14 @@
 extends RefCounted
 
-static func load_obj_file(path : String) -> ArrayMesh:
+## Loads an OBJ file. With split_materials, each material (usemtl) is a
+## separate surface (used to bake material IDs).
+static func load_obj_file(path : String, split_materials : bool = false) -> ArrayMesh:
 	if path == null:
 		return null
 	var ext := path.get_extension()
 	if !ext.matchn("obj"):
 		print("given file isn't an OBJ mesh")
 		return null
-
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 
 	var mdlFile : FileAccess = FileAccess.open(path, FileAccess.READ)
 	if mdlFile == null:
@@ -21,32 +20,35 @@ static func load_obj_file(path : String) -> ArrayMesh:
 
 	var hasTex := newTriMsh.uvs.size() > 0
 	var hasNrm := newTriMsh.normals.size() > 0
+	# Vertex colors ("v x y z r g b", as exported by ZBrush and others)
+	var hasCol := newTriMsh.colors.size() == newTriMsh.vertices.size()
 
-	for i in newTriMsh.indices.size():
-		var triangle : Triangle = newTriMsh.indices[i]
+	var mdl : ArrayMesh = ArrayMesh.new()
+	var material_count : int = max(1, newTriMsh.material_count) if split_materials else 1
+	for material in material_count:
+		var st := SurfaceTool.new()
+		st.begin(Mesh.PRIMITIVE_TRIANGLES)
+		var empty : bool = true
+		for i in newTriMsh.indices.size():
+			var triangle : Triangle = newTriMsh.indices[i]
+			if split_materials and triangle.material != material:
+				continue
+			empty = false
+			for v in 3:
+				if hasTex:
+					st.set_uv(newTriMsh.uvs[triangle.get("uv_id_%d" % v)])
+				if hasNrm:
+					st.set_normal(newTriMsh.normals[triangle.get("nrm_id_%d" % v)])
+				if hasCol:
+					st.set_color(newTriMsh.colors[triangle.get("id_%d" % v)])
+				st.add_vertex(newTriMsh.vertices[triangle.get("id_%d" % v)])
+		if empty:
+			continue
+		if !hasNrm:
+			st.generate_normals()
 		if hasTex:
-			st.set_uv(newTriMsh.uvs[triangle.uv_id_0])
-		if hasNrm:
-			st.set_normal(newTriMsh.normals[triangle.nrm_id_0])
-		st.add_vertex(newTriMsh.vertices[triangle.id_0])
-
-		if hasTex:
-			st.set_uv(newTriMsh.uvs[triangle.uv_id_1])
-		if hasNrm:
-			st.set_normal(newTriMsh.normals[triangle.nrm_id_1])
-		st.add_vertex(newTriMsh.vertices[triangle.id_1])
-
-		if hasTex:
-			st.set_uv(newTriMsh.uvs[triangle.uv_id_2])
-		if hasNrm:
-			st.set_normal(newTriMsh.normals[triangle.nrm_id_2])
-		st.add_vertex(newTriMsh.vertices[triangle.id_2])
-
-	if !hasNrm:
-		st.generate_normals()
-	if hasTex:
-		st.generate_tangents()
-	var mdl : ArrayMesh = st.commit()
+			st.generate_tangents()
+		st.commit(mdl)
 
 	return mdl
 
@@ -78,6 +80,8 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					float(lineData[3])
 				)
 				newMsh.vertices.push_back(vertex)
+				if lineData.size() >= 7:
+					newMsh.colors.push_back(Color(float(lineData[4]), float(lineData[5]), float(lineData[6])))
 			"vt":
 				var uv := Vector2(
 					float(lineData[1]),
@@ -91,6 +95,12 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					float(lineData[3])
 				)
 				newMsh.normals.push_back(normal)
+			"us":
+				if lineData.size() >= 2 and lineData[0] == "usemtl":
+					if not newMsh.materials.has(lineData[1]):
+						newMsh.materials[lineData[1]] = newMsh.materials.size()
+					newMsh.current_material = newMsh.materials[lineData[1]]
+					newMsh.material_count = newMsh.materials.size()
 			"f ":
 				var misc = []
 
@@ -139,12 +149,18 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					triangle.nrm_id_1 = int(normIndices.y)
 					triangle.nrm_id_2 = int(normIndices.z)
 
+					triangle.material = newMsh.current_material
+
 					newMsh.indices.push_back(triangle)
 
 	return newMsh
 
 class TriMesh:
 	var vertices : Array
+	var colors : Array
+	var materials : Dictionary = {}
+	var current_material : int = 0
+	var material_count : int = 0
 	var normals : Array
 	var uvs : Array
 	var indices : Array
@@ -159,3 +175,4 @@ class Triangle:
 	var id_2 : int
 	var uv_id_2 : int
 	var nrm_id_2 : int
+	var material : int = 0

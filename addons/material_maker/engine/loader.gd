@@ -276,6 +276,7 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 		histogram = MMGenHistogram,
 		fill_to_index = MMGenFillToIndex,
 		meshmap = MMGenMeshMap,
+		highpoly_bake = MMGenHighPolyBake,
 		sdf = MMGenSDF,
 		ios = MMGenIOs,
 		switch = MMGenSwitch,

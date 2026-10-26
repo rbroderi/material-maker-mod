@@ -107,9 +107,16 @@ func get_parameter_defs() -> Array:
 		{ name="map", type="enum", values=MESH_MAPS, label="Map", default=0 },
 	]
 
+## The definition of the current map (subclasses define other maps)
+func get_map_definition() -> Dictionary:
+	return MESH_MAPS[get_parameter("map")]
+
+func generate_map() -> MMTexture:
+	return await MMMapGenerator.get_map(current_mesh, get_map_definition().map)
+
 func update_map() -> void:
 	var start_time : int = Time.get_ticks_msec()
-	current_map = await MMMapGenerator.get_map(current_mesh, MESH_MAPS[get_parameter("map")].map)
+	current_map = await generate_map()
 	# Shown under the node and in Tools > Show buffer render times
 	rendering_time = Time.get_ticks_msec()-start_time
 	rendering_time_updated.emit(rendering_time)
@@ -122,7 +129,7 @@ func set_parameter(n : String, v) -> void:
 		update_map()
 
 func get_output_defs(_show_hidden : bool = false) -> Array:
-	return [ { type=MESH_MAPS[get_parameter("map")].output_type } ]
+	return [ { type=get_map_definition().output_type } ]
 
 func set_current_mesh(m : Mesh) -> void:
 	if current_mesh != m:
@@ -134,13 +141,13 @@ func get_texture_parameter_name() -> String:
 	var mesh_id : String = "nomesh"
 	if current_mesh:
 		mesh_id = "mesh_%d" % abs(current_mesh.get_instance_id())
-	return mesh_id+"_"+MESH_MAPS[get_parameter("map")].map
+	return mesh_id+"_"+get_map_definition().map
 
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
 	var genname : String = "o"+str(get_instance_id())
 	var rv = ShaderCode.new()
-	var map_index = get_parameter("map")
-	rv.output_type = MESH_MAPS[map_index].output_type
+	var map_definition : Dictionary = get_map_definition()
+	rv.output_type = map_definition.output_type
 	var texture_name = get_texture_parameter_name()
 	var type = mm_io_types.types[rv.output_type].type
 	var variant_index = context.get_variant(self, uv)
@@ -148,9 +155,9 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 		variant_index = context.get_variant(self, uv)
 		rv.add_uniform(texture_name, "sampler2D", current_map)
 		var code : String = ""
-		if MESH_MAPS[map_index].has("code"):
-			code = MESH_MAPS[map_index].code+"\n"
-		code += "%s %s_%d = %s;\n" % [ type, genname, variant_index, MESH_MAPS[map_index].output ]
+		if map_definition.has("code"):
+			code = map_definition.code+"\n"
+		code += "%s %s_%d = %s;\n" % [ type, genname, variant_index, map_definition.output ]
 		code = code.replace("$NODE", "o%d" % get_instance_id())
 		code = code.replace("$TEXTURE", texture_name)
 		code = code.replace("$UV", uv)

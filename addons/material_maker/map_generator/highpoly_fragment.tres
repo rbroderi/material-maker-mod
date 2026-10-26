@@ -1,0 +1,294 @@
+[gd_resource type="Resource" script_class="TextResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/material_maker/engine/text_resource.gd" id="1_hpf"]
+
+[resource]
+script = ExtResource("1_hpf")
+text = "#version 450
+
+// High to low poly baking: casts a ray from the cage (the low poly surface
+// pushed along its normal by front_dist) towards the low poly surface, and
+// writes attributes of the closest high poly surface it hits.
+
+layout(location = 0) out vec4 outColor;
+layout(location = 1) in vec3 model_vert;
+layout(location = 2) in vec3 normal;
+layout(location = 3) in vec4 tangent;
+layout(location = 4) in vec2 uv;
+layout(location = 5) in vec3 cage_vert;
+
+@DECLARATIONS
+
+const int MODE_NORMAL_TANGENT = 0;
+const int MODE_NORMAL_OBJECT = 1;
+const int MODE_HEIGHT = 2;
+const int MODE_COLOR = 3;
+const int MODE_MATERIAL_ID = 4;
+const int MODE_POSITION = 5;
+
+float intersect_aabb(vec3 ray_origin, vec3 ray_dir, vec3 box_min, vec3 box_max, bool solid) {
+	// Null direction components would give 0/0 (NaN) for origins on a box face
+	ray_dir = mix(ray_dir, vec3(0.0000001), equal(ray_dir, vec3(0.0)));
+	vec3 tMin = (box_min - ray_origin) / ray_dir;
+	vec3 tMax = (box_max - ray_origin) / ray_dir;
+	vec3 t1 = min(tMin, tMax);
+	vec3 t2 = max(tMin, tMax);
+	float tNear = max(max(t1.x, t1.y), t1.z);
+	float tFar = min(min(t2.x, t2.y), t2.z);
+	if (tNear > tFar || (tFar < 0.0 && tNear < 0.0)) {
+		return -1.0;
+	}
+	if (tNear < 0.0) {
+		float temp = tNear;
+		tNear = tFar;
+		tFar = temp;
+		tNear *= float(!solid);
+	}
+	return tNear;
+}
+
+// Rays that go exactly through vertices or edges must not miss all the
+// triangles that share them
+const float EDGE_EPSILON = 0.00001;
+
+// Returns the distance along the ray (or -1.0), and the barycentric
+// coordinates of the hit point
+float intersects_triangle(vec3 ray_start, vec3 ray_dir, vec3 v0, vec3 v1, vec3 v2, out vec2 bary) {
+	vec3 e1 = v1 - v0;
+	vec3 e2 = v2 - v0;
+	vec3 h = cross(ray_dir, e2);
+	float a = dot(e1, h);
+	if (abs(a) < 0.0000001) {
+		return -1.0;
+	}
+	float f = 1.0 / a;
+	vec3 s = ray_start - v0;
+	float u = f * dot(s, h);
+	if (u < -EDGE_EPSILON || u > 1.0 + EDGE_EPSILON) {
+		return -1.0;
+	}
+	vec3 q = cross(s, e1);
+	float v = f * dot(ray_dir, q);
+	if (v < -EDGE_EPSILON || u + v > 1.0 + EDGE_EPSILON) {
+		return -1.0;
+	}
+	bary = vec2(u, v);
+	float t = f * dot(e2, q);
+	return t > 0.0000001 ? t : -1.0;
+}
+
+vec4 get_data(int index) {
+	ivec2 data_size = textureSize(bvh_data, 0);
+	return texelFetch(bvh_data, ivec2(index % data_size.x, index / data_size.x), 0);
+}
+
+vec4 get_attribute(int index) {
+	ivec2 data_size = textureSize(attribute_data, 0);
+	return texelFetch(attribute_data, ivec2(index % data_size.x, index / data_size.x), 0);
+}
+
+// Same traversal as the ambient occlusion baker, that also returns the
+// face index (stored in the w component of the first vertex of triangles)
+float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hit_bary) {
+	hit_face = -1;
+	hit_bary = vec2(0.0);
+	int offset_to_nodes = int(get_data(0)[0]);
+	vec4 root_data_0 = get_data(int(get_data(1)[0]) + offset_to_nodes);
+	vec4 root_data_1 = get_data(int(get_data(1)[0]) + offset_to_nodes + 1);
+	float t = intersect_aabb(ray_start, ray_dir, root_data_0.xyz, root_data_1.xyz, false);
+	if (t == -1.0) {
+		return 65536.0;
+	}
+	float prev_hit = t;
+	t = 65536.0;
+	int stack_point = 0;
+	ivec3 node_stack[128];
+	int curr_node_idx = 0;
+	bool moving_up = false;
+	for (int i = 0; i < 1024; i++) {
+		if (moving_up && stack_point <= 0) {
+			break;
+		}
+		int node_data_off = int(get_data(1 + curr_node_idx)[0]) + offset_to_nodes;
+		vec4 node_data_0 = get_data(node_data_off);
+		vec4 node_data_1 = get_data(node_data_off + 1);
+		int level = int(node_data_0[3]);
+		if (!moving_up) {
+			if (node_data_1[3] > 0.0) {
+				for (int j = node_data_off + 2; j < node_data_off + 2 + int(node_data_1[3]) * 3; j += 3) {
+					vec4 tri_a = get_data(j);
+					vec2 bary;
+					float tri_t = intersects_triangle(ray_start, ray_dir, tri_a.xyz, get_data(j + 1).xyz, get_data(j + 2).xyz, bary);
+					if (tri_t != -1.0 && tri_t < t) {
+						t = tri_t;
+						hit_face = int(tri_a.w);
+						hit_bary = bary;
+					}
+				}
+				stack_point -= 1;
+				if (stack_point <= 0) {
+					break;
+				}
+				if (node_stack[stack_point][1] == level) {
+					if (t < intBitsToFloat(node_stack[stack_point][0])) {
+						stack_point -= 1;
+						moving_up = true;
+					}
+				} else {
+					moving_up = true;
+				}
+				prev_hit = intBitsToFloat(node_stack[stack_point][0]);
+				curr_node_idx = node_stack[stack_point][2];
+			} else {
+				node_stack[stack_point] = ivec3(floatBitsToInt(prev_hit), level, curr_node_idx);
+				stack_point += 1;
+				ivec2 child_indices = ivec2(get_data(node_data_off + 2).xy);
+				int left_data_off = int(get_data(1 + child_indices[0])[0]) + offset_to_nodes;
+				vec4 left_data_0 = get_data(left_data_off);
+				vec4 left_data_1 = get_data(left_data_off + 1);
+				int right_data_off = int(get_data(1 + child_indices[1])[0]) + offset_to_nodes;
+				vec4 right_data_0 = get_data(right_data_off);
+				vec4 right_data_1 = get_data(right_data_off + 1);
+				float t_left = intersect_aabb(ray_start, ray_dir, left_data_0.xyz, left_data_1.xyz, true);
+				float t_right = intersect_aabb(ray_start, ray_dir, right_data_0.xyz, right_data_1.xyz, true);
+				// Nodes farther than the best hit cannot contain a better hit
+				if (t_left > t) {
+					t_left = -1.0;
+				}
+				if (t_right > t) {
+					t_right = -1.0;
+				}
+				if (t_right == -1.0 && t_left != -1.0) {
+					prev_hit = t_left;
+					curr_node_idx = child_indices[0];
+				} else if (t_left == -1.0 && t_right != -1.0) {
+					prev_hit = t_right;
+					curr_node_idx = child_indices[1];
+				} else if (t_left < t_right && t_left != -1.0) {
+					node_stack[stack_point] = ivec3(floatBitsToInt(t_right), int(right_data_0[3]), child_indices[1]);
+					stack_point += 1;
+					prev_hit = t_left;
+					curr_node_idx = child_indices[0];
+				} else if (t_right <= t_left && t_right != -1.0) {
+					node_stack[stack_point] = ivec3(floatBitsToInt(t_left), int(left_data_0[3]), child_indices[0]);
+					stack_point += 1;
+					prev_hit = t_right;
+					curr_node_idx = child_indices[1];
+				} else {
+					stack_point -= 2;
+					if (stack_point <= 0) {
+						break;
+					}
+					if (node_stack[stack_point][1] == level) {
+						if (t < intBitsToFloat(node_stack[stack_point][0])) {
+							stack_point -= 1;
+							moving_up = true;
+						}
+					} else {
+						moving_up = true;
+					}
+					prev_hit = intBitsToFloat(node_stack[max(stack_point, 0)][0]);
+					curr_node_idx = node_stack[max(stack_point, 0)][2];
+				}
+			}
+		} else {
+			stack_point -= 1;
+			if (stack_point <= 0) {
+				break;
+			}
+			if (node_stack[stack_point][1] == level) {
+				if (t < intBitsToFloat(node_stack[stack_point][0])) {
+					stack_point -= 1;
+				} else {
+					moving_up = false;
+				}
+			}
+			prev_hit = intBitsToFloat(node_stack[max(stack_point, 0)][0]);
+			curr_node_idx = node_stack[max(stack_point, 0)][2];
+		}
+	}
+	return t;
+}
+
+// Attributes of a face: 3 normals (w of the first one is the surface index), then 3 colors
+const int ATTRIBUTES_PER_FACE = 6;
+
+vec3 id_color(int id) {
+	// Well separated hues, with a few brightness levels
+	float h = fract(float(id) * 0.618034);
+	vec3 c = clamp(abs(fract(h + vec3(0.0, 2.0/3.0, 1.0/3.0)) * 6.0 - 3.0) - 1.0, 0.0, 1.0);
+	return c * (1.0 - 0.3 * float((id / 7) % 3));
+}
+
+void main() {
+	vec3 n = normalize(normal);
+	vec3 t = normalize(tangent.xyz - n * dot(n, tangent.xyz));
+	vec3 b = cross(n, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
+	// Rays start from the cage if there is one, else from the low poly
+	// surface pushed along its normal
+	vec3 ray_start = model_vert + n * front_dist;
+	vec3 ray_dir = -n;
+	float front = front_dist;
+	if (use_cage != 0) {
+		ray_start = cage_vert;
+		front = length(model_vert - cage_vert);
+		ray_dir = front > 0.0 ? (model_vert - cage_vert) / front : -n;
+	}
+	int face;
+	vec2 bary;
+	float hit = intersects_bvh(ray_start, ray_dir, face, bary);
+	bool missed = face < 0 || hit > front + rear_dist;
+	vec4 value;
+	if (missed) {
+		// Values of the low poly surface
+		switch (mode) {
+			case MODE_NORMAL_TANGENT:
+				value = vec4(0.5, 0.5, 0.0, 0.0);
+				break;
+			case MODE_NORMAL_OBJECT:
+				value = vec4(0.5 + 0.5 * n, 0.0);
+				break;
+			case MODE_HEIGHT:
+				value = vec4(vec3(0.5), 0.0);
+				break;
+			case MODE_POSITION:
+				value = vec4((model_vert - aabb_position) / aabb_size, 0.0);
+				break;
+			default:
+				value = vec4(0.0);
+		}
+	} else {
+		int base = face * ATTRIBUTES_PER_FACE;
+		vec3 w = vec3(1.0 - bary.x - bary.y, bary.x, bary.y);
+		vec4 n0 = get_attribute(base);
+		switch (mode) {
+			case MODE_NORMAL_TANGENT:
+			case MODE_NORMAL_OBJECT: {
+				vec3 hn = normalize(w.x * n0.xyz + w.y * get_attribute(base + 1).xyz + w.z * get_attribute(base + 2).xyz);
+				if (mode == MODE_NORMAL_OBJECT) {
+					value = vec4(0.5 + 0.5 * hn, 1.0);
+				} else {
+					// OpenGL tangent space, converted to Material Maker's convention
+					vec3 ts = vec3(dot(hn, t), dot(hn, b), dot(hn, n));
+					value = vec4(0.5 + 0.5 * vec3(-ts.x, ts.y, -ts.z), 1.0);
+				}
+				break;
+			}
+			case MODE_HEIGHT:
+				value = vec4(vec3(clamp(0.5 + 0.5 * (front - hit) / max(front_dist, rear_dist), 0.0, 1.0)), 1.0);
+				break;
+			case MODE_COLOR:
+				value = vec4((w.x * get_attribute(base + 3) + w.y * get_attribute(base + 4) + w.z * get_attribute(base + 5)).rgb, 1.0);
+				break;
+			case MODE_MATERIAL_ID:
+				value = vec4(id_color(int(n0.w)), 1.0);
+				break;
+			case MODE_POSITION:
+				value = vec4((ray_start + ray_dir * hit - aabb_position) / aabb_size, 1.0);
+				break;
+		}
+	}
+	// Average of the jittered passes
+	outColor = mix(texelFetch(prev_iteration_tex, ivec2(gl_FragCoord.xy), 0), value, 1.0 / float(iteration));
+}
+"

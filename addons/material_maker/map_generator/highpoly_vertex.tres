@@ -1,0 +1,48 @@
+[gd_resource type="Resource" script_class="TextResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/material_maker/engine/text_resource.gd" id="1_hpv"]
+
+[resource]
+script = ExtResource("1_hpv")
+text = "#version 450
+
+// Rasterizes the low poly mesh in UV space for high to low poly baking
+
+layout(location = 1) out vec3 model_vert;
+layout(location = 2) out vec3 normal;
+layout(location = 3) out vec4 tangent;
+layout(location = 4) out vec2 uv;
+layout(location = 5) out vec3 cage_vert;
+
+layout(binding = 0, std430) buffer restrict readonly Positions {
+	float positions[];
+};
+layout(binding = 1, std430) buffer restrict readonly AABB {
+	float aabb[];
+};
+layout(binding = 2, std430) buffer restrict readonly Normals {
+	float normals[];
+};
+layout(binding = 3, std430) buffer restrict readonly Tangents {
+	float tangents[];
+};
+layout(binding = 4, std430) buffer restrict readonly UVs {
+	vec2 uvs[];
+};
+// Vertices of the cage (or of the low poly mesh when there is no cage)
+layout(binding = 5, std430) buffer restrict readonly CagePositions {
+	float cage_positions[];
+};
+
+@DECLARATIONS
+
+void main() {
+	model_vert = vec3(positions[3*gl_VertexIndex], positions[3*gl_VertexIndex+1], positions[3*gl_VertexIndex+2]);
+	normal = vec3(normals[3*gl_VertexIndex], normals[3*gl_VertexIndex+1], normals[3*gl_VertexIndex+2]);
+	tangent = vec4(tangents[4*gl_VertexIndex], tangents[4*gl_VertexIndex+1], tangents[4*gl_VertexIndex+2], tangents[4*gl_VertexIndex+3]);
+	uv = uvs[gl_VertexIndex];
+	cage_vert = vec3(cage_positions[3*gl_VertexIndex], cage_positions[3*gl_VertexIndex+1], cage_positions[3*gl_VertexIndex+2]);
+	// Sub-pixel jitter, for anti-aliasing over several passes
+	gl_Position = vec4(uv*2.0-vec2(1.0)+jitter, 0.0, 1.0);
+}
+"

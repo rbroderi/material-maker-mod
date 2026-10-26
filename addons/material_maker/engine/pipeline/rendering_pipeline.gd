@@ -5,6 +5,8 @@ extends MMPipeline
 var shader : RID = RID()
 
 var index_count : int = 0
+## Bakers render in UV space, where mirrored UV islands are back faces
+var cull_mode : RenderingDevice.PolygonCullMode = RenderingDevice.POLYGON_CULL_BACK
 
 
 func create_framebuffer(rd : RenderingDevice, texture_rid : RID, depth_rid : RID = RID()) -> RID:
@@ -48,7 +50,7 @@ func in_thread_render(size : Vector2i, texture_type : int, target_texture : MMTe
 	var blend : RDPipelineColorBlendState = RDPipelineColorBlendState.new()
 	blend.attachments.push_back(RDPipelineColorBlendStateAttachment.new())
 	var rasterization_state = RDPipelineRasterizationState.new()
-	rasterization_state.cull_mode = RenderingDevice.POLYGON_CULL_BACK
+	rasterization_state.cull_mode = cull_mode
 	var depth_stencil_state = RDPipelineDepthStencilState.new()
 	depth_stencil_state.enable_depth_test = true
 	depth_stencil_state.depth_compare_operator = RenderingDevice.COMPARE_OP_LESS_OR_EQUAL

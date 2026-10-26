@@ -21,7 +21,7 @@ Sizes: **S** ≈ days, **M** ≈ 1–3 weeks, **L** ≈ 1–3 months, **XL** ≈
 | Per-node resolution / bit depth | Only on Buffer nodes: square, 2^4–2^14 (16–16384 px, raised from 8192 in this fork), 16-bit float by default with optional 32-bit float (`gen_buffer.gd`) ✔ | Relative/absolute per node, 8/16/16F/32F, non-square | **Critical** |
 | Visual per-pixel programming | GLSL custom nodes, expression params | Pixel Processor, Value Processor, FX-Map, function graphs on any param | **High** |
 | Node library | ~300+ nodes, strong SDF/3D | Atomic nodes plus a very large library; Shape Splatter v2, splines/paths, Ribbon | Medium |
-| Mesh baking | Same-mesh maps only: position, normal, tangent, AO, bent normals, thickness, curvature, seams, adjacency (BVH-based, `map_generator/`) ✔. No high→low, cages, ID maps, or UDIMs | Full baker suite: high→low, cages, ID, thickness, bent normals, UDIM | **High** |
+| Mesh baking | Same-mesh maps (position, normal, tangent, AO, bent normals, thickness, curvature, seams, adjacency), plus high→low with cages, AA, tangent/object normals, height, vertex color, material ID and position ✅ (§4.1). No UDIMs | Full baker suite: high→low, cages, ID, thickness, bent normals, UDIM | **High** |
 | SD interop | `.sbsar` → `.ptex` via the separate sbsar2ptex tool (baked maps; node translation in progress) | n/a | MM-side opportunity |
 | 3D viewport | Godot renderer | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium–High |
 | Color management | sRGB/linear only | OCIO/ACES | **High** for studios |
@@ -183,12 +183,56 @@ Audit against SD's library. Priority gaps to check or build:
 - Hardware ray tracing where available, keeping the existing BVH compute path as the fallback.
 - Keep baking available as nodes (it already is). SD keeps baking separate, so this goes beyond it.
 
+✅ **Done (2026-10-26): high-to-low baking**
+- **What's new:** a **High Poly Bake** node (`engine/nodes/gen_highpoly_bake.gd`, *Miscellaneous/High Poly Bake*), built on `map_generator/high_poly_baker.gd`, `highpoly_vertex.tres` and `highpoly_fragment.tres`.
+- **How it works:**
+  - The high-poly surfaces are merged into one BVH. Its spare fourth channel now stores the face index.
+  - Per-face normals, vertex colors and surface IDs go into a data texture.
+  - The low-poly mesh is rasterized in UV space. Each texel casts a ray from the cage towards the low-poly surface and takes the closest hit.
+- **Maps:** tangent-space normal (in MM's convention, so it connects straight to the Material node), object-space normal, height, vertex color, material ID, position and coverage.
+- **Options:**
+  - Front and rear ray distances, relative to the bounding box diagonal (the auto-cage).
+  - An optional custom cage mesh, which must have the same topology as the low-poly mesh.
+  - 1, 4 or 16 jittered anti-aliasing samples.
+  - MikkTSpace tangents, via Godot's `SurfaceTool.generate_tangents`, when the low-poly mesh has none.
+  - Dilation past UV seams.
+- **Loaders:** the OBJ loader can now split materials (`usemtl`) into surfaces for ID maps, and it reads `v x y z r g b` vertex colors (the ZBrush polypaint export). glTF and FBX already have one surface per material.
+- **CLI:** `--bake --high <mesh> [--cage <mesh>] [--front d] [--rear d] [--samples n]`.
+- **Checks:**
+  - A mesh baked onto itself gives a perfectly flat normal map.
+  - Baked tangent normals correlate positively with the gradients of the baked height map, following MM's Normal Map convention (0.93 for u, 0.88 for v).
+  - A bumpy, two-material, vertex-colored sphere bakes without misses in both a SceneTree harness and the CLI.
+  - A 1.1× cage gives the same normals except at the poles, and a cage with mismatched topology is rejected with an error.
+- **Fixed along the way:**
+  - The ray-traced bakes (AO, thickness, bent normals) segfaulted on Vulkan, upstream too. The denoise compute shader used `texture(tex, uv, 0)`, and a LOD bias isn't allowed outside fragment shaders (D3D12 rejected the shader outright). It now uses `textureLod` at pixel centers.
+  - UV-space rasterization culled back faces, so mirrored UV islands were never baked, for any mesh map. Culling is now disabled for bakes and stays on for the painter.
+  - The ray/box test produced NaN (0/0) for rays with an exactly null direction component starting on a box face, so whole low-poly triangles missed at sphere poles. Fixed in both ray-traced shaders.
+- **Still missing:**
+  - UDIMs.
+  - Hardware ray tracing.
+  - Match-by-name.
+  - Skew maps.
+  - A "transferred texture" map (sampling the high-poly mesh's own textures).
+
 ### 4.2 Viewport and rendering — **L**
 - **Displacement/tessellation** preview with height scale and level controls (like SD 16's displacement popup).
 - An **OpenPBR** shading model alongside the current one. Map outputs to Godot's StandardMaterial and to OpenPBR.
 - **Progressive path tracer** for look-dev (compute-based, accumulating). Optional, but expected for presentation renders.
 - HDRI library, rotation and exposure, ground shadow catcher, and turntable/render-to-image.
 - Clear-coat, sheen, subsurface, anisotropy, and transmission channels in the material output.
+
+✅ **Done (2026-10-26):**
+- **Displacement:** **✔ checked, already present.** The *Tesselated Material* node displaces geometry in the 3D preview, and the standard Material's preview does parallax occlusion with a *Depth* control.
+- **New Material inputs:** coat, coat roughness, anisotropy, sheen and transmission.
+  - They're appended after the existing ones, so saved graphs keep their port indices.
+  - Each input has a multiplier parameter, used alone when the input isn't connected (coat, anisotropy, sheen and transmission default to 0).
+- **Preview:** the inputs map to Godot's CLEARCOAT, ANISOTROPY, RIM and BACKLIGHT. Their textures are only rendered when the inputs are connected.
+- **Exports:** they go to MaterialX standard_surface and OpenPBR (coat_weight, specular_roughness_anisotropy, fuzz_weight, transmission_weight), and coat/coat roughness to USD (clearcoat). The files pass MaterialX validation and GLSL generation, and USD resolves them.
+- **Still missing:**
+  - An OpenPBR shading model in the preview. Godot's lighting model can't be replaced from a material shader.
+  - The path tracer.
+  - Turntable rendering.
+  - Godot/Unity/Unreal export of the new channels.
 
 ### 4.3 Color management — **L, high for studio adoption**
 - **OCIO** integration: working space, per-bitmap input transforms, and display/view transforms in the 2D and 3D views.
@@ -200,6 +244,27 @@ Audit against SD's library. Priority gaps to check or build:
 - **✔ checked:** the 3D preview already has view transforms (Linear, Reinhard, Filmic, ACES, AgX, with exposure and white point) in its post-process menu, so nothing was added there.
 - The MaterialX and USD exports (§5.3) tag albedo and emission as sRGB and every other map as raw.
 - Still missing: real OCIO. It needs the OpenColorIO C++ library through a GDExtension to apply config-defined input, working-space, and display transforms. There's also no view transform on the 2D preview yet.
+
+**Full OCIO plan (assessed 2026-10-26, medium effort):**
+- **GDExtension (moderate, mostly build work).** A small godot-cpp wrapper around OpenColorIO 2.x that exposes:
+  - loading a config, or OCIO's built-in ACES configs, which need no file;
+  - listing color spaces, displays and views;
+  - building a processor (source→destination, or display/view);
+  - returning the generated GLSL plus its LUT data, and converting images on the CPU.
+
+  It's a few hundred lines, and OCIO generates the shader code itself. Most of the work is the build: static linking of yaml-cpp, expat, Imath, pystring, minizip and zlib, plus Windows/Linux/macOS binaries from a GitHub Actions matrix. `addons/godotsteam` shows how the repo already ships a GDExtension.
+- **MM integration (moderate, GDScript):**
+  - Image node input transforms, applied on the CPU at load or injected into the shader like the current sRGB conversion.
+  - `sampler3D` support in the compute pipeline and uniform handling. Display/view transforms usually need 3D LUTs, and MM only handles `sampler2D` today.
+  - A 2D preview view transform, and OCIO as an alternative to the 3D preview tonemapper.
+  - Project working-space and config settings, and color-space tags in exports.
+- **Toolchain:** the dev machine has no MSVC (only Watcom's `cl`), SCons or vcpkg; CMake is installed. It needs Visual Studio Build Tools (C++ workload), vcpkg for OCIO and its dependencies, and `pip install scons`. Alternatively, build only in CI.
+- **Estimate:** with a working toolchain, about one session for an extension that builds on Windows, one for the MM integration and tests, and one for cross-platform CI and packaging.
+- **Risks:**
+  - OCIO's generated GLSL may need small adaptations for MM's shader assembly and Godot's GLSL dialect.
+  - It adds about 5–10 MB of binaries per platform.
+  - Licensing is fine: OCIO is BSD-3, compatible with MIT.
+- **Cheaper alternative (about 80% of the value, no native code):** a script that bakes OCIO transforms (such as ACES display views) into LUT files, plus a 3D LUT apply node and a LUT-based preview view transform in GDScript. It covers fixed views but not arbitrary user configs.
 
 ---
 
@@ -239,7 +304,7 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - A plugin system.
   - Truly headless runs. Godot's `--headless` has no RenderingDevice, so a minimized window is still needed.
   - `mm-cook`, which depends on §5.1.
-- **Upstream bug found:** baking ambient occlusion, thickness and bent normals segfaults in Godot 4.7.2 on an AMD Radeon 780M (Vulkan), both in the CLI and with the full user interface, and also on the upstream base commit. Curvature, position, normal and the other raster maps bake fine.
+- **Upstream bug found and fixed in M4 (§4.1):** baking ambient occlusion, thickness and bent normals segfaulted on Vulkan, in the CLI, with the full user interface, and on the upstream base commit. The cause was an invalid `texture()` call with a LOD bias in the denoise compute shader.
 
 ### 5.3 Standards interop — **M–L**
 - **MaterialX** export: baked texture sets now, and the procedural node subset later. Also MaterialX import of common nodes.
@@ -297,7 +362,7 @@ What it means for this plan:
 | **M1: Engine** | 2.1 cooking/cache, 2.2 per-node size/format, 2.3 reductions, 2.4 profiler | Everything else (FX-Map, auto levels, large graphs, runtime packages) depends on it |
 | **M2: Authoring + migration** | 3.1 function graphs (shared IR with sbsar2ptex), 3.3 top-priority nodes (Splatter v2, Non-Uniform Blur, Distance, Spline Mapper, Histogram Scan), 3.4 instancing/versioning, 5.6 *Import .sbsar* (baked first) | Removes the main reasons SD artists bounce off MM, and gives them a way to bring their libraries over |
 | **M3: Pipeline core** ✅ (2026-10-26, OCIO and plugins deferred) | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
-| **M4: 3D** | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
+| **M4: 3D** ✅ (2026-10-26, UDIM, hardware RT, path tracer and OpenPBR preview deferred) | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
 | **M5: Runtime** | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
 | **M6: Exceed** | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
 
