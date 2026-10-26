@@ -26,6 +26,10 @@ Godot game engine
 When exporting for the Godot game engine, Material Maker will generate a .tres file that
 describes a fully configured SpatialMaterial.
 
+The Godot 4 targets also export the Material node's extra channels when they are used: the
+coat and coat roughness (Godot's clearcoat), anisotropy (with a flow map pointing along the
+tangent), sheen (as Godot's rim lighting) and transmission (as backlight).
+
 Unity game engine
 -----------------
 
@@ -35,6 +39,9 @@ into one of your project assets directory, and Unity will automatically detect t
 exported materials.
 
 Depending on the Material node type, several Unity targets may be available.
+
+The HDRP target exports the coat (coat mask map) and anisotropy (anisotropy map, with the
+anisotropic material type) of the Material node when they are used.
 
 Unreal game engine
 ------------------
@@ -94,6 +101,11 @@ so you just have to paste it into Unreal's 5 Python prompt and execute it to cre
 When exporting, the target path is not that important (all necessary files will be imported into
 the Unreal project), but the file name will be used as material name.
 
+The Material node's extra channels are exported when they are used: coat and coat roughness
+(with the Clear Coat shading model), sheen (Cloth shading model, when there is no coat),
+transmission (Subsurface shading model, when there is no coat or sheen) and anisotropy.
+Unreal materials have a single shading model, so only the first one in this order is used.
+
 MaterialX
 ---------
 
@@ -131,6 +143,17 @@ covering a box centered on the origin (from -0.5 to 0.5 by default).
   (the default), 32 bits float or 8 bits, with 4 channels (colors) or 1 channel (grayscale
   textures and SDFs).
 
+Color spaces
+------------
+
+When OpenColorIO support is built (see the **native/ocio** directory of the source
+repository), color maps (albedo and emission) can be converted to another color space when
+exporting, for example *ACEScg* for an ACES pipeline. The color space is set in the **Color**
+tab of the preferences (**Color space of exported color maps**; empty exports sRGB textures
+as usual), or with
+the **--color-space** command line option. Other maps (normal, roughness, metallic, occlusion,
+height...) are data and are never converted.
+
 Runtime packages
 ----------------
 
@@ -162,3 +185,14 @@ plugins:
  mmr_render bricks.mmr -o textures --set Hue=0.3
  mmr_render bricks.mmr -o textures --preset Mossy
  mmr_render bricks.mmr --list   # parameters, outputs and presets
+
+Blender add-on
+^^^^^^^^^^^^^^
+
+The **runtime/blender** directory of the source repository contains a Blender (4.2+) add-on
+that imports runtime packages as Blender materials, using **mmr_render** to render the
+textures. **File > Import > Material Maker package (.mmr)** creates a Principled BSDF
+material from the package's outputs and the Material node's settings, and assigns it to the
+selected objects. The **Material Maker** panel of the material properties shows the package's
+parameters and presets: with **Live update**, changing a parameter renders the textures again.
+See **runtime/blender/README.md** for its installation.

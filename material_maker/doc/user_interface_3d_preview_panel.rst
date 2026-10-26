@@ -36,7 +36,26 @@ When generating a map from a custom mesh, an image node for the generated map wi
 be stored in the clipboard, and it is possible to directly paste that node into about
 a material graph.
 
+The *Model* menu also has an **OpenPBR shading** option, that replaces Godot's direct lighting
+in the preview with an approximation of the OpenPBR surface model: a coat (IOR 1.6) over
+fuzz (sheen) over an anisotropic GGX base, with thin walled transmission. Godot does not allow
+replacing its whole lighting model, so ambient light and reflections still use Godot's model.
+
 The *Environment* menu provides different environments, as well as tonemap options.
+
+The *Export* menu can also render the preview:
+
+* **Path traced render...** renders the object from the current view with a progressive path
+  tracer (in a GPU compute shader) that uses the Material node's maps (albedo, ORM, normal,
+  emission, coat, sheen) and the environment's panorama, with the given size and number of
+  samples. PNG files are tone mapped, EXR files contain linear values. With **Transparent
+  background**, the background is transparent instead of showing the environment.
+  Generated preview models are rendered with their untesselated version, and height maps do
+  not displace the surface.
+
+* **Turntable...** renders a full turn of the object (the given number of frames) with the
+  preview's renderer, as a sprite sheet, or as a PNG sequence if the file name contains #
+  characters (replaced by the frame number, for example turntable_###.png).
 
 In the 3D view, the view can be rotated about the yaw and the pitch axes (from the
 camera's point of view) by holding the left mouse button and moving the mouse horizontally

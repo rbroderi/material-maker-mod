@@ -4,9 +4,12 @@ class_name MMGenPaintLayer
 
 
 # A channel of a paint project (.mmpp): one of its layers, or all of its
-# visible layers composited as the painter does. The project's files are
-# watched, so the node follows the painting. Layers are composited in the
+# visible layers composited as the painter does. Layers are composited in the
 # shader generated for the node (each layer image is a texture uniform).
+#
+# When the project is open in a paint panel, its layers are read from the
+# panel, and the node is updated after each stroke and change of the layers.
+# Otherwise the project's files are read, and watched.
 
 
 const CHANNELS : Array[String] = [ "albedo", "metallic", "roughness", "emission", "normal", "depth", "occlusion" ]
@@ -22,6 +25,49 @@ var project_layers : Array = []
 var layer_names : PackedStringArray = PackedStringArray()
 var project_time : int = 0
 var timer : Timer
+var reload_pending : bool = false
+
+## Layers panels (MMPaintLayers) of the paint projects open in the user
+## interface, by project path
+static var open_projects : Dictionary = {}
+## Paint layer nodes, to update them when an open project changes
+static var paint_layer_nodes : Array = []
+
+## Registers (or unregisters, with a null panel) an open paint project
+static func set_open_project(path : String, layers_panel) -> void:
+	if path == "":
+		return
+	path = path.simplify_path()
+	if layers_panel == null:
+		open_projects.erase(path)
+	else:
+		open_projects[path] = layers_panel
+	project_changed(path)
+
+## Called by paint projects when their layers change
+static func project_changed(path) -> void:
+	if not path is String or path == "":
+		return
+	path = path.simplify_path()
+	for n in paint_layer_nodes.duplicate():
+		if is_instance_valid(n) and String(n.get_parameter("project")).simplify_path() == path:
+			n.schedule_reload()
+
+func _enter_tree() -> void:
+	if not self in paint_layer_nodes:
+		paint_layer_nodes.append(self)
+
+func _exit_tree() -> void:
+	paint_layer_nodes.erase(self)
+
+## Reloads the layers soon (several changes are coalesced)
+func schedule_reload() -> void:
+	if reload_pending or not is_inside_tree():
+		return
+	reload_pending = true
+	await get_tree().create_timer(0.2).timeout
+	reload_pending = false
+	load_project()
 
 
 func _ready() -> void:
@@ -75,7 +121,7 @@ func get_filetime(file_path : String) -> int:
 
 func _on_timeout() -> void:
 	var project : String = get_parameter("project")
-	if project != "" and get_filetime(project) != project_time:
+	if project != "" and not open_projects.has(project.simplify_path()) and get_filetime(project) != project_time:
 		load_project()
 
 ## Loads the layers of the project and their images
@@ -84,7 +130,10 @@ func load_project() -> void:
 	project_layers = []
 	layer_names = PackedStringArray()
 	project_time = get_filetime(project)
-	if project != "" and FileAccess.file_exists(project):
+	var layers_panel = open_projects.get(project.simplify_path()) if project != "" else null
+	if layers_panel != null and is_instance_valid(layers_panel):
+		project_layers = read_open_layers(layers_panel.layers)
+	elif project != "" and FileAccess.file_exists(project):
 		var data = JSON.parse_string(FileAccess.get_file_as_string(project))
 		if data is Dictionary and data.has("layers"):
 			# Layer images are in a directory named as the project file
@@ -103,11 +152,34 @@ func load_layers(data_layers : Array, path : String) -> Array:
 			if l.has(c):
 				var image : Image = Image.load_from_file(path.path_join(l[c]))
 				if image != null and not image.is_empty():
+					image.convert(Image.FORMAT_RGBAH)
 					var texture : MMTexture = MMTexture.new()
 					texture.set_texture(ImageTexture.create_from_image(image))
 					layer.textures[c] = texture
 		layer_names.append(layer.name)
 		layer.layers = load_layers(l.get("layers", []), path)
+		rv.append(layer)
+	return rv
+
+## Layers of a paint panel (MMLayers), as the layers read from files
+func read_open_layers(layers : Array) -> Array:
+	var rv : Array = []
+	for l in layers:
+		var layer : Dictionary = { name=l.name, type=l.get_layer_type(), hidden=l.hidden, textures={}, alphas={} }
+		for c in CHANNELS:
+			var alpha = l.get(c+"_alpha")
+			layer.alphas[c] = float(alpha) if alpha != null else 1.0
+		for c in l.get_channels():
+			var source : Texture2D = l.get(c)
+			if source != null:
+				var image : Image = source.get_image()
+				if image != null and not image.is_empty():
+					image.convert(Image.FORMAT_RGBAH)
+					var texture : MMTexture = MMTexture.new()
+					texture.set_texture(ImageTexture.create_from_image(image))
+					layer.textures[c] = texture
+		layer_names.append(layer.name)
+		layer.layers = read_open_layers(l.layers)
 		rv.append(layer)
 	return rv
 

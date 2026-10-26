@@ -57,6 +57,8 @@ Options
 * **--seed <n>** changes the seeds of all nodes whose seed is not locked
 * **--variations <n>** generates n variations with different seeds, whose files are suffixed with _v<i>
 * **--format <png|exr>** is the image format of **--render**
+* **--color-space <space>** converts exported color maps (albedo and emission) to an
+  OpenColorIO color space (for example ACEScg), when OpenColorIO support is built
 * **--frames <n>** makes **--render** render n frames of an animated material ($time going
   from 0 to the duration) in a sprite sheet, with **--duration <seconds>** (the default is 1)
   and **--columns <n>** (the default is a square sheet)

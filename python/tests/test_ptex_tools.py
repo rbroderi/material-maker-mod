@@ -73,6 +73,40 @@ class PtexToolsTest(unittest.TestCase):
         self.assertFalse(any(n["name"] == "Perlin" for n in merged["nodes"]))
         self.assertEqual(merger.conflicts, [])
 
+    def test_validate_example(self):
+        self.assertEqual(ptex_tools.validate(self.base), [])
+
+    def test_validate_errors(self):
+        cases = {
+            "connection to a missing node": lambda g: g["connections"].append({"from": "Perlin", "from_port": 0, "to": "Nowhere", "to_port": 0}),
+            "unknown connection key": lambda g: g["connections"][0].update(color="red"),
+            "negative port": lambda g: g["connections"][0].update(from_port=-1),
+            "bad buffer pin": lambda g: g["connections"][0].update(buffer="sometimes"),
+            "color without alpha": lambda g: node(g, "Material")["parameters"].update(albedo_color={"type": "Color", "r": 1, "g": 1, "b": 1}),
+            "parameter list": lambda g: node(g, "Perlin")["parameters"].update(scale_x=[1, 2]),
+            "graph without connections": lambda g: g.pop("connections"),
+            "duplicate node name": lambda g: g["nodes"].append(copy.deepcopy(node(g, "Perlin"))),
+            "shader without model": lambda g: g["nodes"].append({"name": "custom", "type": "shader"}),
+        }
+        for name, change in cases.items():
+            graph = copy.deepcopy(self.base)
+            change(graph)
+            self.assertNotEqual(ptex_tools.validate(graph), [], name)
+
+    def test_schema_matches_jsonschema(self):
+        """The built-in validator agrees with the reference implementation (when installed)"""
+        try:
+            import jsonschema
+        except ImportError:
+            self.skipTest("jsonschema is not installed")
+        schema = ptex_tools.load(ptex_tools.SCHEMA_PATH)
+        jsonschema.Draft202012Validator.check_schema(schema)
+        validator = jsonschema.Draft202012Validator(schema)
+        graph = copy.deepcopy(self.base)
+        self.assertEqual(list(validator.iter_errors(graph)), [])
+        node(graph, "Material")["parameters"]["albedo_color"] = {"type": "Color", "r": 1}
+        self.assertNotEqual(list(validator.iter_errors(graph)), [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -6,7 +6,10 @@ its visible layers composited as in the painter. Painted details can be used as 
 procedural graph (for example a painted mask that drives weathering, or painted heights that are
 combined with generated ones).
 
-The project's files are watched: when the paint project is saved again, the node is updated.
+When the paint project is open in Material Maker, the node shows its layers as they are being
+painted (it is updated after each stroke and each change of the layers), without saving the
+project. Otherwise, the project's files are watched: when the paint project is saved again, the
+node is updated.
 
 Inputs
 ++++++

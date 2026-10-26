@@ -61,6 +61,28 @@ static func convert_image(image : Image, source : String) -> Image:
 		return image
 	return converted
 
+## Color space of exported color maps: the command line's --color-space, or
+## the ocio_export_space setting ("" for no conversion)
+static var export_space_override : String = ""
+
+static func get_export_space() -> String:
+	if not is_available():
+		return ""
+	if export_space_override != "":
+		return export_space_override
+	return mm_globals.get_config("ocio_export_space") if mm_globals.has_config("ocio_export_space") else ""
+
+## Converts an image from the working space to a color space
+static func convert_image_to(image : Image, destination : String) -> Image:
+	var o = get_ocio()
+	if o == null or image == null or destination == "":
+		return image
+	var converted : Image = o.convert_image(image, get_working_space(), destination)
+	if converted == null:
+		push_error("OCIO: %s" % o.get_error())
+		return image
+	return converted
+
 ## A 3D texture that applies a display/view transform ("display / view") to
 ## working space values in [0, 1], or null
 static func get_view_lut(view_name : String) -> ImageTexture3D:

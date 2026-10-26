@@ -23,9 +23,9 @@ Sizes: **S** ≈ days, **M** ≈ 1–3 weeks, **L** ≈ 1–3 months, **XL** ≈
 | Node library | ~300+ nodes, strong SDF/3D | Atomic nodes plus a very large library; Shape Splatter v2, splines/paths, Ribbon | Medium |
 | Mesh baking | Same-mesh maps (position, normal, tangent, AO, bent normals, thickness, curvature, seams, adjacency), plus high→low with cages, AA, tangent/object normals, height, vertex color, material ID and position ✅ (§4.1). No UDIMs | Full baker suite: high→low, cages, ID, thickness, bent normals, UDIM | **High** |
 | SD interop | `.sbsar` → `.ptex` via the separate sbsar2ptex tool (baked maps; node translation in progress) | n/a | MM-side opportunity |
-| 3D viewport | Godot renderer | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium–High |
+| 3D viewport | Godot renderer, with an OpenPBR approximation for direct light, a progressive GPU path tracer and turntables ✅ (§4.2) | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium |
 | Color management | Image color spaces, plus OpenColorIO 2.6 through an optional GDExtension (input transforms, ACES and other display/view transforms in the 2D preview) ✅ (§4.3) | OCIO/ACES | **High** for studios |
-| Runtime format | `.mmr` runtime packages and a Godot runtime addon, pixel-identical to MM ✅ (§5.1); no C++ renderer or other engine plugins yet | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
+| Runtime format | `.mmr` runtime packages, a Godot runtime addon, a C++/Vulkan renderer and a Blender add-on ✅ (§5.1); no Unreal, Unity or Houdini plugins yet | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
 | Automation | CLI export, render, bake, `--set` overrides and variations, plus a JSON-RPC server and Python client ✅ (§5.2) | Python API, plugins, Automation Toolkit (cooker/render/baker/mutator) | **High** |
 | Packages / dependencies | Library panel, user nodes | Packages, dependency manager, instance versioning, update outdated | Medium |
 | Scan processing | — | Multi-angle-to-material, AxF, scan workflows | Medium (niche) |
@@ -252,11 +252,15 @@ Audit against SD's library. Priority gaps to check or build:
   - Each input has a multiplier parameter, used alone when the input isn't connected (coat, anisotropy, sheen and transmission default to 0).
 - **Preview:** the inputs map to Godot's CLEARCOAT, ANISOTROPY, RIM and BACKLIGHT. Their textures are only rendered when the inputs are connected.
 - **Exports:** they go to MaterialX standard_surface and OpenPBR (coat_weight, specular_roughness_anisotropy, fuzz_weight, transmission_weight), and coat/coat roughness to USD (clearcoat). The files pass MaterialX validation and GLSL generation, and USD resolves them.
-- **Still missing:**
-  - An OpenPBR shading model in the preview. Godot's lighting model can't be replaced from a material shader.
-  - The path tracer.
-  - Turntable rendering.
-  - Godot/Unity/Unreal export of the new channels.
+- ~~**Still missing:** an OpenPBR shading model, the path tracer, turntable rendering, and Godot/Unity/Unreal export of the new channels.~~ ✅ **Done (2026-10-26, M11):**
+  - **OpenPBR shading** (*Model → OpenPBR shading*, `engine/openpbr_preview.gd`): Godot can't replace its whole lighting model, but a `light()` function replaces direct lighting. The Material node's preview shader gets one that layers a coat (IOR 1.6, isotropic GGX) over fuzz (Charlie sheen) over an anisotropic GGX base with thin-walled transmission. The coat, anisotropy, sheen and transmission values reach `light()` through varyings. Ambient light and reflections still use Godot's model.
+  - **Path tracer** (`engine/path_tracer.gd`, `path_tracer_compute.tres`): a progressive compute path tracer that uses the high-poly baker's BVH traversal. It renders the preview object (generated preview models use their untessellated fallback mesh) with the Material node's maps (albedo, ORM, normal, emission, coat/sheen) and the preview's camera and panorama. Lobes are coat, fuzz, GGX specular and diffuse, with Russian roulette and a firefly clamp. The *Export* menu writes tone-mapped PNGs or linear EXRs, optionally with a transparent background. It also works over RPC (`render_path_traced`).
+  - **Turntable:** a full turn of the preview object, rendered by the preview at a fixed size, saved as a sprite sheet or a PNG sequence (from the *Export* menu, or `render_turntable` over RPC).
+  - **Exports of the new channels:** Godot 4 (clearcoat, anisotropy with a flow map, sheen as rim, transmission as backlight), Unity HDRP (coat mask and anisotropy maps, anisotropic material type), and Unreal 5 (clear coat, cloth or subsurface shading model, anisotropy).
+  - **Fixed along the way (upstream bug):** nested `$if` blocks in export templates ran inside skipped outer blocks, and `$else` toggled the wrong level (`gen_material.gd`, `process_conditionals`).
+  - **Verified:** Godot loads the exported .tres with all features. The HDRP .mat YAML and its .meta GUIDs are consistent, and the Unreal script compiles as Python. The OpenPBR preview shader compiles and renders without NaN. Path traced renders (bricks, 32 to 128 samples at 256² and 512²) have no NaN or infinite values; a 256² render with 32 samples takes about 3 s. Transparent backgrounds have alpha 0, and turntable frames differ and restore the object's rotation.
+  - **Not verified:** the Unity and Unreal exports were not imported into Unity or Unreal (neither is installed here).
+  - **Still missing:** the path tracer has no direct light sampling (environment only, so it's noisy with small bright sources), no displacement, and no subsurface or refraction. OCIO in the 3D preview.
 
 ### 4.3 Color management — **L, high for studio adoption**
 - **OCIO** integration: working space, per-bitmap input transforms, and display/view transforms in the 2D and 3D views.
@@ -282,7 +286,7 @@ Audit against SD's library. Priority gaps to check or build:
     - The preview shader compiles in the full app, with the transform and after removing it.
   - **Still missing:**
     - OCIO in the 3D preview, which uses Godot's tonemappers.
-    - Output transforms on export (e.g. writing ACEScg EXRs).
+    - ~~Output transforms on export (e.g. writing ACEScg EXRs).~~ ✅ **Done (M11):** color maps (albedo and emission) are converted to the color space set in *Preferences → Color* or with `--color-space` (for example ACEScg). Data maps are never converted. Verified: an sRGB albedo exported with `--color-space ACEScg` gives the expected ACEScg values, and ORM is unchanged.
     - Linux and macOS builds of the extension, and CI.
     - Values above 1 are clamped before the preview LUT (a shaper would fix that for HDR values).
 
@@ -341,7 +345,8 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - **Speed:** bricks renders in 18 ms on a Radeon 780M, and a Hue change re-renders 3 of 19 passes in 3.7 ms.
 - **Still missing:**
   - CI builds of the C++ runtime for each platform.
-  - Blender, Unreal, Unity and Houdini plugins.
+  - ~~Blender plugin.~~ ✅ **Done (M11): Blender add-on** (`runtime/blender/material_maker_runtime`, Blender 4.2+ extension). It imports `.mmr` packages as Principled BSDF materials, rendering textures with `mmr_render`, and its *Material Maker* panel edits the package's parameters and presets, with optional live updates. Verified in Blender 5.2: the extension builds, installs and enables; importing a package creates a material with the right maps and color spaces, which Cycles renders without missing textures; and parameter changes (live update) and presets render new textures.
+  - Unreal, Unity and Houdini plugins.
   - Live link and exposed seeds. (Presets were done in M7: the `presets` in the manifest, `apply_preset` in the Godot runtime, and `--preset` in `mmr_render`.)
   - Runtime-resizable outputs.
 
@@ -423,7 +428,7 @@ What it means for this plan:
    - The **Paint Layer** node (`engine/nodes/gen_paint_layer.gd`, *Simple/Paint Layer*) reads a channel of a paint project (.mmpp): albedo, metallic, roughness, emission, normal, depth or occlusion.
    - It reads one layer, or all visible layers composited as the painter does (masks, channel opacities, normal and occlusion backgrounds), in the node's generated shader.
    - It follows the project when it is saved again.
-   - Painting with graphs already existed as procedural layers. Not done: live updates while painting, without saving.
+   - Painting with graphs already existed as procedural layers. ✅ **Live updates (M11):** when the project is open in the painter, the node reads its layers from memory after each stroke and each layer change, without saving.
 2. **Graph → native shader export**: runtime-procedural materials with no plugin at all.
 3. **True 3D/volumetric textures and SDF scenes**: MM's SDF and raymarching heritage is ahead of SD 16's new SDF nodes. Add 3D texture export (VDB, 3D DDS/KTX) for volumetrics. ✅ **Done (2026-10-26):** `engine/volume_export.gd` samples TEX3D and SDF3D outputs (all slices in one compute pass) and writes:
    - **OpenVDB** (format 224, uncompressed, sparse 5-4-3 trees): SDFs as narrow band level sets, grayscale textures as fog volumes, colors as a vec3 grid plus density.
@@ -434,7 +439,8 @@ What it means for this plan:
 4. **Animated and time-based materials**: `$time`-driven graphs, flipbook and sprite-sheet export, and live animated previews (sky, water, fire). ✅ **Done (2026-10-26):**
    - `--render --frames n [--duration s] [--columns c]` renders sprite sheets. The time is fixed per frame (`MMComputeShader.fixed_time`), and buffers, including automatic ones, are rendered again for each frame.
    - Runtime packages have a `time` parameter on the passes that use `$time`, so engines can animate them.
-5. **Open, diff-friendly file format**: `.ptex` is JSON. Add a stable schema, a merge tool, and a git diff/merge driver for graphs. ✅ **Done (2026-10-26), except the schema:** `python/ptex_tools.py` has three commands.
+5. **Open, diff-friendly file format**: `.ptex` is JSON. Add a stable schema, a merge tool, and a git diff/merge driver for graphs. ✅ **Done (2026-10-26):** `python/ptex_tools.py` has four commands.
+   - `validate` checks files against `python/ptex.schema.json` (JSON schema draft 2020-12: nodes, connections, typed parameter values, shader models, remote widgets), with a built-in validator, and checks that connections refer to existing nodes. All 476 .ptex and .mmg files in the repository pass, with the built-in validator and with `jsonschema`.
    - `normalize` gives a canonical order, for use as git's textconv.
    - `diff` is semantic: nodes, parameters and connections, recursively into subgraphs.
    - `merge` is a three-way merge: nodes are matched by name, connections are sets, and parameters and subgraphs merge recursively. Conflicts are reported. It can serve as git's merge driver.
@@ -458,6 +464,8 @@ What it means for this plan:
 | **M7: Authoring parity** ✅ (2026-10-26: programmable FX-Map, function graph undo, weathering/atlas/normal/bitmap nodes, SVG, parameter groups, hard ranges, presets, engine templates) | 3.1–3.4 remaining items | Closes most of the day-to-day authoring gaps with SD |
 | **M8: UX and node gaps** ✅ (2026-10-26: 2D inspection, fuzzy search, swatches, instance diffs, Tile Sampler, Spline Bridge, Ribbon, blur blades, water level, atlas islands, Patch Tiling, Photo to Material, SVG shapes) | 3.3 and 3.4 remaining items | Finishes the authoring phase |
 | **M9: Engine follow-ups** ✅ (2026-10-26: nested FX-Map iterations, SVG Bézier curves, pins kept when grouping, calibrated buffer costs, buffer badges and precision warnings) | Leftovers of 2.1, 2.2, 3.2 and 3.3 | Closes the small gaps left in phases 0 and 1 |
+| **M10: Painting and volumes** ✅ (2026-10-26: Paint Layer node, VDB/3D DDS/KTX2 export) | §6 items 1 and 3 | Leans into what SD can't do |
+| **M11: Viewport and pipeline** ✅ (2026-10-26: OpenPBR preview shading, path tracer, turntables, extra channel exports, OCIO on export, .ptex schema, live paint layers, Blender add-on) | 4.2 and 4.3 leftovers, first DCC plugin of 5.1 | Presentation renders and the first plugin outside Godot |
 
 **Quick wins** (status as of 2026-10-25):
 1. ✅ **Profiler summary**: Iterate Buffer timing, plus *Tools → Show buffer render times* (§2.4).

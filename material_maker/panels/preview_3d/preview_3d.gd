@@ -241,3 +241,95 @@ func do_generate_map(file_name : String, map : String, image_size : int) -> void
 	var t : MMTexture = await MMMapGenerator.get_map(object.mesh, map, image_size)
 	t.save_to_file(file_name)
 	DisplayServer.clipboard_set("{\"name\":\"image\",\"parameters\":{\"image\":\"%s\"},\"type\":\"image\"}" % file_name)
+
+
+## A path traced render of the current object, from the current view, saved
+## to a PNG (tone mapped) or EXR (linear) file. Returns an error message, or
+## an empty string.
+func render_path_traced(file_name : String, image_size : Vector2i, samples : int, transparent_background : bool = false, progress : Callable = Callable()) -> String:
+	var project = mm_globals.main_window.get_current_project() if mm_globals.main_window != null else null
+	var material = project.get_material_node() if project != null and project.has_method("get_material_node") else null
+	if material == null:
+		return "No material to render"
+	var object_rotate : AnimationPlayer = $MaterialPreview/Preview3d/ObjectRotate
+	var was_playing : bool = object_rotate.is_playing()
+	object_rotate.pause()
+	var tracer : MMPathTracer = MMPathTracer.new()
+	var error : String = ""
+	if not await tracer.setup(current_object, material, camera, environment, image_size, transparent_background):
+		error = "Cannot prepare the path tracer"
+	else:
+		var done : int = 0
+		while done < samples:
+			var count : int = min(8, samples-done)
+			if not await tracer.render_samples(count):
+				error = "Path tracing failed"
+				break
+			done += count
+			if progress.is_valid():
+				progress.call(done, samples)
+			await get_tree().process_frame
+	if error == "":
+		var image : Image
+		if file_name.get_extension().to_lower() == "exr":
+			image = await tracer.get_hdr_image()
+			if image.save_exr(file_name) != OK:
+				error = "Cannot save "+file_name
+		else:
+			image = await tracer.get_image()
+			if image.save_png(file_name) != OK:
+				error = "Cannot save "+file_name
+	if was_playing:
+		object_rotate.play()
+	return error
+
+## Images of a full turn of the current object, rendered by the preview
+func render_turntable(frame_count : int, image_size : Vector2i = Vector2i()) -> Array[Image]:
+	var object_rotate : AnimationPlayer = $MaterialPreview/Preview3d/ObjectRotate
+	var was_playing : bool = object_rotate.is_playing()
+	object_rotate.pause()
+	var pivot : Node3D = $MaterialPreview/Preview3d/ObjectsPivot
+	var saved_rotation : Vector3 = pivot.rotation_degrees
+	var viewport : SubViewport = $MaterialPreview
+	var saved_stretch : bool = stretch
+	var saved_size : Vector2i = viewport.size
+	if image_size != Vector2i():
+		stretch = false
+		viewport.size = image_size
+	var images : Array[Image] = []
+	for i in frame_count:
+		pivot.rotation_degrees = Vector3(saved_rotation.x, saved_rotation.y+360.0*i/frame_count, saved_rotation.z)
+		for f in 3:
+			await RenderingServer.frame_post_draw
+		images.append(viewport.get_texture().get_image())
+	pivot.rotation_degrees = saved_rotation
+	if image_size != Vector2i():
+		viewport.size = saved_size
+		stretch = saved_stretch
+	if was_playing:
+		object_rotate.play()
+	return images
+
+## Saves turntable images as a PNG sequence (when the file name contains #,
+## replaced by the frame number) or a sprite sheet
+static func save_turntable(images : Array[Image], file_name : String) -> String:
+	if images.is_empty():
+		return "No image"
+	if file_name.contains("#"):
+		var digits : int = file_name.count("#")
+		var pattern : String = "#".repeat(digits)
+		for i in images.size():
+			var frame_file : String = file_name.replace(pattern, str(i).pad_zeros(digits)).replace("#", "")
+			if images[i].save_png(frame_file) != OK:
+				return "Cannot save "+frame_file
+		return ""
+	var columns : int = ceili(sqrt(images.size()))
+	var rows : int = ceili(float(images.size())/columns)
+	var frame_size : Vector2i = images[0].get_size()
+	var sheet : Image = Image.create(frame_size.x*columns, frame_size.y*rows, false, Image.FORMAT_RGBA8)
+	for i in images.size():
+		var image : Image = images[i]
+		if image.get_format() != Image.FORMAT_RGBA8:
+			image.convert(Image.FORMAT_RGBA8)
+		sheet.blit_rect(image, Rect2i(Vector2i(), frame_size), Vector2i(i%columns, i/columns)*frame_size)
+	return "" if sheet.save_png(file_name) == OK else "Cannot save "+file_name

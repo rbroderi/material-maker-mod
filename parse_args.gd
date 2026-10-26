@@ -131,6 +131,7 @@ Options:
   --voxels <n>               voxels in each direction of --export-volume (default: 128)
   --extent <size>            size of the box sampled by --export-volume (default: 1, the box is centered)
   --texel-format <format>    texel format of --export-volume to dds or ktx2 (rgba16f, rgba32f, rgba8, r16f, r32f)
+  --color-space <space>      OCIO color space of exported color maps (albedo, emission), e.g. ACEScg
   --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
   --duration <seconds>       duration of the animation of --frames (default: 1)
   --columns <n>              columns of the sprite sheet of --frames (default: square sheet)
@@ -243,6 +244,9 @@ func _ready():
 				i += 1
 			"--texel-format":
 				options.texel_format = value
+				i += 1
+			"--color-space":
+				MMColorManagement.export_space_override = value
 				i += 1
 			"--duration":
 				options.duration = float(value)

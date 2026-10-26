@@ -96,6 +96,7 @@ func _ready():
 	set_current_tool(MODE_FREEHAND_DOTS)
 	initialize_2D_paint_select()
 	graph_edit.undoredo.disable()
+	layers.layers_changed.connect(notify_layers_changed)
 	graph_edit.node_factory = get_node("/root/MainWindow/NodeFactory")
 	graph_edit.new_material({nodes=[{name="Brush", type="brush"}], connections=[]})
 	update_brush_graph()
@@ -124,8 +125,21 @@ func update_tab_title() -> void:
 		get_parent().set_tab_title(get_index(), title)
 
 func set_project_path(p):
+	if save_path != null and save_path != p:
+		MMGenPaintLayer.set_open_project(save_path, null)
 	save_path = p
 	update_tab_title()
+	# Paint Layer nodes read the layers of open projects
+	if save_path != null:
+		MMGenPaintLayer.set_open_project(save_path, layers)
+
+func _exit_tree() -> void:
+	if save_path != null:
+		MMGenPaintLayer.set_open_project(save_path, null)
+
+## Updates the Paint Layer nodes that use this project
+func notify_layers_changed() -> void:
+	MMGenPaintLayer.project_changed(save_path)
 
 func set_need_save(b : bool = true) -> void:
 	if need_save != b:
@@ -992,6 +1006,7 @@ func _on_Painter_end_of_stroke(stroke_state):
 	layer_history.current += 1
 	var redo_command = { type="reload_layer_state", layer=layer, index=layer_history.current }
 	undoredo.add("Paint Stroke", [undo_command], [redo_command])
+	notify_layers_changed()
 
 
 var last_hsplit_offset : int = 0

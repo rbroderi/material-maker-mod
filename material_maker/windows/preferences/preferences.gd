@@ -4,6 +4,38 @@ var config : ConfigFile
 
 signal config_changed()
 
+func _ready() -> void:
+	add_color_management_tab()
+
+## OpenColorIO settings (used when the mm_ocio extension is built)
+func add_color_management_tab() -> void:
+	var scroll : ScrollContainer = ScrollContainer.new()
+	scroll.name = "Color"
+	var vbox : VBoxContainer = VBoxContainer.new()
+	vbox.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	scroll.add_child(vbox)
+	if not MMColorManagement.is_available():
+		var note : Label = Label.new()
+		note.text = "These settings need the OpenColorIO extension (see native/ocio)"
+		vbox.add_child(note)
+	for o in [ [ "OCIO config (empty: built-in ACES studio config)", "ocio_config" ],
+			[ "Working color space", "ocio_working_space" ],
+			[ "Color space of exported color maps (empty: no conversion)", "ocio_export_space" ] ]:
+		var hbox : HBoxContainer = HBoxContainer.new()
+		var label : Label = Label.new()
+		label.text = o[0]
+		hbox.add_child(label)
+		var edit : StringOption = StringOption.new()
+		edit.config_variable = o[1]
+		edit.custom_minimum_size = Vector2(260, 0)
+		edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL | Control.SIZE_SHRINK_END
+		hbox.add_child(edit)
+		vbox.add_child(hbox)
+	%TabContainer.add_child(scroll)
+	for t in find_children("*", "Tree", true, false):
+		if t.has_method("update_tree"):
+			t.update_tree()
+
 func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("ui_cancel"):
 		queue_free()

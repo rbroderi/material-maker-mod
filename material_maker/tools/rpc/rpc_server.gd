@@ -405,6 +405,38 @@ func api_export_volume(params : Dictionary):
 	var error : String = await MMVolumeExport.export_volume(generator, int(params.get("output", 0)), params.path, int(params.get("resolution", 128)), float(params.get("extent", 1.0)), params.get("texel_format", ""))
 	return fail(error) if error != "" else params.path
 
+func get_preview_3d():
+	if mm_globals.main_window == null:
+		fail("The 3D preview requires the GUI")
+		return null
+	return mm_globals.main_window.get_panel("Preview3D")
+
+## Path traced render of the 3D preview's object (PNG, or linear EXR)
+func api_render_path_traced(params : Dictionary):
+	if not require(params, [ "path" ]):
+		return null
+	var preview = get_preview_3d()
+	if preview == null:
+		return null
+	await MMCliTools.wait_for_renders(get_tree())
+	var size : int = int(params.get("size", 512))
+	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), int(params.get("samples", 64)), bool(params.get("transparent", false)))
+	return fail(error) if error != "" else params.path
+
+## Turntable of the 3D preview's object, as a sprite sheet or a PNG sequence
+## (when the path contains #)
+func api_render_turntable(params : Dictionary):
+	if not require(params, [ "path" ]):
+		return null
+	var preview = get_preview_3d()
+	if preview == null:
+		return null
+	await MMCliTools.wait_for_renders(get_tree())
+	var size : int = int(params.get("size", 256))
+	var images : Array[Image] = await preview.render_turntable(int(params.get("frames", 36)), Vector2i(size, size))
+	var error : String = preview.save_turntable(images, params.path)
+	return fail(error) if error != "" else params.path
+
 func get_material(graph : MMGenGraph) -> MMGenBase:
 	var top : Node = graph
 	while top.get_parent() is MMGenGraph:

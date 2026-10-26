@@ -1,0 +1,298 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://github.com/rbroderi/material-maker-mod/blob/master/python/ptex.schema.json",
+	"title": "Material Maker graph (.ptex) and node definition (.mmg), version 1",
+	"description": "A material graph is a node of type graph whose nodes are connected. Node definitions (.mmg files and library items) use the same node format. Unknown keys are allowed, so that newer node types stay valid; known keys must have the types described here.",
+	"$ref": "#/$defs/node",
+	"$defs": {
+		"position": {
+			"type": "object",
+			"properties": {
+				"x": { "type": "number" },
+				"y": { "type": "number" }
+			},
+			"required": [ "x", "y" ]
+		},
+		"node": {
+			"type": "object",
+			"required": [ "type" ],
+			"properties": {
+				"name": { "type": "string", "description": "Unique in its graph; connections refer to nodes by name" },
+				"type": { "type": "string", "description": "graph, shader, remote, ios, comment, buffer..., or the name of a node definition (.mmg)" },
+				"label": { "type": "string" },
+				"shortdesc": { "type": "string" },
+				"longdesc": { "type": "string" },
+				"node_position": { "$ref": "#/$defs/position" },
+				"parameters": { "$ref": "#/$defs/parameters" },
+				"seed": { "type": "number" },
+				"seed_int": { "type": "integer" },
+				"seed_value": { "type": "number" },
+				"seed_locked": { "type": "boolean" },
+				"version": { "type": "integer" },
+				"generic_size": { "type": "integer", "minimum": 1 },
+				"preview": { "type": "integer" },
+				"minimized": { "type": "boolean" },
+				"export_paths": { "type": "object", "additionalProperties": { "type": "string" } },
+				"export_last_target": { "type": "string" },
+				"library_source": {
+					"type": "object",
+					"properties": {
+						"item": { "type": "string" },
+						"hash": { "type": "string" },
+						"instance_hash": { "type": "string" }
+					}
+				},
+				"nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },
+				"connections": { "type": "array", "items": { "$ref": "#/$defs/connection" } },
+				"shader_model": { "$ref": "#/$defs/shader_model" },
+				"widgets": { "type": "array", "items": { "$ref": "#/$defs/widget" } },
+				"ports": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+				"presets": { "type": "object", "additionalProperties": { "$ref": "#/$defs/parameters" } },
+				"text": { "type": "string" },
+				"title": { "type": "string" },
+				"color": { "$ref": "#/$defs/typed_value" },
+				"size": { "$ref": "#/$defs/position" }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "type": { "const": "graph" } }, "required": [ "type" ] },
+					"then": { "required": [ "nodes", "connections" ] }
+				},
+				{
+					"if": { "properties": { "type": { "const": "shader" } }, "required": [ "type" ] },
+					"then": { "required": [ "shader_model" ] }
+				},
+				{
+					"if": { "properties": { "type": { "const": "remote" } }, "required": [ "type" ] },
+					"then": { "required": [ "widgets" ] }
+				}
+			]
+		},
+		"connection": {
+			"type": "object",
+			"required": [ "from", "from_port", "to", "to_port" ],
+			"additionalProperties": false,
+			"properties": {
+				"from": { "type": "string" },
+				"from_port": { "type": "integer", "minimum": 0 },
+				"to": { "type": "string" },
+				"to_port": { "type": "integer", "minimum": 0 },
+				"buffer": { "enum": [ "always", "never" ], "description": "Automatic buffer pin of the input" }
+			}
+		},
+		"parameters": {
+			"type": "object",
+			"additionalProperties": { "$ref": "#/$defs/parameter_value" }
+		},
+		"parameter_value": {
+			"description": "Numbers (floats, enum indexes, sizes as powers of 2), booleans, strings (file paths, expressions, text) or typed values",
+			"anyOf": [
+				{ "type": [ "number", "string", "boolean", "null" ] },
+				{ "$ref": "#/$defs/typed_value" }
+			]
+		},
+		"color": {
+			"type": "object",
+			"required": [ "r", "g", "b", "a" ],
+			"properties": {
+				"r": { "type": "number" },
+				"g": { "type": "number" },
+				"b": { "type": "number" },
+				"a": { "type": "number" }
+			}
+		},
+		"typed_value": {
+			"type": "object",
+			"required": [ "type" ],
+			"properties": {
+				"type": { "enum": [ "Color", "Gradient", "Curve", "Polygon", "Splines", "Pixels", "Lattice" ] }
+			},
+			"allOf": [
+				{
+					"if": { "properties": { "type": { "const": "Color" } } },
+					"then": { "$ref": "#/$defs/color" }
+				},
+				{
+					"if": { "properties": { "type": { "const": "Gradient" } } },
+					"then": {
+						"required": [ "points" ],
+						"properties": {
+							"interpolation": { "type": "integer", "minimum": 0 },
+							"points": {
+								"type": "array",
+								"items": {
+									"allOf": [ { "$ref": "#/$defs/color" } ],
+									"required": [ "pos" ],
+									"properties": { "pos": { "type": "number" } }
+								}
+							}
+						}
+					}
+				},
+				{
+					"if": { "properties": { "type": { "const": "Curve" } } },
+					"then": {
+						"required": [ "points" ],
+						"properties": {
+							"points": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"required": [ "x", "y" ],
+									"properties": {
+										"x": { "type": "number" },
+										"y": { "type": "number" },
+										"ls": { "type": "number" },
+										"rs": { "type": "number" }
+									}
+								}
+							}
+						}
+					}
+				},
+				{
+					"if": { "properties": { "type": { "const": "Polygon" } } },
+					"then": {
+						"required": [ "points" ],
+						"properties": {
+							"points": { "type": "array", "items": { "$ref": "#/$defs/position" } },
+							"closed": { "type": "boolean" }
+						}
+					}
+				},
+				{
+					"if": { "properties": { "type": { "const": "Splines" } } },
+					"then": {
+						"required": [ "values" ],
+						"properties": {
+							"values": { "type": "array", "items": { "type": "number" }, "description": "16 numbers per cubic curve: 4 points of x, y, width and offset" },
+							"point_groups": { "type": "array", "items": { "type": "array", "items": { "type": "integer", "minimum": 0 } } }
+						}
+					}
+				},
+				{
+					"if": { "properties": { "type": { "const": "Pixels" } } },
+					"then": {
+						"properties": {
+							"bpp": { "type": "integer", "minimum": 1 },
+							"w": { "type": "integer", "minimum": 1 },
+							"h": { "type": "integer", "minimum": 1 },
+							"pl": { "type": "array", "items": { "$ref": "#/$defs/color" } }
+						}
+					}
+				},
+				{
+					"if": { "properties": { "type": { "const": "Lattice" } } },
+					"then": {
+						"required": [ "points" ],
+						"properties": {
+							"points": { "type": "array", "items": { "$ref": "#/$defs/position" } }
+						}
+					}
+				}
+			]
+		},
+		"code": {
+			"description": "GLSL code, as a string or an array of lines",
+			"anyOf": [
+				{ "type": "string" },
+				{ "type": "array", "items": { "type": "string" } }
+			]
+		},
+		"shader_model": {
+			"type": "object",
+			"properties": {
+				"name": { "type": "string" },
+				"shortdesc": { "type": "string" },
+				"longdesc": { "type": "string" },
+				"code": { "$ref": "#/$defs/code" },
+				"global": { "$ref": "#/$defs/code" },
+				"instance": { "$ref": "#/$defs/code" },
+				"preview_shader": { "$ref": "#/$defs/code" },
+				"includes": { "type": "array", "items": { "type": "string" } },
+				"inputs": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [ "name", "type" ],
+						"properties": {
+							"name": { "type": "string" },
+							"type": { "type": "string" },
+							"default": { "type": "string" },
+							"label": { "type": "string" },
+							"function": { "type": "boolean" },
+							"group_size": { "type": "integer", "minimum": 0 }
+						}
+					}
+				},
+				"outputs": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [ "type" ],
+						"properties": {
+							"type": { "type": "string" },
+							"group_size": { "type": "integer", "minimum": 0 }
+						}
+					}
+				},
+				"parameters": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [ "name", "type" ],
+						"properties": {
+							"name": { "type": "string" },
+							"type": { "type": "string" },
+							"label": { "type": "string" },
+							"min": { "type": "number" },
+							"max": { "type": "number" },
+							"step": { "type": "number" },
+							"hard_min": { "type": "number" },
+							"hard_max": { "type": "number" },
+							"first": { "type": "integer" },
+							"last": { "type": "integer" },
+							"control": { "type": "string" },
+							"expression_variables": { "type": "array", "items": { "type": "string" } },
+							"values": {
+								"type": "array",
+								"items": {
+									"type": "object",
+									"required": [ "name", "value" ],
+									"properties": { "name": { "type": "string" }, "value": { "type": "string" } }
+								}
+							}
+						}
+					}
+				}
+			}
+		},
+		"widget": {
+			"type": "object",
+			"required": [ "name", "type" ],
+			"properties": {
+				"name": { "type": "string" },
+				"type": { "enum": [ "linked_control", "config_control", "named_parameter" ] },
+				"label": { "type": "string" },
+				"linked_widgets": {
+					"type": "array",
+					"items": {
+						"type": "object",
+						"required": [ "node", "widget" ],
+						"properties": { "node": { "type": "string" }, "widget": { "type": "string" } }
+					}
+				},
+				"configurations": { "type": "object" }
+			}
+		},
+		"port": {
+			"type": "object",
+			"required": [ "name", "type" ],
+			"properties": {
+				"name": { "type": "string" },
+				"type": { "type": "string" },
+				"group_size": { "type": "integer", "minimum": 0 }
+			}
+		}
+	}
+}

@@ -6,6 +6,10 @@ class_name MMGenMaterial
 var buffer_name_prefix : String
 
 var export_last_target : String = ""
+
+## Outputs that are colors (albedo, emission), converted to the export color
+## space when OCIO is used
+const COLOR_OUTPUTS : Array[int] = [ 0, 2 ]
 var export_paths : Dictionary = {}
 var uids = {}
 
@@ -202,6 +206,8 @@ func update() -> void:
 	if preview_material == null:
 		return
 	var processed_preview_shader : String = process_conditionals(shader_model.preview_shader)
+	if MMOpenPBRPreview.is_enabled():
+		processed_preview_shader = MMOpenPBRPreview.apply(processed_preview_shader)
 	var result = process_shader(processed_preview_shader)
 	result.shader_code = MMGenBase.remove_constant_declarations(result.shader_code)
 	mm_deps.buffer_create_shader_material(buffer_name_prefix, MMShaderMaterial.new(preview_material), result.shader_code)
@@ -536,23 +542,28 @@ static func get_template_text(template : String) -> String:
 func process_conditionals(template : String) -> String:
 	var context = get_connections_and_parameters_context()
 	var processed : String = ""
-	var skip_state : Array = [ false ]
+	# For each nested block: [ skipped by its own condition, skipped by an
+	# enclosing block ], so that blocks nested in skipped ones stay skipped
+	var skip_state : Array = [ [ false, false ] ]
 	for l in template.split("\n"):
 		if l == "":
 			continue
 		elif l.left(4) == "$if ":
+			var outer : bool = skip_state.back()[0] or skip_state.back()[1]
 			var condition = subst_string(l.right(-4), context)
 			var expr = Expression.new()
 			var error = expr.parse(condition, [])
 			if error != OK:
 				print("Error in expression "+condition+": "+expr.get_error_text())
+				skip_state.push_back([ true, outer ])
 				continue
-			skip_state.push_back(!expr.execute())
+			skip_state.push_back([ !expr.execute(), outer ])
 		elif l.left(3) == "$fi":
-			skip_state.pop_back()
+			if skip_state.size() > 1:
+				skip_state.pop_back()
 		elif l.left(5) == "$else":
-			skip_state.push_back(!skip_state.pop_back())
-		elif ! skip_state.back():
+			skip_state.back()[0] = !skip_state.back()[0]
+		elif ! (skip_state.back()[0] or skip_state.back()[1]):
 			processed += l
 			processed += "\n"
 	return processed
@@ -761,7 +772,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
 					continue
 				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
-				e = await result.save_to_file(file_name)
+				var export_space : String = MMColorManagement.get_export_space()
+				if export_space != "" and output_index in COLOR_OUTPUTS:
+					# Color maps are converted from the working space (OCIO)
+					var image : Image = (await result.get_texture()).get_image()
+					e = MMTexture.save_image(MMColorManagement.convert_image_to(image, export_space), file_name)
+				else:
+					e = await result.save_to_file(file_name)
 				if e != OK:
 					error_files += 1
 				processed_files += 1

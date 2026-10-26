@@ -5,6 +5,10 @@
         sorted connections), for line based diffs
     python ptex_tools.py diff <old.ptex> <new.ptex> [--positions]
         prints the nodes, parameters and connections that changed
+    python ptex_tools.py validate <files...>
+        checks graphs (and .mmg node definitions) against ptex.schema.json, and
+        that connections refer to existing nodes; the exit code is 1 if a file
+        is invalid
     python ptex_tools.py merge <base.ptex> <ours.ptex> <theirs.ptex> [-o <out.ptex>]
         three-way merge: nodes are matched by name, connections are sets, and
         subgraphs and parameters are merged recursively. Conflicting changes
@@ -22,6 +26,8 @@ and in .gitattributes:
 """
 
 import json
+import os
+import re
 import sys
 
 # Keys that only affect the layout of the graph editor
@@ -159,7 +165,113 @@ class Merger:
         return [merged[k] for k in sorted(keys, key=str)]
 
 
+# Validation against ptex.schema.json, with a small validator for the subset
+# of JSON Schema it uses (so this tool keeps having no dependencies)
+
+SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ptex.schema.json")
+JSON_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None)}
+
+
+def load_lenient(path):
+    """Loads JSON, accepting the trailing commas that Godot's parser accepts"""
+    with open(path, encoding="utf-8") as f:
+        text = f.read()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return json.loads(re.sub(r",(\s*[\]}])", r"\1", text))
+
+
+def is_type(value, t):
+    if t == "integer":
+        return isinstance(value, int) and not isinstance(value, bool) or (isinstance(value, float) and value.is_integer())
+    if t == "number":
+        return isinstance(value, (int, float)) and not isinstance(value, bool)
+    return isinstance(value, JSON_TYPES[t])
+
+
+class SchemaValidator:
+    def __init__(self, schema):
+        self.root = schema
+
+    def resolve(self, ref):
+        node = self.root
+        for part in ref.lstrip("#/").split("/"):
+            node = node[part]
+        return node
+
+    def errors(self, value, schema, path="$"):
+        rv = []
+        if "$ref" in schema:
+            rv += self.errors(value, self.resolve(schema["$ref"]), path)
+        if "type" in schema:
+            types = schema["type"] if isinstance(schema["type"], list) else [schema["type"]]
+            if not any(is_type(value, t) for t in types):
+                return rv + ["%s: expected %s, got %s" % (path, " or ".join(types), type(value).__name__)]
+        if "const" in schema and value != schema["const"]:
+            rv.append("%s: expected %r" % (path, schema["const"]))
+        if "enum" in schema and value not in schema["enum"]:
+            rv.append("%s: %r is not one of %s" % (path, value, schema["enum"]))
+        if "minimum" in schema and is_type(value, "number") and value < schema["minimum"]:
+            rv.append("%s: %r is less than %r" % (path, value, schema["minimum"]))
+        if isinstance(value, dict):
+            for k in schema.get("required", []):
+                if k not in value:
+                    rv.append("%s: missing %s" % (path, k))
+            properties = schema.get("properties", {})
+            for k, v in value.items():
+                if k in properties:
+                    rv += self.errors(v, properties[k], "%s.%s" % (path, k))
+                elif schema.get("additionalProperties") is False:
+                    rv.append("%s: unexpected key %s" % (path, k))
+                elif isinstance(schema.get("additionalProperties"), dict):
+                    rv += self.errors(v, schema["additionalProperties"], "%s.%s" % (path, k))
+        if isinstance(value, list) and "items" in schema:
+            for i, v in enumerate(value):
+                rv += self.errors(v, schema["items"], "%s[%d]" % (path, i))
+        for s in schema.get("allOf", []):
+            rv += self.errors(value, s, path)
+        if "anyOf" in schema and all(self.errors(value, s, path) for s in schema["anyOf"]):
+            rv.append("%s: %s does not match any of the allowed forms" % (path, short(value)))
+        if "if" in schema and not self.errors(value, schema["if"], path):
+            rv += self.errors(value, schema.get("then", {}), path)
+        return rv
+
+
+def graph_errors(node, path="$"):
+    """Checks that connections refer to nodes of their graph, recursively"""
+    rv = []
+    names = [n.get("name") for n in node.get("nodes", [])]
+    for name in set(names):
+        if names.count(name) > 1:
+            rv.append("%s: several nodes are named %s" % (path, name))
+    for c in node.get("connections", []):
+        for k in ("from", "to"):
+            if c.get(k) not in names:
+                rv.append("%s: connection %s:%s -> %s:%s refers to a missing node %s" % (path, c.get("from"), c.get("from_port"), c.get("to"), c.get("to_port"), c.get(k)))
+    for n in node.get("nodes", []):
+        rv += graph_errors(n, "%s.%s" % (path, n.get("name")))
+    return rv
+
+
+def validate(value, schema=None):
+    """Returns the errors of a graph or node definition (an empty list if valid)"""
+    if schema is None:
+        schema = load(SCHEMA_PATH)
+    return SchemaValidator(schema).errors(value, schema) + graph_errors(value)
+
+
 def main(argv):
+    if len(argv) >= 2 and argv[0] == "validate":
+        schema = load(SCHEMA_PATH)
+        invalid = 0
+        for path in argv[1:]:
+            errors = validate(load_lenient(path), schema)
+            print("%s: %s" % (path, "valid" if not errors else "%d error(s)" % len(errors)))
+            for e in errors[:20]:
+                print("  " + e)
+            invalid += 1 if errors else 0
+        return 1 if invalid else 0
     if len(argv) >= 2 and argv[0] == "normalize":
         sys.stdout.write(dumps(load(argv[1])))
         return 0

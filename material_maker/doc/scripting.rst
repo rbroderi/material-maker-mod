@@ -65,6 +65,8 @@ graph (and in **list_nodes**).
 * **export_mmr(path, size)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
   SDF output as a volume (.vdb, .dds or .ktx2)
+* **render_path_traced(path, size, samples, transparent)** and **render_turntable(path, frames, size)**
+  render the 3D preview (with the user interface only, see the 3D preview panel)
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 
@@ -87,6 +89,18 @@ It can be used as git's diff and merge driver for .ptex files:
  git config merge.ptex.driver "python python/ptex_tools.py merge %O %A %B -o %A"
 
 with **\*.ptex diff=ptex merge=ptex** in **.gitattributes**.
+
+JSON schema
+-----------
+
+**python/ptex.schema.json** is a JSON schema (draft 2020-12) of .ptex files and node
+definitions (.mmg): nodes, connections, parameter values (colors, gradients, curves,
+polygons...), shader models and remote widgets. It can be used by editors, or to check files
+before committing them:
+
+ python python/ptex_tools.py validate material_maker/examples/*.ptex
+
+which also checks that connections refer to existing nodes, and that node names are unique.
 
 Validating libraries
 --------------------

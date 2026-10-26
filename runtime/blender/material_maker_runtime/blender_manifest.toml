@@ -1,0 +1,14 @@
+schema_version = "1.0.0"
+
+id = "material_maker_runtime"
+version = "1.0.0"
+name = "Material Maker Runtime"
+tagline = "Material Maker runtime packages as editable materials"
+maintainer = "Material Maker contributors"
+type = "add-on"
+blender_version_min = "4.2.0"
+license = ["SPDX:MIT"]
+tags = ["Import-Export", "Material"]
+
+[permissions]
+files = "Reads packages and writes rendered textures to a temp folder"

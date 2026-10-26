@@ -41,7 +41,7 @@
 		"inputs": [
 			{
 				"default": "vec4(1.0)",
-				"function": "true",
+				"function": true,
 				"label": "Input",
 				"longdesc": "The image or atlas of images to be remapped.",
 				"name": "in",

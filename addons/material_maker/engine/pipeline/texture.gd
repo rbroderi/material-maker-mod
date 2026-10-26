@@ -227,7 +227,10 @@ func get_height() -> int:
 
 func save_to_file(file_name : String) -> Error:
 	var texture : ImageTexture = await get_texture()
-	var image : Image = texture.get_image()
+	return save_image(texture.get_image(), file_name)
+
+## Saves an image in the format given by the file extension
+static func save_image(image : Image, file_name : String) -> Error:
 	if image != null:
 		var export_image : Image = image
 		match file_name.get_extension():

@@ -188,6 +188,17 @@ class MaterialMaker:
         return self.call("export_volume", node=node, path=_path(path), output=output,
                          resolution=resolution, extent=extent, texel_format=texel_format)
 
+    def render_path_traced(self, path, size=512, samples=64, transparent=False):
+        """Path traced render of the 3D preview's object from the current view
+        (GUI only), saved as a tone mapped PNG or a linear EXR"""
+        return self.call("render_path_traced", path=_path(path), size=size, samples=samples,
+                         transparent=transparent)
+
+    def render_turntable(self, path, frames=36, size=256):
+        """Full turn of the 3D preview's object (GUI only), saved as a sprite
+        sheet, or a PNG sequence if path contains # (replaced by frame numbers)"""
+        return self.call("render_turntable", path=_path(path), frames=frames, size=size)
+
     def list_export_targets(self):
         return self.call("list_export_targets")
 
