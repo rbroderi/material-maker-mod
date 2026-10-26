@@ -19,7 +19,7 @@ The image node provides a single color texture.
 Parameters
 ++++++++++
 
-The **Image** node has five parameters:
+The **Image** node has the following parameters:
 
 * The first parameter defines the image file the node provides.
   It can be modified by clicking the thumbnail and selecting a new image file.
@@ -34,6 +34,9 @@ The **Image** node has five parameters:
 * **Color space** defines how colors are read. Material Maker works with sRGB encoded colors,
   so **As is** (the default) should be used for most images and for data such as normal maps.
   **Linear** converts linear colors (such as most EXR and HDR images) to sRGB, and **Auto**
-  converts EXR and HDR images only.
+  converts EXR and HDR images only. When OpenColorIO support is built (see the
+  **native/ocio** directory of the source repository), **OCIO** converts the image from the
+  **OCIO color space** parameter (for example *ACEScg* or *Linear Rec.709 (sRGB)*) to
+  Material Maker's working space.
 
 The supported formats are BMP, EXR, HDR, JPEG, PNG, SVG, TGA, WebP and DDS.

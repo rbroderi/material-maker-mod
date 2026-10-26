@@ -24,7 +24,7 @@ Sizes: **S** ≈ days, **M** ≈ 1–3 weeks, **L** ≈ 1–3 months, **XL** ≈
 | Mesh baking | Same-mesh maps (position, normal, tangent, AO, bent normals, thickness, curvature, seams, adjacency), plus high→low with cages, AA, tangent/object normals, height, vertex color, material ID and position ✅ (§4.1). No UDIMs | Full baker suite: high→low, cages, ID, thickness, bent normals, UDIM | **High** |
 | SD interop | `.sbsar` → `.ptex` via the separate sbsar2ptex tool (baked maps; node translation in progress) | n/a | MM-side opportunity |
 | 3D viewport | Godot renderer | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium–High |
-| Color management | sRGB/linear only | OCIO/ACES | **High** for studios |
+| Color management | Image color spaces, plus OpenColorIO 2.6 through an optional GDExtension (input transforms, ACES and other display/view transforms in the 2D preview) ✅ (§4.3) | OCIO/ACES | **High** for studios |
 | Runtime format | `.mmr` runtime packages and a Godot runtime addon, pixel-identical to MM ✅ (§5.1); no C++ renderer or other engine plugins yet | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
 | Automation | CLI export, render, bake, `--set` overrides and variations, plus a JSON-RPC server and Python client ✅ (§5.2) | Python API, plugins, Automation Toolkit (cooker/render/baker/mutator) | **High** |
 | Packages / dependencies | Library panel, user nodes | Packages, dependency manager, instance versioning, update outdated | Medium |
@@ -249,7 +249,24 @@ Audit against SD's library. Priority gaps to check or build:
 - The **Image** node has a *Color space* parameter: *As is* (the default, so saved graphs don't change), *Linear* (converts linear colors to sRGB, MM's working encoding), and *Auto* (linear for EXR and HDR files). The conversion runs in the shader, so it also works on float images.
 - **✔ checked:** the 3D preview already has view transforms (Linear, Reinhard, Filmic, ACES, AgX, with exposure and white point) in its post-process menu, so nothing was added there.
 - The MaterialX and USD exports (§5.3) tag albedo and emission as sRGB and every other map as raw.
-- Still missing: real OCIO. It needs the OpenColorIO C++ library through a GDExtension to apply config-defined input, working-space, and display transforms. There's also no view transform on the 2D preview yet.
+- ~~Still missing: real OCIO.~~ ✅ **Done (2026-10-26): OpenColorIO GDExtension** (`native/ocio`, built with `python native/ocio/build.py`):
+  - **The extension:** `MMOCIO` is a godot-cpp (godot-4.5-stable) wrapper around OpenColorIO 2.6.0. OCIO is built as one DLL with its dependencies (expat, yaml-cpp, Imath, pystring, minizip-ng, zlib) linked in.
+    - Configs are loaded from files or as OCIO's built-in configs. The default is the ACES studio config.
+    - It lists color spaces, displays, views and roles.
+    - It runs CPU conversions on float arrays and Images, and bakes display/view 3D LUTs.
+  - **Optional:** the binaries go to `addons/material_maker/ocio` (not versioned). `MMColorManagement` checks `ClassDB.class_exists("MMOCIO")`, so Material Maker works unchanged without them.
+  - **Image node:** a new *OCIO* color space converts an image from any config color space (the *OCIO color space* parameter) to the working space (`ocio_working_space`, default *sRGB - Texture*) when it loads.
+  - **2D preview:** *View → View transform (OCIO)* lists every display/view (51 in the studio config). It's applied with a 33³ `sampler3D` LUT wrapped around the preview's post-processing, so OCIO's GLSL doesn't need translating to Godot's shader language.
+  - **Verified:**
+    - sRGB red converts to ACEScg as (0.6131, 0.0702, 0.0206) and round-trips back to (1.00002, 0, 0).
+    - The *OCIO / Linear Rec.709 (sRGB)* Image mode matches MM's built-in *Linear* mode to within 1/255.
+    - The *Un-tone-mapped* view LUT is exactly identity, and the ACES 2.0 SDR view maps white to 0.707.
+    - The preview shader compiles in the full app, with the transform and after removing it.
+  - **Still missing:**
+    - OCIO in the 3D preview, which uses Godot's tonemappers.
+    - Output transforms on export (e.g. writing ACEScg EXRs).
+    - Linux and macOS builds of the extension, and CI.
+    - Values above 1 are clamped before the preview LUT (a shaper would fix that for HDR values).
 
 **Full OCIO plan (assessed 2026-10-26, medium effort):**
 - **GDExtension (moderate, mostly build work).** A small godot-cpp wrapper around OpenColorIO 2.x that exposes:
@@ -264,7 +281,7 @@ Audit against SD's library. Priority gaps to check or build:
   - `sampler3D` support in the compute pipeline and uniform handling. Display/view transforms usually need 3D LUTs, and MM only handles `sampler2D` today.
   - A 2D preview view transform, and OCIO as an alternative to the 3D preview tonemapper.
   - Project working-space and config settings, and color-space tags in exports.
-- **Toolchain:** the dev machine has no MSVC (only Watcom's `cl`), SCons or vcpkg; CMake is installed. It needs Visual Studio Build Tools (C++ workload), vcpkg for OCIO and its dependencies, and `pip install scons`. Alternatively, build only in CI.
+- **Toolchain:** MSVC (VS 2026 Build Tools) and CMake are now installed and used by the C++ runtime (§5.1). Still needed: vcpkg (or CMake FetchContent) for OCIO and its dependencies, and `pip install scons` for godot-cpp. Alternatively, build only in CI.
 - **Estimate:** with a working toolchain, about one session for an extension that builds on Windows, one for the MM integration and tests, and one for cross-platform CI and packaging.
 - **Risks:**
   - OCIO's generated GLSL may need small adaptations for MM's shader assembly and Godot's GLSL dialect.
@@ -309,7 +326,6 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - Blender, Unreal, Unity and Houdini plugins.
   - Live link, presets, and exposed seeds.
   - Runtime-resizable outputs.
-  - SPIR-V in packages, so plugins don't need a GLSL compiler.
 
 ### 5.2 Scripting and automation — **L, high**
 - A documented **Python API** (via a Godot Python binding or a JSON-RPC bridge), plus the existing GDScript. Cover graph creation and edit, cook, export, and baking.
@@ -408,7 +424,7 @@ What it means for this plan:
 |---|---|---|
 | **M1: Engine** | 2.1 cooking/cache, 2.2 per-node size/format, 2.3 reductions, 2.4 profiler | Everything else (FX-Map, auto levels, large graphs, runtime packages) depends on it |
 | **M2: Authoring + migration** | 3.1 function graphs (shared IR with sbsar2ptex), 3.3 top-priority nodes (Splatter v2, Non-Uniform Blur, Distance, Spline Mapper, Histogram Scan), 3.4 instancing/versioning, 5.6 *Import .sbsar* (baked first) | Removes the main reasons SD artists bounce off MM, and gives them a way to bring their libraries over |
-| **M3: Pipeline core** ✅ (2026-10-26, OCIO and plugins deferred) | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
+| **M3: Pipeline core** ✅ (2026-10-26, OCIO GDExtension added later the same day; plugins deferred) | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
 | **M4: 3D** ✅ (2026-10-26, UDIM, hardware RT, path tracer and OpenPBR preview deferred) | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
 | **M5: Runtime** ✅ (2026-10-26: format, exporter, Godot runtime, C++/Vulkan runtime; Blender/Unreal/Unity plugins pending) | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
 | **M6: Exceed** ✅ first slice (2026-10-26: FX-Map, photometric stereo, flipbooks and animated packages, ptex diff/merge, library validation) | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |

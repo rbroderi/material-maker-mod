@@ -2,9 +2,33 @@ extends PanelContainer
 
 const GUIDES_GRID := 3
 
+var ocio_view : OptionButton = null
+
+func _ready() -> void:
+	# OCIO display/view transforms, when OpenColorIO support is built
+	if not MMColorManagement.is_available():
+		return
+	var label : Label = Label.new()
+	label.text = "View transform (OCIO)"
+	ocio_view = OptionButton.new()
+	ocio_view.add_item("None")
+	for v in MMColorManagement.get_views():
+		ocio_view.add_item(v)
+	ocio_view.item_selected.connect(func(i : int): owner.view_transform = "" if i == 0 else ocio_view.get_item_text(i))
+	var vbox : Node = %PostProcessing.get_parent()
+	vbox.add_child(label)
+	vbox.move_child(label, %PostProcessing.get_index()+1)
+	vbox.add_child(ocio_view)
+	vbox.move_child(ocio_view, label.get_index()+1)
+
 func _open() -> void:
 	%ViewMode.selected = owner.view_mode
 	%PostProcessing.selected = owner.view_filter
+	if ocio_view != null:
+		ocio_view.selected = 0
+		for i in ocio_view.item_count:
+			if ocio_view.get_item_text(i) == owner.view_transform:
+				ocio_view.selected = i
 
 	%Guides.selected = owner.get_node("Guides").style
 	%CustomGridSize.visible = %Guides.selected == GUIDES_GRID

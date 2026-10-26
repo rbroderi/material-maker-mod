@@ -68,3 +68,13 @@ the name will be used as-is, but if several PNG files are generated, the file na
 suffixed with an underscore character followed by the frame index (starting with 1). It is
 possible to avoid that behavior by setting a name that contains consecutive sharp (#)
 characters that will be replaced with the frame index (prefixed with zeroes if necessary).
+
+View transform
+^^^^^^^^^^^^^^
+
+When OpenColorIO support is built (see the **native/ocio** directory of the source
+repository), the **View** menu has a **View transform (OCIO)** list with the display/view
+transforms of the OpenColorIO config (by default OCIO's ACES studio config), such as
+*sRGB - Display / ACES 2.0 - SDR 100 nits (Rec.709)*. The transform is applied to the
+preview only, from Material Maker's working space (sRGB encoded colors by default), and
+values are clamped to [0, 1] before it.

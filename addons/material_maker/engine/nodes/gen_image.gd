@@ -30,9 +30,13 @@ func get_parameter_defs() -> Array:
 		{ name="clamp", type="boolean", label="Clamp", default=false },
 		{ name="filter", type="boolean", label="Filter", default=true },
 		{ name="color_space", type="enum", label="Color space", default=0,
-			values=[ { name="As is", value="as_is" }, { name="Linear", value="linear" }, { name="Auto", value="auto" } ],
-			longdesc="Material Maker works with sRGB encoded colors. As is uses the image's values (sRGB images and data such as normal maps), Linear converts linear colors to sRGB, Auto does it for EXR and HDR images" }
+			values=[ { name="As is", value="as_is" }, { name="Linear", value="linear" }, { name="Auto", value="auto" }, { name="OCIO", value="ocio" } ],
+			longdesc="Material Maker works with sRGB encoded colors. As is uses the image's values (sRGB images and data such as normal maps), Linear converts linear colors to sRGB, Auto does it for EXR and HDR images, and OCIO converts from the OCIO color space below (when OpenColorIO support is built)" },
+		{ name="ocio_space", type="string", label="OCIO color space", default="ACEScg",
+			longdesc="The color space of the image in the OpenColorIO config (e.g. ACEScg, Linear Rec.709 (sRGB), sRGB - Texture), used by the OCIO color space mode" }
 	]
+
+const COLOR_SPACE_OCIO : int = 3
 
 ## Whether the image holds linear colors that must be converted to sRGB
 func is_linear() -> bool:
@@ -82,34 +86,34 @@ func get_adjusted_uv(uv : String) -> String:
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
-	if n == "image" and FileAccess.file_exists(v):
-		filetime = get_filetime(v)
-		var image : Image = Image.new()
-		if v.get_extension() == "dds":
-			# load_from_file does not work with dds, see godot issue #113063
-			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(v))
+	if n == "image" or (n in [ "color_space", "ocio_space" ] and int(get_parameter("color_space")) == COLOR_SPACE_OCIO) or (n == "color_space" and parameters.has("image")):
+		load_image()
+
+## Loads the image file, converting it to the working space in OCIO mode
+func load_image() -> void:
+	var file_path : String = get_parameter("image")
+	if not FileAccess.file_exists(file_path):
+		return
+	filetime = get_filetime(file_path)
+	var image : Image = Image.new()
+	if file_path.get_extension() == "dds":
+		# load_from_file does not work with dds, see godot issue #113063
+		image.load_dds_from_buffer(FileAccess.get_file_as_bytes(file_path))
+	else:
+		image = Image.load_from_file(file_path)
+	if image == null:
+		return
+	if int(get_parameter("color_space")) == COLOR_SPACE_OCIO:
+		if MMColorManagement.is_available():
+			image = MMColorManagement.convert_image(image, get_parameter("ocio_space"))
 		else:
-			image = Image.load_from_file(v)
-		if image != null:
-			var image_texture : ImageTexture = ImageTexture.create_from_image(image)
-			texture.set_texture(image_texture)
-		mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
+			push_warning("OCIO color spaces need the OpenColorIO extension (native/ocio)")
+	texture.set_texture(ImageTexture.create_from_image(image))
+	mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
 
 func _on_timeout() -> void:
-	var file_path : String = get_parameter("image")
-	var new_filetime : int = get_filetime(file_path)
-	if filetime != new_filetime:
-		filetime = new_filetime
-		var image : Image = Image.new()
-		if file_path.get_extension() == "dds":
-			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(file_path))
-		else:
-			image.load(file_path)
-		var image_texture : ImageTexture = ImageTexture.create_from_image(image)
-		if image_texture:
-			texture.set_texture(image_texture)
-		super.set_parameter("image", file_path)
-		mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
+	if filetime != get_filetime(get_parameter("image")):
+		load_image()
 
 func _serialize(data: Dictionary) -> Dictionary:
 	return data

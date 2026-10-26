@@ -36,6 +36,15 @@ var view_filter : int = 0:
 		set_generator(generator, output, true)
 		mm_globals.set_config("preview"+config_var_suffix+"_view_postprocess", view_filter)
 
+## OCIO display/view transform ("display / view", "" for none)
+var view_transform : String = "":
+	set(v):
+		if v == view_transform:
+			return
+		view_transform = v
+		set_generator(generator, output, true)
+		mm_globals.set_config("preview"+config_var_suffix+"_ocio_view", view_transform)
+
 var checker_size : int = 1:
 	set(v):
 		if v == checker_size:
@@ -89,6 +98,8 @@ func _ready():
 		view_filter = mm_globals.get_config("preview"+config_var_suffix+"_view_postprocess")
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_size"):
 		checker_size = mm_globals.get_config("preview"+config_var_suffix+"_checker_size")
+	if mm_globals.has_config("preview"+config_var_suffix+"_ocio_view") and MMColorManagement.is_available():
+		view_transform = mm_globals.get_config("preview"+config_var_suffix+"_ocio_view")
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_brightness"):
 		checker_brightness = mm_globals.get_config("preview"+config_var_suffix+"_checker_brightness")
 
@@ -106,6 +117,11 @@ func clear() -> void:
 
 
 func get_shader_custom_functions():
+	if view_transform != "" and MMColorManagement.get_view_lut(view_transform) != null:
+		# The OCIO display/view transform is applied after post-processing
+		var code : String = MMColorManagement.get_view_shader_code()
+		code += "vec4 preview_2d_postprocessed(vec2 uv) { vec4 c = %s; return vec4(mm_ocio_view(c.rgb), c.a); }\n" % POSTPROCESS_OPTIONS[view_filter].function
+		return code
 	return "vec4 preview_2d_postprocessed(vec2 uv) { return %s; }\n" % POSTPROCESS_OPTIONS[view_filter].function
 
 
@@ -133,6 +149,8 @@ func update_material(source):
 			color.call(CHECKER_BRIGHTNESS_OPTIONS[checker_brightness][1]))
 	
 	material.set_shader_parameter("checker_size", CHECKER_SIZE_OPTIONS[checker_size])
+	if view_transform != "":
+		material.set_shader_parameter("mm_ocio_lut", MMColorManagement.get_view_lut(view_transform))
 
 
 func set_preview_shader_parameter(parameter_name, value):

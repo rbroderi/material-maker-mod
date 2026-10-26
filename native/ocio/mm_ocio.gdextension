@@ -1,0 +1,15 @@
+[configuration]
+
+entry_symbol = "mm_ocio_library_init"
+compatibility_minimum = "4.5"
+reloadable = false
+
+[libraries]
+
+windows.x86_64 = "res://addons/material_maker/ocio/bin/mm_ocio.windows.x86_64.dll"
+linux.x86_64 = "res://addons/material_maker/ocio/bin/mm_ocio.linux.x86_64.so"
+macos = "res://addons/material_maker/ocio/bin/mm_ocio.macos.x86_64.dylib"
+
+[dependencies]
+
+windows.x86_64 = { "res://addons/material_maker/ocio/bin/OpenColorIO_2_6.dll": "" }
