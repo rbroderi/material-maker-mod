@@ -1,0 +1,12 @@
+; Test and demo project for the Material Maker runtime addon
+
+config_version=5
+
+[application]
+
+config/name="Material Maker Runtime"
+config/features=PackedStringArray("4.3", "Forward Plus")
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/material_maker_runtime/plugin.cfg")

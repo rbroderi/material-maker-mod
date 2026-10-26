@@ -101,7 +101,7 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
-const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--rpc", "--help" ]
+const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--export-mmr", "--rpc", "--help" ]
 
 const HELP : String = """Material Maker command line
 
@@ -109,6 +109,7 @@ const HELP : String = """Material Maker command line
   material_maker --render --node <node[:output]> [options] <files>   render a node output
   material_maker --bake [--maps <map,...>] [--high <mesh>] [options] <meshes>   bake mesh maps
   material_maker --list-parameters <files>   list the parameters that can be set
+  material_maker --export-mmr [options] <files>   export runtime packages (.mmr)
   material_maker --rpc [--rpc-port <port>]   run a JSON-RPC server without user interface
   material_maker --rpc-port <port>   start the user interface with a JSON-RPC server
   material_maker -- --help   show this help
@@ -243,6 +244,8 @@ func _ready():
 			await bake_files(files, options)
 		"--list-parameters":
 			await list_parameters(expand_files(files))
+		"--export-mmr":
+			await export_mmr_files(expand_files(files), options)
 		"--rpc":
 			if start_rpc_server(options.get("rpc_port", MMRpcServer.DEFAULT_PORT)) != OK:
 				get_tree().quit(1)
@@ -347,6 +350,25 @@ func bake_files(files : Array[String], options : Dictionary) -> void:
 		var prefix : String = options.output_dir.path_join(f.get_file().get_basename())
 		for e in await MMCliTools.bake(f, options.maps, options.size, prefix, options):
 			show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	print("Done")
+	get_tree().quit()
+
+func export_mmr_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
+	await MMCliTools.wait_for_renders(get_tree())
+	var file_name : String = options.output_dir.path_join(f.get_file().get_basename()+suffix+".mmr")
+	# The material's size is used unless --size is given
+	var size : int = options.size if "--size" in OS.get_cmdline_args()+OS.get_cmdline_user_args() else 0
+	for e in await MMRuntimeExporter.export_package(gen, file_name, size):
+		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	print("Exported %s" % file_name)
+
+func export_mmr_files(files : Array, options : Dictionary) -> void:
+	for f : String in files:
+		var gen : MMGenBase = await load_graph(f, options)
+		if gen == null:
+			continue
+		await for_each_variation(gen, options, export_mmr_variation.bind(gen, f, options))
+		gen.queue_free()
 	print("Done")
 	get_tree().quit()
 

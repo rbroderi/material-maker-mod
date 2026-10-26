@@ -25,7 +25,7 @@ Sizes: **S** ≈ days, **M** ≈ 1–3 weeks, **L** ≈ 1–3 months, **XL** ≈
 | SD interop | `.sbsar` → `.ptex` via the separate sbsar2ptex tool (baked maps; node translation in progress) | n/a | MM-side opportunity |
 | 3D viewport | Godot renderer | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium–High |
 | Color management | sRGB/linear only | OCIO/ACES | **High** for studios |
-| Runtime format | Export textures / engine shaders | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
+| Runtime format | `.mmr` runtime packages and a Godot runtime addon, pixel-identical to MM ✅ (§5.1); no C++ renderer or other engine plugins yet | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
 | Automation | CLI export, render, bake, `--set` overrides and variations, plus a JSON-RPC server and Python client ✅ (§5.2) | Python API, plugins, Automation Toolkit (cooker/render/baker/mutator) | **High** |
 | Packages / dependencies | Library panel, user nodes | Packages, dependency manager, instance versioning, update outdated | Medium |
 | Scan processing | — | Multi-angle-to-material, AxF, scan workflows | Medium (niche) |
@@ -278,6 +278,27 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
 - **Live link** between the MM editor and each engine to push parameter edits in real time.
 - Optionally export procedural graphs as **pure engine shaders** (Godot/Unity/Unreal HLSL/GLSL) when they fit in a single pass. SD can't do this, so it's a differentiator.
 
+✅ **Done (2026-10-26), first slice: the `.mmr` format, the exporter and the Godot runtime.** See [design/runtime_packages.md](design/runtime_packages.md).
+- **Format v1:** a zip with a manifest and one GLSL 450 compute shader per pass.
+  - Each pass records its size, format, std430 parameter layout and initial bytes, and its inputs (other passes or embedded textures).
+  - The manifest also lists the material outputs (albedo, ORM, emission, normal, height), the Material node values, and the runtime parameters, each with the uniforms it drives.
+  - Packages are small: bricks is 19 passes in 29 KB, medieval_wall 74 passes in 109 KB.
+- **Exporter** (`engine/runtime/runtime_exporter.gd`):
+  - It reuses MM's own compiled shaders. `MMPipeline.compiled_sources` keeps the preprocessed GLSL.
+  - Buffers, including auto buffers and buffers inside subgraphs, become passes. Other textures (images, mesh maps, iterate buffers) are embedded at their current value.
+  - Remote parameters are exposed when every control they drive, followed through subgraph parameters, is a shader uniform. The others are listed as baked, with the reason.
+  - Available as `--export-mmr` in the CLI and `export_mmr` over RPC and Python.
+- **Godot runtime** (`runtime/godot/addons/material_maker_runtime`, pure GDScript, Godot 4.3+):
+  - `MMRPackage` reads packages, `MMRRenderer` runs the passes on a local RenderingDevice, and `MMRMaterial` builds a StandardMaterial3D with the same channel mapping as the Godot 4 export.
+  - A parameter change re-renders only the dependent passes (3 of 19 for bricks' Hue, in 9 ms).
+- **Verified:** the runtime output is pixel-identical (max difference 0/255) to MM's renders of the same Material outputs for bricks, rusted_metal, wood, medieval_wall and lava. For bricks this also holds after changing Hue at runtime, compared with `--set Hue=0.5`.
+- **Still missing:**
+  - The standalone C++/Vulkan renderer. MSVC Build Tools were being installed on 2026-10-26.
+  - Blender, Unreal, Unity and Houdini plugins.
+  - Live link, presets, and exposed seeds.
+  - Runtime-resizable outputs.
+  - SPIR-V in packages, so plugins don't need a GLSL compiler.
+
 ### 5.2 Scripting and automation — **L, high**
 - A documented **Python API** (via a Godot Python binding or a JSON-RPC bridge), plus the existing GDScript. Cover graph creation and edit, cook, export, and baking.
 - Plugin system for menu actions, custom panels, and import/export hooks.
@@ -363,7 +384,7 @@ What it means for this plan:
 | **M2: Authoring + migration** | 3.1 function graphs (shared IR with sbsar2ptex), 3.3 top-priority nodes (Splatter v2, Non-Uniform Blur, Distance, Spline Mapper, Histogram Scan), 3.4 instancing/versioning, 5.6 *Import .sbsar* (baked first) | Removes the main reasons SD artists bounce off MM, and gives them a way to bring their libraries over |
 | **M3: Pipeline core** ✅ (2026-10-26, OCIO and plugins deferred) | 5.2 CLI/Python, 5.3 export presets and MaterialX texture export, 4.3 OCIO | Gets MM into studio pipelines even before runtime plugins exist |
 | **M4: 3D** ✅ (2026-10-26, UDIM, hardware RT, path tracer and OpenPBR preview deferred) | 4.1 baker suite, 4.2 tessellation and OpenPBR | Replaces SD's baker plus Painter-lite in one tool |
-| **M5: Runtime** | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
+| **M5: Runtime** ✅ first slice (2026-10-26: format, exporter, Godot runtime; C++ renderer and other plugins pending) | 5.1 `.mmr` plus headless renderer, then Godot → Blender → Unreal → Unity plugins | Biggest effort, biggest moat-breaker |
 | **M6: Exceed** | §6 items, 3.2 FX-Map (unlocks fully procedural `.sbsar` import), 5.4 scans, 5.5 library | Differentiation once parity is credible |
 
 **Quick wins** (status as of 2026-10-25):

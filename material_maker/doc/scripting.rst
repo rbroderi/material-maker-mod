@@ -57,6 +57,7 @@ graph (and in **list_nodes**).
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
 * **render(node, output, size, path)** renders a node output to a PNG or EXR file
 * **list_export_targets()** and **export(target, prefix, size)** export the material
+* **export_mmr(path, size)** exports a runtime package (.mmr) of the material
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 

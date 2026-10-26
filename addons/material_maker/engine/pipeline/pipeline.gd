@@ -89,6 +89,10 @@ var time_current_time : int = 0
 
 var output_parameters : Dictionary
 
+## Preprocessed sources of the last compiled shader, by stage (used to
+## export runtime packages)
+var compiled_sources : Dictionary = {}
+
 func time(desc : String = ""):
 	return
 	if time_current_desc != "":
@@ -109,6 +113,7 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 	var src : RDShaderSource = RDShaderSource.new()
 	for k in shader_text.keys():
 		src["source_"+k] = mm_preprocessor.preprocess(shader_text[k], replaces)
+		compiled_sources[k] = src["source_"+k]
 	var spirv : RDShaderSPIRV = rd.shader_compile_spirv_from_source(src)
 	var shader : RID = RID()
 	for k in shader_text.keys():

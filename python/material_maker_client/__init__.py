@@ -167,6 +167,10 @@ class MaterialMaker:
         """Exports the material; prefix is the path of the files without extension"""
         return self.call("export", target=target, prefix=_path(prefix), size=size)
 
+    def export_mmr(self, path, size=0):
+        """Exports a runtime package (.mmr) of the material, for engine runtimes"""
+        return self.call("export_mmr", path=_path(path), size=size)
+
     def quit(self):
         """Quits Material Maker (--rpc mode only)"""
         return self.call("quit")

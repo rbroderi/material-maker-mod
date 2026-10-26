@@ -383,6 +383,19 @@ func api_redo(_params : Dictionary):
 	graph_edit.undoredo.redo()
 	return true
 
+## Exports a runtime package (.mmr) of the material (size 0 is the material's size)
+func api_export_mmr(params : Dictionary):
+	if not require(params, [ "path" ]):
+		return null
+	var graph : MMGenGraph = await get_graph()
+	var top : Node = graph
+	while top.get_parent() is MMGenGraph:
+		top = top.get_parent()
+	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
+	await MMCliTools.wait_for_renders(get_tree())
+	var errors : PackedStringArray = await MMRuntimeExporter.export_package(top, params.path, int(params.get("size", 0)))
+	return fail(", ".join(errors)) if not errors.is_empty() else params.path
+
 ## Quits Material Maker (only when there is no main window)
 func api_quit(_params : Dictionary):
 	if mm_globals.main_window != null:

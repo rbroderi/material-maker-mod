@@ -14,6 +14,7 @@ modes. The window is minimized (rendering needs a GPU), unless **--show-window**
  material_maker --render --node <node[:output]> [options] <input_files>
  material_maker --bake [--maps <map,...>] [options] <mesh_files>
  material_maker --list-parameters <input_files>
+ material_maker --export-mmr [options] <input_files>
  material_maker --rpc [--rpc-port <port>] [<input_file>]
  material_maker -- --help
 
@@ -30,6 +31,8 @@ Modes
 * **--bake** bakes mesh maps (position, normal, tangent, ambient_occlusion, bent_normals,
   thickness, curvature, seams, adjacency) to files named <mesh>_<map>.png
 * **--list-parameters** lists the parameters that can be set with **--set**
+* **--export-mmr** exports runtime packages (see :ref:`export-section`), named <input>.mmr
+  (the material's size is used unless **--size** is given)
 * **--rpc** starts a JSON-RPC server to control Material Maker from scripts (see :ref:`scripting-section`)
 
 Options

@@ -112,3 +112,24 @@ USD
 The **USD/UsdPreviewSurface** target generates a .usda file with a UsdPreviewSurface material
 named /Material and its textures (including ambient occlusion). It can be referenced from USD
 stages, or imported in applications that support USD materials.
+
+Runtime packages
+----------------
+
+Runtime packages (.mmr files) contain the compute shaders that render a material, so
+engines can render it again with different parameter values, at runtime or when importing
+it. They are exported with the **--export-mmr** command line option or the **export_mmr**
+scripting method.
+
+The parameters of the graph's remote node are runtime parameters when they only change
+shader uniforms (float and color parameters). Other parameters, and nodes that cannot be
+exported as shaders (such as iterate buffers), are baked into the package.
+
+Packages can be used in Godot 4.3+ with the **Material Maker Runtime** addon, in the
+**runtime/godot** directory of the source repository:
+
+.. code-block:: gdscript
+
+    var mmr : MMRMaterial = MMRMaterial.load_material("res://bricks.mmr")
+    $MeshInstance3D.material_override = mmr.material
+    mmr.set_parameter("Hue", 0.3)
