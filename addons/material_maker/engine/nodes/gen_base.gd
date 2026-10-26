@@ -212,6 +212,10 @@ var minimized : bool = false
 # expression, the graph is only kept to be edited again.
 var parameter_functions : Dictionary = {}
 
+# Library item this node was created from, if it embeds its definition (see
+# material_maker/tools/library_manager/library_instances.gd)
+var library_source : Dictionary = {}
+
 
 const MAX_SEED : int = 4294967296
 
@@ -742,6 +746,8 @@ func serialize() -> Dictionary:
 	rv = _serialize_data(rv)
 	if not parameter_functions.is_empty():
 		rv.parameter_functions = parameter_functions.duplicate(true)
+	if not library_source.is_empty():
+		rv.library_source = library_source.duplicate(true)
 	return rv
 
 func _deserialize(_data : Dictionary) -> void:
@@ -751,6 +757,8 @@ func deserialize(data : Dictionary) -> void:
 	await _deserialize(data)
 	if data.has("parameter_functions") and data.parameter_functions is Dictionary:
 		parameter_functions = data.parameter_functions.duplicate(true)
+	if data.has("library_source") and data.library_source is Dictionary:
+		library_source = data.library_source.duplicate(true)
 	if data.has("name"):
 		name = data.name
 	if data.has("node_position"):

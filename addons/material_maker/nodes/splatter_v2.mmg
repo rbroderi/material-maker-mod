@@ -1,0 +1,248 @@
+{
+	"name": "splatter_v2",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"count": 8.0,
+		"distribution": 0,
+		"scale": 1.0,
+		"scale_random": 0.3,
+		"rotation": 0.0,
+		"rotation_random": 180.0,
+		"height_random": 0.3,
+		"blend": 0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "vec4 $(name_uv)_splat = $(name)_splat($uv);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "1.0-2.0*length($uv-vec2(0.5))",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern (a height map) that is splatted",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "The probability that an instance is kept, sampled at its position",
+				"name": "density",
+				"shortdesc": "Density map",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Multiplies the scale of each instance, sampled at its position",
+				"name": "scale_map",
+				"shortdesc": "Scale map",
+				"type": "f"
+			},
+			{
+				"default": "0.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Rotation of each instance (1 is a full turn), sampled at its position",
+				"name": "rotation_map",
+				"shortdesc": "Rotation map",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"// Instances are placed one per cell of a grid, and each pixel checks the",
+			"// instances of the neighboring cells",
+			"vec4 $(name)_splat(vec2 uv) {",
+			"\tfloat cells = max(1.0, floor($count));",
+			"\tvec2 cell = floor(uv*cells);",
+			"\tfloat best = 0.0;",
+			"\tfloat best_id = 0.0;",
+			"\tvec2 best_position = vec2(0.0);",
+			"\tfor (int dx = -2; dx <= 2; ++dx) {",
+			"\t\tfor (int dy = -2; dy <= 2; ++dy) {",
+			"\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\t// Random values depend on the wrapped cell, so the result tiles",
+			"\t\t\tvec2 seed = mod(c, cells)+vec2($seed*17.0, $seed*31.0);",
+			"\t\t\tvec2 jitter = vec2(rand(seed), rand(seed+vec2(13.1, 7.7)))-vec2(0.5);",
+			"\t\t\tvec2 p = (c+vec2(0.5)+jitter*$distribution)/cells;",
+			"\t\t\tvec2 wrapped_p = fract(p);",
+			"\t\t\tif (rand(seed+vec2(3.3, 1.9)) >= $density(wrapped_p)) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat s = min($scale, 2.0)*(1.0-$scale_random*rand(seed+vec2(5.1, 2.3)))*$scale_map(wrapped_p)/cells;",
+			"\t\t\tfloat a = radians($rotation+$rotation_random*(2.0*rand(seed+vec2(8.7, 4.1))-1.0))+6.28318530718*$rotation_map(wrapped_p);",
+			"\t\t\tvec2 local = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*(uv-p)/max(s, 0.00001);",
+			"\t\t\tif (abs(local.x) > 0.5 || abs(local.y) > 0.5) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat h = max($in(local+vec2(0.5)), 0.0)*(1.0-$height_random*rand(seed+vec2(9.2, 6.5)));",
+			"\t\t\tif ($blend == 1) {",
+			"\t\t\t\tbest += h;",
+			"\t\t\t\tif (h > 0.0) {",
+			"\t\t\t\t\tbest_id = rand(seed+vec2(2.7, 8.3));",
+			"\t\t\t\t\tbest_position = wrapped_p;",
+			"\t\t\t\t}",
+			"\t\t\t} else if (h > best) {",
+			"\t\t\t\t// Height-ordered blending: the highest instance wins",
+			"\t\t\t\tbest = h;",
+			"\t\t\t\tbest_id = rand(seed+vec2(2.7, 8.3));",
+			"\t\t\t\tbest_position = wrapped_p;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn vec4(best, best_id, best_position);",
+			"}"
+		],
+		"longdesc": "Splats instances of a pattern with a Poisson-like, uniform or grid distribution, a density map, random scale, rotation and height, and height-ordered blending. It also outputs data maps of the instances.",
+		"name": "Splatter v2",
+		"outputs": [
+			{
+				"f": "$(name_uv)_splat.x",
+				"longdesc": "The splatted patterns",
+				"shortdesc": "Output",
+				"type": "f"
+			},
+			{
+				"f": "$(name_uv)_splat.y",
+				"longdesc": "A random value for each instance",
+				"shortdesc": "Instance ID",
+				"type": "f"
+			},
+			{
+				"rgb": "vec3($(name_uv)_splat.zw, 0.0)",
+				"longdesc": "The position of each instance (red: x, green: y)",
+				"shortdesc": "Position",
+				"type": "rgb"
+			},
+			{
+				"f": "step(0.00001, $(name_uv)_splat.x)",
+				"longdesc": "White where an instance is visible",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Count",
+				"longdesc": "The number of cells of the grid on each side (one instance per cell)",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "count",
+				"shortdesc": "Count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Distribution",
+				"longdesc": "Poisson-like keeps instances apart, uniform places them anywhere in their cell, grid aligns them",
+				"name": "distribution",
+				"shortdesc": "Distribution",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Poisson-like",
+						"value": "0.6"
+					},
+					{
+						"name": "Uniform",
+						"value": "1.0"
+					},
+					{
+						"name": "Grid",
+						"value": "0.0"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Scale",
+				"longdesc": "The size of instances, relative to the cell size",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the scale of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation",
+				"longdesc": "The rotation of all instances, in degrees",
+				"max": 180.0,
+				"min": -180.0,
+				"name": "rotation",
+				"shortdesc": "Rotation",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 180.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each instance, in degrees",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Height random",
+				"longdesc": "The random reduction of the height of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "height_random",
+				"shortdesc": "Height random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Blend",
+				"longdesc": "Max keeps the highest instance (height-ordered), Add sums them",
+				"name": "blend",
+				"shortdesc": "Blend",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Max",
+						"value": "0"
+					},
+					{
+						"name": "Add",
+						"value": "1"
+					}
+				]
+			}
+		],
+		"shortdesc": "Splatter v2"
+	},
+	"type": "shader"
+}

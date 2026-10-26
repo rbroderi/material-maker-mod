@@ -1,0 +1,282 @@
+{
+	"name": "spline_mapper",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"curve": {
+			"points": [
+				{
+					"x": 0.200000002980232,
+					"y": 0.200000002980232
+				},
+				{
+					"x": 0.699999988079071,
+					"y": 0.400000005960464
+				},
+				{
+					"x": 0.400000005960464,
+					"y": 0.699999988079071
+				}
+			],
+			"type": "Polygon"
+		},
+		"count": 8.0,
+		"size": 0.08,
+		"scale_random": 0.2,
+		"rotation": 0.0,
+		"rotation_random": 0.0,
+		"offset_random": 0.0,
+		"height_random": 0.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "vec4 $(name_uv)_map = $(name)_map($uv);",
+		"global": [
+			"vec2 curve(float t, vec2 a, vec2 b, vec2 c, vec2 d) {",
+			"\tvec2 e = c-b;",
+			"\tvec2 f = a-d;",
+			"\tvec2 g = a-b;",
+			"\treturn (b+0.5*t*(e-g+t*(g+e+t*3.0*(e*3.0+f+t*5.0/3.0*(-e*3.0-f+t*0.4*(e*3.0+f))))));",
+			"}",
+			"",
+			"vec2 dcurve(float t, vec2 a, vec2 b, vec2 c, vec2 d) {",
+			"\tvec2 e = c-b;",
+			"\tvec2 f = a-d;",
+			"\tvec2 g = a-b;",
+			"\treturn 0.5*((((f+3.0*e)*((10.0*t-20.0)*t+9.0))*t+2.0*(g+e))*t+e-g);",
+			"}",
+			"vec2 solve_cubic(vec2 uv, vec2 a, vec2 b, vec2 c, vec2 d) {",
+			"\tfloat t = 0.5;",
+			"\tvec2 pos, dv;",
+			"\tfloat current_sign = 0.0;",
+			"\tfloat dt = 0.25;",
+			"\tfor (int i = 0; i < 20; ++i) {",
+			"\t\tpos = curve(t, a, b, c, d);",
+			"\t\tdv = dcurve(t, a, b, c, d);",
+			"\t\tfloat new_sign = sign(dot(normalize(uv - pos), dv));",
+			"\t\tif (new_sign != current_sign) {",
+			"\t\t\tcurrent_sign = new_sign;",
+			"\t\t\tdt *= 0.5;",
+			"\t\t}",
+			"\t\tt += dt*current_sign;",
+			"\t}",
+			"\tt = clamp(t, 0.0, 1.0);",
+			"\treturn vec2(t, length(uv-curve(t, a, b, c, d)));",
+			"}",
+			""
+		],
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0-2.0*length($uv-vec2(0.5))), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern placed along the curve",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"// Places instances of the pattern along the curve, at regular intervals of",
+			"// the curve parameter, oriented along the curve",
+			"vec4 $(name)_map(vec2 uv) {",
+			"\tvec2 v[] = $curve;",
+			"\tint l = v.length();",
+			"\t// Closest point of the curve (same segments as the Poly Curve node with ends)",
+			"\tvec2 best = solve_cubic(uv, v[0], v[0], v[1], v[2]);",
+			"\tint best_segment = -1;",
+			"\tfor (int i = 0; i < l-3; i++) {",
+			"\t\tvec2 b = solve_cubic(uv, v[i], v[i+1], v[i+2], v[i+3]);",
+			"\t\tif (b.y < best.y) {",
+			"\t\t\tbest = b;",
+			"\t\t\tbest_segment = i;",
+			"\t\t}",
+			"\t}",
+			"\tvec2 last = solve_cubic(uv, v[l-3], v[l-2], v[l-1], v[l-1]);",
+			"\tvec2 pa = v[0];",
+			"\tvec2 pb = v[0];",
+			"\tvec2 pc = v[1];",
+			"\tvec2 pd = v[2];",
+			"\tfloat offset = 0.0;",
+			"\tif (last.y < best.y) {",
+			"\t\tbest = last;",
+			"\t\tpa = v[l-3];",
+			"\t\tpb = v[l-2];",
+			"\t\tpc = v[l-1];",
+			"\t\tpd = v[l-1];",
+			"\t\toffset = float(l-2);",
+			"\t} else if (best_segment >= 0) {",
+			"\t\tpa = v[best_segment];",
+			"\t\tpb = v[best_segment+1];",
+			"\t\tpc = v[best_segment+2];",
+			"\t\tpd = v[best_segment+3];",
+			"\t\toffset = float(best_segment)+1.0;",
+			"\t}",
+			"\t// Position along the curve (0-1) and signed distance to it",
+			"\tfloat s = clamp((best.x+offset)/float(l-1), 0.0, 1.0);",
+			"\tvec2 tangent = normalize(dcurve(best.x, pa, pb, pc, pd)+vec2(0.000001));",
+			"\tvec2 to_uv = uv-curve(best.x, pa, pb, pc, pd);",
+			"\tfloat d = sign(tangent.x*to_uv.y-tangent.y*to_uv.x)*best.y;",
+			"\t// Approximate curve length, to convert positions along the curve to distances",
+			"\tfloat curve_length = 0.0;",
+			"\tfor (int i = 0; i < l-1; i++) {",
+			"\t\tcurve_length += length(v[i+1]-v[i]);",
+			"\t}",
+			"\tfloat count = max(1.0, floor($count));",
+			"\tvec4 result = vec4(0.0);",
+			"\tfloat result_height = 0.0;",
+			"\tfloat k0 = floor(s*count);",
+			"\tfor (int dk = -2; dk <= 2; ++dk) {",
+			"\t\tfloat k = k0+float(dk);",
+			"\t\tif (k < 0.0 || k >= count) {",
+			"\t\t\tcontinue;",
+			"\t\t}",
+			"\t\tvec2 seed = vec2(k, $seed*23.0);",
+			"\t\tfloat instance_size = $size*(1.0-$scale_random*rand(seed+vec2(1.3, 5.7)));",
+			"\t\tvec2 local = vec2((s-(k+0.5)/count)*curve_length, d-$offset_random*$size*(2.0*rand(seed+vec2(4.1, 2.9))-1.0));",
+			"\t\tfloat a = radians($rotation+$rotation_random*(2.0*rand(seed+vec2(7.3, 3.1))-1.0));",
+			"\t\tlocal = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*local/max(instance_size, 0.00001);",
+			"\t\tif (abs(local.x) > 0.5 || abs(local.y) > 0.5) {",
+			"\t\t\tcontinue;",
+			"\t\t}",
+			"\t\tvec4 color = $in(local+vec2(0.5));",
+			"\t\tfloat h = dot(color.rgb, vec3(1.0/3.0))*color.a*(1.0-$height_random*rand(seed+vec2(6.2, 8.8)));",
+			"\t\t// Height-ordered blending",
+			"\t\tif (h > result_height) {",
+			"\t\t\tresult_height = h;",
+			"\t\t\tresult = vec4(color.rgb, 1.0);",
+			"\t\t}",
+			"\t}",
+			"\treturn result;",
+			"}"
+		],
+		"longdesc": "Places instances of a pattern along a curve, oriented along the curve, with random scale, rotation, offset and height, and height-ordered blending",
+		"name": "Spline Mapper",
+		"outputs": [
+			{
+				"longdesc": "The pattern instances along the curve",
+				"rgba": "$(name_uv)_map",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name_uv)_map.a",
+				"longdesc": "White where an instance is visible",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"points": [
+						{
+							"x": 0.200000002980232,
+							"y": 0.200000002980232
+						},
+						{
+							"x": 0.699999988079071,
+							"y": 0.400000005960464
+						},
+						{
+							"x": 0.400000005960464,
+							"y": 0.699999988079071
+						}
+					],
+					"type": "Polygon"
+				},
+				"label": "",
+				"name": "curve",
+				"type": "polyline"
+			},
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Count",
+				"longdesc": "The number of instances along the curve",
+				"max": 128.0,
+				"min": 1.0,
+				"name": "count",
+				"shortdesc": "Count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.08,
+				"label": "Size",
+				"longdesc": "The size of instances",
+				"max": 0.5,
+				"min": 0.0,
+				"name": "size",
+				"shortdesc": "Size",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.2,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the size of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation",
+				"longdesc": "The rotation of instances relative to the curve, in degrees",
+				"max": 180.0,
+				"min": -180.0,
+				"name": "rotation",
+				"shortdesc": "Rotation",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each instance, in degrees",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Offset random",
+				"longdesc": "The random offset of each instance across the curve, relative to its size",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "offset_random",
+				"shortdesc": "Offset random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Height random",
+				"longdesc": "The random reduction of the height of each instance, that decides which instance is visible when they overlap",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "height_random",
+				"shortdesc": "Height random",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Spline Mapper"
+	},
+	"type": "shader"
+}

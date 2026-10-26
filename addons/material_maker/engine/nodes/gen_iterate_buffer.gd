@@ -180,7 +180,13 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		return true
 	
 	is_rendering = true
-	
+
+	if buffer_name == buffer_name_init_input and current_iteration != 0:
+		# The first iteration's input was invalidated (e.g. while it was
+		# being rendered, or after the iterations were done), so iterations
+		# must start again. Otherwise the loop pass would be rendered and
+		# this buffer would never be marked as updated.
+		set_current_iteration(0)
 	var first_iteration : bool = ( current_iteration == 0 )
 	var shader_compute : MMShaderCompute = shader_computes[0] if first_iteration else shader_computes[1]
 	# Calculate iteration count
@@ -237,7 +243,13 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	else:
 		set_current_iteration(current_iteration+1)
 	
-	mm_deps.dependency_update(buffer_name_init_input if first_iteration else buffer_name_loop_input, texture, true)
+	var rendered_buffer : String = buffer_name_init_input if first_iteration else buffer_name_loop_input
+	mm_deps.dependency_update(rendered_buffer, texture, true)
+	if buffer_name != rendered_buffer:
+		# The loop pass was requested before the first iteration was
+		# rendered: it must not stay in the updating state (it will be
+		# invalidated again by the next iteration)
+		mm_deps.dependency_update(buffer_name, null, true)
 	if current_iteration > iterations:
 		mm_deps.dependency_update(buffer_name_output, texture, true)
 	else:

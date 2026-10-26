@@ -798,10 +798,14 @@ func get_free_name(type) -> String:
 func do_create_nodes(data, nodes_position : Vector2 = Vector2(0, 0)) -> Array:
 	if !data is Dictionary:
 		return []
+	# Library items that embed their definition are versioned
+	var library_item : Dictionary = data if data.has("tree_item") and MMLibraryInstances.embeds_definition(data) else {}
 	if data.has("type"):
 		data = { nodes=[data], connections=[] }
 	if data.has("nodes") and typeof(data.nodes) == TYPE_ARRAY and data.has("connections") and typeof(data.connections) == TYPE_ARRAY:
 		var new_stuff = await mm_loader.add_to_gen_graph(generator, data.nodes, data.connections, nodes_position)
+		if not library_item.is_empty() and new_stuff.generators.size() == 1:
+			MMLibraryInstances.tag(new_stuff.generators[0], library_item)
 		var return_value = update_graph(new_stuff.generators, new_stuff.connections)
 		if new_stuff.generators.size() == 1:
 			if new_stuff.generators[0] is MMGenMeshMap:

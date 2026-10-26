@@ -134,19 +134,36 @@ A recursive quadrant/iterate/switch splatting system with per-instance random se
 
 ### 3.3 Node library parity — **L (ongoing)**
 Audit against SD's library. Priority gaps to check or build:
-- **Shape Splatter v2 parity**. **✔ checked:** MM's Splatter and Circle Splatter take count, scale, rotation, value, variations, and a mask input, and that's all. Missing: Poisson disc and uniform distributions, a density map, per-instance control maps, height-ordered blending, and data outputs (position, rotation, scale, ID maps).
+- **Shape Splatter v2 parity**. **✔ checked:** MM's Splatter and Circle Splatter take count, scale, rotation, value, variations, and a mask input, and that's all. Missing: Poisson disc and uniform distributions, a density map, per-instance control maps, height-ordered blending, and data outputs (position, rotation, scale, ID maps). ✅ **Done (2026-10-26): Shape Splatter** (`nodes/splatter_v2.mmg`, *Transform/Shape Splatter*):
+  - Poisson-like, uniform or grid distribution.
+  - Density, scale and rotation maps.
+  - Random scale, rotation and height.
+  - Max (height-ordered) or Add blending.
+  - Output, instance ID, position and mask outputs.
+  - Tiles seamlessly.
 - **Tile Sampler parity**. **✔ checked:** Tiler Advanced already has a mask input, per-tile translate/rotate/scale map inputs, two color inputs, multiple input patterns, overlap, and variations. There are also the Height to Angle/Offset and Remap helpers. Missing: vector-map displacement, pattern selection by map, symmetry options, and height-ordered stacking. This is a **smaller gap than first assumed (M, not L)**.
-- **Splines and paths**. **✔ checked:** MM has one Splines node (edge, fill, and guide inputs) and Poly Curve (with a width map). Missing: Spline Mapper (pattern along a path), Spline Bridge, spline scatter/warp, and Ribbon/Ribbon Path.
+- **Splines and paths**. **✔ checked:** MM has one Splines node (edge, fill, and guide inputs) and Poly Curve (with a width map). Poly Curve already stretches a pattern along a path. ✅ **Done (2026-10-26): Spline Mapper** (`nodes/spline_mapper.mmg`, *Simple/Spline Mapper*) places pattern instances along a curve, oriented to it, with random scale, rotation, offset and height, and height-ordered blending. Still missing: Spline Bridge, spline warp, and Ribbon/Ribbon Path.
 - **Flood Fill suite**. **✔ checked:** largely at parity. MM has To Color, To Gradient, To Orientation, To Position, To Random Color/Gray, To Size, To UV, To RGBA, Select, and From Colors. Missing: To Index and a Flood Fill Mapper (pattern per cell).
-- **Advanced filters**. **✔ checked, already present:** Slope Blur, Directional Blur, Directional Warp, Multi Warp, Edge Detect (3 variants), Bevel, Normal Map / Normal Blend / Normal Map Convert, Normal to Height, Smooth Curvature, HBAO, Occlusion, Height Blend, Quantize, Tones (levels), and Auto Tones. **Done (2026-10-25): Non-Uniform Blur** (`nodes/non_uniform_blur.mmg`, library *Filter/Blur/Non-Uniform*). It's a golden-angle disc blur whose radius comes from an intensity map, with anisotropy, angle, and sample count. It doesn't yet have SD's "blades" (polygonal bokeh). Still missing: a **Distance** node with source-color propagation (sbsar2ptex already has a jump-flooding GLSL version), Histogram Scan/Shift/Select, Normal Normalize, Whiteout/RNM combine modes *(check Normal Blend's modes)*, and dithered posterize.
+- **Advanced filters**. **✔ checked, already present:** Slope Blur, Directional Blur, Directional Warp, Multi Warp, Edge Detect (3 variants), Bevel, Normal Map / Normal Blend / Normal Map Convert, Normal to Height, Smooth Curvature, HBAO, Occlusion, Height Blend, Quantize, Tones (levels), and Auto Tones. **Done (2026-10-25): Non-Uniform Blur** (`nodes/non_uniform_blur.mmg`, library *Filter/Blur/Non-Uniform*). It's a golden-angle disc blur whose radius comes from an intensity map, with anisotropy, angle, and sample count. It doesn't yet have SD's "blades" (polygonal bokeh). ✅ **Done (2026-10-26): Distance** (`nodes/distance.mmg`, *Filter/Distance*). It outputs a distance falloff and source colors propagated from the mask's white areas, accurate to 1–2 px.
+  - It uses a corrected jump flood: the step halves each pass, and sampling is at pixel centers.
+  - Upstream **Mask to SDF** has both bugs. It uses `size/4/k` steps and samples at pixel corners, so with filtering it was off by about 0.04 UV outside the shape and about 0.15 UV inside it. It's left unchanged so existing graphs keep their output.
+
+  Histogram Scan/Shift/Select are done (§2.3). Still missing: Normal Normalize, Whiteout/RNM combine modes *(check Normal Blend's modes)*, and dithered posterize.
 - **Atlas tooling**: Atlas Splitter, Atlas Scatter, Atlas Creator, rotate-to-fit, per-atlas-item IDs.
 - **✔ checked:** a **Text node** exists (`gen_text.gd`). An **SVG/vector node** with editable paths is still missing.
 - **Weathering and material generators**: edge wear, dirt, grunge, water-level, moss and dust (the "Material Filters" family).
 - **Bitmap-to-material**: delight, crop/tile-fix, make-it-tile (patch-based), clone patch, and PBR from photo.
 
 ### 3.4 Graph UX and organization — **M**
-- **Graph instancing with versioning**: a subgraph instance records its source version, with "update outdated instances" and diff-before-update.
-- **Dependency manager**: list every external dependency (packages, bitmaps, fonts), relink missing ones, and package graphs with their resources.
+- **Graph instancing with versioning**: a subgraph instance records its source version, with "update outdated instances" and diff-before-update. ✅ **Done (2026-10-26)** (`tools/library_manager/library_instances.gd`, *Tools → Library instances*):
+  - Nodes created from library items that embed their definition (graphs, custom shaders) record the item and definition hashes.
+  - The window shows instances that are outdated or were modified locally.
+  - Updating keeps parameter values, seed and connections, and is undoable.
+  - Not done: a visual diff before updating.
+- **Dependency manager**: list every external dependency (packages, bitmaps, fonts), relink missing ones, and package graphs with their resources. ✅ **Done (2026-10-26)** (`windows/dependencies/`, *Tools → Dependencies*):
+  - Lists every file parameter (images, fonts), including in subgraphs.
+  - Relinks one file, finds missing files by name in a folder, or collects all files into a folder.
+  - All of it is undoable.
 - **Parameter UI**: groups, tooltips, sliders with soft/hard ranges, presets per graph, and color-picker swatches.
 - **Presets/variations** UI on top of the 1.6 Controlled Variations system.
 - Pinned 2D-view inspection of any output, side-by-side compare, channel isolation, tiling preview, and a pixel value picker that shows float values.
@@ -262,6 +279,8 @@ What it means for this plan:
 4. ✅ **Flood Fill To Index**: done with the analysis pass in §2.3.
 
 ✅ **Fixed (2026-10-25): startup race.** Buffers could compile shaders before `mm_renderer` had created its rendering device (it's created asynchronously on the rendering thread). Some CLI exports logged `Cannot call method 'shader_compile_spirv_from_source' on a null value` (1 run in 3 on upstream). Shader compilation now waits for the device (`mm_renderer.wait_for_rendering_device()`), and 6 out of 6 test exports were clean.
+
+✅ **Fixed (2026-10-26): Iterate Buffers that never finish** (upstream bug). If an Iterate Buffer's first-iteration input was invalidated while it was being rendered, it was later processed with the loop shader and never marked as updated. The render queue then never drained, which affected Fill, Mask to SDF and anything else built on Iterate Buffer. Now, an invalidated first iteration restarts the iterations, and whichever pass was requested is always marked updated (`gen_iterate_buffer.gd`). The render queue now drains to 0.
 
 **Rough total:** about 2–3 years for a small team (3–5 devs). M1 through M3 alone, about 9–12 months, would make MM a credible SD alternative for most game-texture work.
 

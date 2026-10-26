@@ -136,6 +136,19 @@ Tools menu
   on the disk and save a screenshot of the whole current graph (it will automatically
   pan the graph to create the screenshot).
 
+* *Show buffer render times* lists the buffers of the current graph (including automatic
+  buffers and mesh maps) with their last rendering time and the GPU memory they use.
+
+* *Dependencies* lists the files the current graph depends on (images, fonts...) and shows
+  the missing ones. A missing file can be relinked to another file, or searched by name in
+  a folder and its subfolders, and all files can be copied ("collected") into a folder so
+  the material can be moved or shared. These changes can be undone.
+
+* *Library instances* lists the nodes that were created from library items that embed their
+  definition (graphs and custom shaders saved in a library), and shows which ones are
+  outdated (their library item changed since they were created) or were modified locally.
+  Outdated nodes can be updated: their parameter values and connections are kept.
+
 * *Add current brush to library* is only visible when the current
   project is a paint project. It first prompts for an item name. If a name is entered and
   confirmed, the current brush will be added to the user brush library under

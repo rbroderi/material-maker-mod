@@ -114,6 +114,8 @@ const MENU : Array[Dictionary] = [
 	{ menu="Tools/Add current brush to library", submenu="add_brush_to_library", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/Create a screenshot of the current graph", command="generate_graph_screenshot", mode="material" },
 	{ menu="Tools/Show buffer render times", command="show_buffer_render_times", mode="material" },
+	{ menu="Tools/Dependencies...", command="show_dependencies", mode="material" },
+	{ menu="Tools/Library instances...", command="show_library_instances", mode="material" },
 	{ menu="Tools/Paint project settings", command="paint_project_settings", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/Set painting environment", submenu="paint_environment", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/-" },
@@ -1406,6 +1408,22 @@ func generate_screenshots():
 	var result : int = await library.generate_node_screenshots(graph)
 	result += await library.generate_material_screenshots(graph)
 	print(result)
+
+func show_library_instances():
+	var graph_edit : MMGraphEdit = get_current_graph_edit()
+	if graph_edit == null or graph_edit.top_generator == null:
+		return
+	var dialog = load("res://material_maker/windows/library_instances/library_instances.gd").new()
+	add_dialog(dialog)
+	dialog.show_graph(graph_edit, node_library_manager)
+
+func show_dependencies():
+	var graph_edit : MMGraphEdit = get_current_graph_edit()
+	if graph_edit == null or graph_edit.top_generator == null:
+		return
+	var dialog = load("res://material_maker/windows/dependencies/dependencies.gd").new()
+	add_dialog(dialog)
+	dialog.show_graph(graph_edit)
 
 func show_buffer_render_times():
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
