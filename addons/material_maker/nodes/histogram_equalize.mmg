@@ -1,0 +1,160 @@
+{
+	"connections": [
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "histogram",
+			"to_port": 0
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "equalize",
+			"to_port": 0
+		},
+		{
+			"from": "histogram",
+			"from_port": 0,
+			"to": "equalize",
+			"to_port": 1
+		},
+		{
+			"from": "equalize",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
+		}
+	],
+	"label": "Histogram Equalize",
+	"longdesc": "Equalizes the histogram of the input: values are spread so they are evenly distributed between 0 and 1",
+	"name": "histogram_equalize",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "gen_parameters",
+			"node_position": {
+				"x": 0,
+				"y": -150
+			},
+			"parameters": {
+				"size": 10
+			},
+			"type": "remote",
+			"widgets": [
+				{
+					"label": "Size",
+					"linked_widgets": [
+						{
+							"node": "histogram",
+							"widget": "size"
+						}
+					],
+					"longdesc": "The resolution at which the input is analyzed",
+					"name": "size",
+					"shortdesc": "Size",
+					"type": "linked_control"
+				}
+			]
+		},
+		{
+			"name": "gen_inputs",
+			"node_position": {
+				"x": -300,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The input image",
+					"name": "in",
+					"shortdesc": "Input",
+					"type": "f"
+				}
+			],
+			"type": "ios"
+		},
+		{
+			"name": "gen_outputs",
+			"node_position": {
+				"x": 600,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The equalized image",
+					"name": "out",
+					"shortdesc": "Output",
+					"type": "f"
+				}
+			],
+			"type": "ios"
+		},
+		{
+			"name": "histogram",
+			"node_position": {
+				"x": 0,
+				"y": 0
+			},
+			"parameters": {
+				"size": 10
+			},
+			"type": "histogram"
+		},
+		{
+			"name": "equalize",
+			"node_position": {
+				"x": 300,
+				"y": 0
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"instance": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"label": "",
+						"longdesc": "The input image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					},
+					{
+						"default": "vec4(0.0)",
+						"label": "",
+						"name": "cdf",
+						"shortdesc": "Histogram",
+						"type": "rgba"
+					}
+				],
+				"longdesc": "Maps each value to its rank in the input",
+				"name": "Equalize",
+				"outputs": [
+					{
+						"f": "$cdf(vec2((clamp($in($uv), 0.0, 1.0)*255.0+0.5)/256.0, 0.25)).r",
+						"longdesc": "The output image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [],
+				"shortdesc": "Equalize"
+			},
+			"type": "shader"
+		}
+	],
+	"parameters": {
+		"size": 10
+	},
+	"seed_int": 0,
+	"shortdesc": "Histogram equalize",
+	"type": "graph"
+}

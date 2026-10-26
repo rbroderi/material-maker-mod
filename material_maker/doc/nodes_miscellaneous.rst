@@ -8,6 +8,7 @@ Miscellaneous nodes
 	node_miscellaneous_buffer
 	node_miscellaneous_iterate_buffer
 	node_miscellaneous_statistics
+	node_miscellaneous_histogram
 	node_miscellaneous_pixel_processor
 	node_miscellaneous_value_processor
 	node_miscellaneous_custom_shader

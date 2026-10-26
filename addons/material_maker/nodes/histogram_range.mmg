@@ -1,0 +1,65 @@
+{
+	"name": "histogram_range",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"range": 1.0,
+		"position": 0.5
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"instance": "",
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "",
+				"longdesc": "The input image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "f"
+			}
+		],
+		"longdesc": "Compresses the range of the input values around a position. At range 1 and position 0.5 the input is unchanged.",
+		"name": "Histogram Range",
+		"outputs": [
+			{
+				"f": "clamp($position+($in($uv)-0.5)*$range, 0.0, 1.0)",
+				"longdesc": "The output image",
+				"shortdesc": "Output",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Range",
+				"longdesc": "The width of the output range",
+				"max": 1,
+				"min": 0,
+				"name": "range",
+				"shortdesc": "Range",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Position",
+				"longdesc": "The center of the output range",
+				"max": 1,
+				"min": 0,
+				"name": "position",
+				"shortdesc": "Position",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Histogram range"
+	},
+	"type": "shader"
+}

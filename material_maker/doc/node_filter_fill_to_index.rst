@@ -1,0 +1,31 @@
+Fill to Index node
+~~~~~~~~~~~~~~~~~~
+
+The **Fill to Index** node is a fill companion node that gives each area a consecutive
+index. Areas are numbered in the order of their bounding box's top left corner (row by
+row), and the output is the index divided by the number of areas minus 1, so the first
+area is black and the last one is white. Outlines are black.
+
+Inputs
+++++++
+
+The **Fill to Index** node accepts fill data, to be connected to the output of a **Fill**
+node.
+
+Outputs
++++++++
+
+The **Fill to Index** node outputs the normalized index of each area.
+
+Parameters
+++++++++++
+
+The *Size* parameter is the resolution at which the fill data is analyzed. It should be at
+least the resolution of the **Fill** node.
+
+Notes
++++++
+
+The areas are counted on the GPU, then numbered on the CPU, so the index is exact.
+Combine this node with a **Histogram Select** or **Tones Step** node to select areas by
+index.

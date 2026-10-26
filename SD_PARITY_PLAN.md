@@ -69,6 +69,17 @@ Not done: pins are dropped when nodes are grouped into a subgraph, cost weights 
 - Formats: 8-bit, 16-bit, 16F, 32F, mono vs RGBA, with inheritance rules like SD's.
 - Show the size and format on node badges, and warn on precision loss (for example height data in 8-bit).
 
+✅ **Done (2026-10-25), adapted to MM.** In MM only buffers are separate passes, so per-node size and format apply to buffers:
+- **Formats:** the Advanced Buffer has *8 bits* (R8/RGBA8, half the memory of 16F) next to *32 bits*. 16F stays the default, and mono vs RGBA is still detected automatically. The new `TEXTURE_TYPE_R8/RGBA8` pipeline types and the readback support make this possible. Grayscale detection now uses the type's channel count instead of a bitmask.
+- **Size modes:** *Absolute*, or *Relative to output*: the material's size × 2^offset. Buffers follow the material when its size changes.
+- Automatic buffers (§2.1) already take their size from the node they feed.
+- Measured: an 8-bit buffer uses half the memory and stays within 1/255 of the 16F result. A relative buffer followed the material from 2048 to 1024.
+
+Not done:
+- Non-square sizes: every texture-size uniform and the size widgets assume square textures, so this is a separate refactor.
+- Size and format badges on nodes (the render-times dialog shows memory instead).
+- Precision-loss warnings.
+
 ### 2.3 GPU reductions and analysis — **M**
 SD-style Auto Levels, Histogram Scan/Range, and "normalize" all need min, max, mean, or histogram over the whole image.
 
@@ -82,12 +93,14 @@ SD-style Auto Levels, Histogram Scan/Range, and "normalize" all need min, max, m
 
 **Auto Tones** now uses it instead of the Iterate Buffer subgraph. It's exact: within 0.001 of the CPU result, where the old version was off by up to 0.05. Existing graphs that use Auto Tones may change slightly.
 
-Still to do on this item:
-- A histogram output (N bins via `atomicAdd`), which Histogram Scan/Select and Equalize need.
-- Prefix-sum/compaction for consecutive indices, which Flood Fill To Index needs. The Statistics node can already *count* cells: take the mean of a "cell origin" indicator image and multiply by the pixel count.
+✅ **Done (2026-10-25), second part:** a shared base class `MMGenAnalysis` (`gen_analysis.gd`, `analysis_compute.tres`) runs a GPU pass that accumulates into an int array with atomics, processes the result on the CPU, and publishes a small texture. Two nodes use it:
+- **Histogram** (*Miscellaneous/Histogram*): 256 bins per channel. Its output is a 256×2 texture holding the cumulative distribution and the normalized histogram.
+- **Fill to Index** (*Filter/Fill/To Index*): one bit per area origin. The CPU numbers the set bits in raster order, and the output looks up each area's index. Tested on a 4×4 grid: 16 areas, numbered 0–15 in order.
+
+The new library nodes **Histogram Equalize**, **Scan**, **Range**, **Shift** and **Select** are under *Filter/Histogram*. Equalize is within about 1.6 bins of the exact result.
 
 ### 2.4 Performance profiler — **S–M**
-Per-node GPU time and memory overlay, plus a "slowest nodes" list. SD has this, and it matters for large graphs. **✔ checked:** Buffer nodes already draw their last render time in ms under the node (`material_maker/nodes/base.gd`). **Done (quick win):** Iterate Buffers now report their total time across iterations too. *Tools → Show buffer render times* lists the 20 slowest buffers in the graph, with group paths and a total. Still missing: memory use, and timing for non-buffer work such as mesh maps and previews.
+Per-node GPU time and memory overlay, plus a "slowest nodes" list. SD has this, and it matters for large graphs. **✔ checked:** Buffer nodes already draw their last render time in ms under the node (`material_maker/nodes/base.gd`). **Done (quick win):** Iterate Buffers now report their total time across iterations too. *Tools → Show buffer render times* lists the 20 slowest buffers in the graph, with group paths and a total. ✅ **Done (2026-10-25):** the dialog also shows each buffer's GPU memory and the total, plus the memory budget (§2.1). Mesh Map nodes now report their generation time, so they appear in the list and under the node. Still missing: preview rendering times, which aren't graph nodes.
 
 ---
 
@@ -246,7 +259,7 @@ What it means for this plan:
 1. ✅ **Profiler summary**: Iterate Buffer timing, plus *Tools → Show buffer render times* (§2.4).
 2. ✅ **16k output**: the size cap went from 2^13 to 2^14 (16384) on Buffer, Iterate Buffer, Export, Auto Export, and the Material/Tesselated Material nodes. Texture creation now checks the GPU's `LIMIT_MAX_TEXTURE_SIZE_2D` and fails cleanly with an error instead of reaching the driver. Bit depth is already 16F by default with an optional 32F toggle, so the only format left to add is 8-bit (memory saving). That's deferred because it changes the texture-type bitmask used across the pipeline.
 3. ⏸ *Import .sbsar (baked)* via sbsar2ptex (§5.6): on hold by request.
-4. ⏸ **Flood Fill To Index**: deferred. Fill data only holds each cell's bounding box, so consecutive indices need a cell count, which means the reduction/compaction pass in §2.3. It isn't a quick win.
+4. ✅ **Flood Fill To Index**: done with the analysis pass in §2.3.
 
 ✅ **Fixed (2026-10-25): startup race.** Buffers could compile shaders before `mm_renderer` had created its rendering device (it's created asynchronously on the rendering thread). Some CLI exports logged `Cannot call method 'shader_compile_spirv_from_source' on a null value` (1 run in 3 on upstream). Shader compilation now waits for the device (`mm_renderer.wait_for_rendering_device()`), and 6 out of 6 test exports were clean.
 

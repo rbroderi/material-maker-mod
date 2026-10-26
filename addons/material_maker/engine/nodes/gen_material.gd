@@ -83,6 +83,15 @@ func update_preview() -> void:
 
 func set_parameter(p, v) -> void:
 	super.set_parameter(p, v)
+	# Buffers can be sized relatively to the material's size
+	if p == "size" and get_parent() != null:
+		notify_output_size_changed(get_parent())
+
+static func notify_output_size_changed(node : Node) -> void:
+	for c in node.get_children():
+		if c.has_method("on_output_size_changed"):
+			c.on_output_size_changed()
+		notify_output_size_changed(c)
 
 func source_changed(input_index : int) -> void:
 	update()

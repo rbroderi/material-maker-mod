@@ -1411,12 +1411,17 @@ func show_buffer_render_times():
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
 	if graph_edit == null or graph_edit.top_generator == null:
 		return
-	var buffers : Array = graph_edit.top_generator.get_buffers()
+	# Buffers, and other generators that report a rendering time (mesh maps)
+	var buffers : Array = []
+	collect_timed_generators(graph_edit.top_generator, buffers)
 	buffers.sort_custom(func(a, b): return a.rendering_time > b.rendering_time)
 	var total_time : int = 0
+	var total_memory : int = 0
 	var lines : PackedStringArray = PackedStringArray()
 	for b in buffers:
 		total_time += b.rendering_time
+		var memory : int = get_generator_gpu_memory(b)
+		total_memory += memory
 		if lines.size() < 20:
 			# Prefix the buffer name with the groups (and, for automatic
 			# buffers, the node) that contain it
@@ -1425,16 +1430,31 @@ func show_buffer_render_times():
 			while parent is MMGenBase and parent != graph_edit.top_generator:
 				path.insert(0, parent.get_type_name())
 				parent = parent.get_parent()
-			lines.push_back("%6d ms   %s" % [ b.rendering_time, "/".join(path) ])
+			lines.push_back("%6d ms  %7.1f MB   %s" % [ b.rendering_time, memory/1048576.0, "/".join(path) ])
 	if buffers.is_empty():
 		accept_dialog("This graph has no buffers.")
 		return
-	var text : String = tr("%d buffer(s), %d ms in total (last render of each)") % [ buffers.size(), total_time ]
+	var text : String = tr("%d buffer(s), %d ms in total (last render of each), %.1f MB") % [ buffers.size(), total_time, total_memory/1048576.0 ]
 	var gpu_memory : Dictionary = MMTexture.get_gpu_memory_usage()
 	var budget : float = float(mm_globals.get_config("gpu_memory_budget"))
 	text += "\n" + tr("GPU memory: %d MB in %d texture(s), budget: %s") % [ gpu_memory.bytes/1048576, gpu_memory.count, (tr("%d MB") % budget) if budget > 0.0 else tr("unlimited") ]
 	text += "\n\n" + "\n".join(lines)
 	accept_dialog(text)
+
+func collect_timed_generators(generator : Node, timed : Array) -> void:
+	for c in generator.get_children():
+		if c is MMGenBase:
+			if c in c.get_buffers() or c.rendering_time > 0:
+				timed.append(c)
+			collect_timed_generators(c, timed)
+
+## Returns the rendering device memory used by a generator's texture
+func get_generator_gpu_memory(generator : MMGenBase) -> int:
+	for property in [ "texture", "current_map" ]:
+		var t = generator.get(property)
+		if t is MMTexture:
+			return t.get_gpu_size()
+	return 0
 
 func generate_graph_screenshot():
 	# Prompt for a target PNG file

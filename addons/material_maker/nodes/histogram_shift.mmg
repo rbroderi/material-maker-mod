@@ -1,0 +1,52 @@
+{
+	"name": "histogram_shift",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"position": 0.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"instance": "",
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "",
+				"longdesc": "The input image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "f"
+			}
+		],
+		"longdesc": "Shifts the input values, wrapping them around so the result stays between 0 and 1.",
+		"name": "Histogram Shift",
+		"outputs": [
+			{
+				"f": "fract($in($uv)+$position)",
+				"longdesc": "The output image",
+				"shortdesc": "Output",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Position",
+				"longdesc": "The value added to the input",
+				"max": 1,
+				"min": 0,
+				"name": "position",
+				"shortdesc": "Position",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Histogram shift"
+	},
+	"type": "shader"
+}

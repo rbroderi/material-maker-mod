@@ -15,6 +15,7 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_tones_map
 	node_filter_tones_step
 	node_filter_tones_range
+	node_filter_histogram
 	node_filter_auto_tones
 	node_filter_grayscale
 	node_filter_tonality
@@ -53,6 +54,7 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_fill_select
 	node_filter_fill_from_rgba
 	node_filter_fill_to_rgba
+	node_filter_fill_to_index
 	node_filter_math
 	node_filter_vec3_math
 	node_filter_smooth_minmax

@@ -41,6 +41,15 @@ The **Advanced Buffer** node has 3 parameters:
 
 * the *mipmap* property; if set, mipmaps will be generated for this buffer
 
+* the *32 bits* property; if set, the buffer is stored as 32 bits floats
+
+* the *8 bits* property; if set (and *32 bits* is not), the buffer is stored as 8 bits values,
+  which uses half the memory of the default 16 bits floats, but values are clamped between 0 and 1
+
+* the *size mode*: *Absolute* uses the *texture resolution*, and *Relative to output* uses the
+  size of the graph's material multiplied by 2 to the power of *size offset*, so the buffer
+  follows the output resolution when it is changed
+
 Automatic buffers
 +++++++++++++++++
 
