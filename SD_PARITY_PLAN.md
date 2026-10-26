@@ -56,6 +56,18 @@ SD-style Auto Levels, Histogram Scan/Range, and "normalize" all need min, max, m
 
 **✔ checked:** MM's **Auto Tones** already finds min/max, but it does so with an Iterate Buffer subgraph (`nodes/auto_tones.mmg`). There's also a **Histogram panel** (`material_maker/widgets/histogram`). Replace the iterate-buffer approach with a real compute parallel-reduce primitive whose results nodes can read as uniforms. That makes Auto Tones faster, and adds Histogram Scan/Select, Equalize, and an auto-range Highpass.
 
+**Done (2026-10-25), first part:** a new **Statistics** node (`engine/nodes/gen_statistics.gd`, `statistics_compute.tres`, library *Miscellaneous/Statistics*). It works like this:
+- One compute pass evaluates the input and reduces each workgroup in shared memory.
+- Results merge into an SSBO with atomics: order-preserving ints for min/max, and a 64-bit fixed-point sum (two 32-bit words with carry) for the mean.
+- It outputs per-channel **Min / Max / Mean** as a `vec4[3]` uniform named after the node's buffer, so downstream shaders wait for it.
+- Results match a CPU reference. Negative values work.
+
+**Auto Tones** now uses it instead of the Iterate Buffer subgraph. It's exact: within 0.001 of the CPU result, where the old version was off by up to 0.05. Existing graphs that use Auto Tones may change slightly.
+
+Still to do on this item:
+- A histogram output (N bins via `atomicAdd`), which Histogram Scan/Select and Equalize need.
+- Prefix-sum/compaction for consecutive indices, which Flood Fill To Index needs. The Statistics node can already *count* cells: take the mean of a "cell origin" indicator image and multiply by the pixel count.
+
 ### 2.4 Performance profiler — **S–M**
 Per-node GPU time and memory overlay, plus a "slowest nodes" list. SD has this, and it matters for large graphs. **✔ checked:** Buffer nodes already draw their last render time in ms under the node (`material_maker/nodes/base.gd`). **Done (quick win):** Iterate Buffers now report their total time across iterations too. *Tools → Show buffer render times* lists the 20 slowest buffers in the graph, with group paths and a total. Still missing: memory use, and timing for non-buffer work such as mesh maps and previews.
 
@@ -80,7 +92,7 @@ Audit against SD's library. Priority gaps to check or build:
 - **Tile Sampler parity**. **✔ checked:** Tiler Advanced already has a mask input, per-tile translate/rotate/scale map inputs, two color inputs, multiple input patterns, overlap, and variations. There are also the Height to Angle/Offset and Remap helpers. Missing: vector-map displacement, pattern selection by map, symmetry options, and height-ordered stacking. This is a **smaller gap than first assumed (M, not L)**.
 - **Splines and paths**. **✔ checked:** MM has one Splines node (edge, fill, and guide inputs) and Poly Curve (with a width map). Missing: Spline Mapper (pattern along a path), Spline Bridge, spline scatter/warp, and Ribbon/Ribbon Path.
 - **Flood Fill suite**. **✔ checked:** largely at parity. MM has To Color, To Gradient, To Orientation, To Position, To Random Color/Gray, To Size, To UV, To RGBA, Select, and From Colors. Missing: To Index and a Flood Fill Mapper (pattern per cell).
-- **Advanced filters**. **✔ checked, already present:** Slope Blur, Directional Blur, Directional Warp, Multi Warp, Edge Detect (3 variants), Bevel, Normal Map / Normal Blend / Normal Map Convert, Normal to Height, Smooth Curvature, HBAO, Occlusion, Height Blend, Quantize, Tones (levels), and Auto Tones. Still missing: **Non-Uniform Blur** (map-driven anisotropic), a **Distance** node with source-color propagation (sbsar2ptex already has a jump-flooding GLSL version), Histogram Scan/Shift/Select, Normal Normalize, Whiteout/RNM combine modes *(check Normal Blend's modes)*, and dithered posterize.
+- **Advanced filters**. **✔ checked, already present:** Slope Blur, Directional Blur, Directional Warp, Multi Warp, Edge Detect (3 variants), Bevel, Normal Map / Normal Blend / Normal Map Convert, Normal to Height, Smooth Curvature, HBAO, Occlusion, Height Blend, Quantize, Tones (levels), and Auto Tones. **Done (2026-10-25): Non-Uniform Blur** (`nodes/non_uniform_blur.mmg`, library *Filter/Blur/Non-Uniform*). It's a golden-angle disc blur whose radius comes from an intensity map, with anisotropy, angle, and sample count. It doesn't yet have SD's "blades" (polygonal bokeh). Still missing: a **Distance** node with source-color propagation (sbsar2ptex already has a jump-flooding GLSL version), Histogram Scan/Shift/Select, Normal Normalize, Whiteout/RNM combine modes *(check Normal Blend's modes)*, and dithered posterize.
 - **Atlas tooling**: Atlas Splitter, Atlas Scatter, Atlas Creator, rotate-to-fit, per-atlas-item IDs.
 - **✔ checked:** a **Text node** exists (`gen_text.gd`). An **SVG/vector node** with editable paths is still missing.
 - **Weathering and material generators**: edge wear, dirt, grunge, water-level, moss and dust (the "Material Filters" family).
@@ -203,7 +215,7 @@ What it means for this plan:
 3. ⏸ *Import .sbsar (baked)* via sbsar2ptex (§5.6): on hold by request.
 4. ⏸ **Flood Fill To Index**: deferred. Fill data only holds each cell's bounding box, so consecutive indices need a cell count, which means the reduction/compaction pass in §2.3. It isn't a quick win.
 
-Existing issue found while testing: buffers can try to compile shaders before `mm_renderer` has created its rendering device (`multi_renderer.gd` starts it asynchronously). That logs `Cannot call method 'shader_compile_spirv_from_source' on a null value` on some CLI exports. It happens on unmodified upstream code too (1 of 3 runs), and the export still succeeds.
+✅ **Fixed (2026-10-25): startup race.** Buffers could compile shaders before `mm_renderer` had created its rendering device (it's created asynchronously on the rendering thread). Some CLI exports logged `Cannot call method 'shader_compile_spirv_from_source' on a null value` (1 run in 3 on upstream). Shader compilation now waits for the device (`mm_renderer.wait_for_rendering_device()`), and 6 out of 6 test exports were clean.
 
 **Rough total:** about 2–3 years for a small team (3–5 devs). M1 through M3 alone, about 9–12 months, would make MM a credible SD alternative for most game-texture work.
 

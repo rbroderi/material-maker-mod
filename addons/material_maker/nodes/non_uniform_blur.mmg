@@ -1,0 +1,332 @@
+{
+	"connections": [
+		{
+			"from": "non_uniform_blur",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 1,
+			"to": "non_uniform_blur",
+			"to_port": 1
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "buffer",
+			"to_port": 0
+		},
+		{
+			"from": "buffer",
+			"from_port": 0,
+			"to": "non_uniform_blur",
+			"to_port": 0
+		}
+	],
+	"label": "Non-Uniform Blur",
+	"longdesc": "Applies a disc blur whose radius is driven by a grayscale map, with optional anisotropy",
+	"name": "non_uniform_blur",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "gen_parameters",
+			"node_position": {
+				"x": -429.666625976562,
+				"y": -545.666625976562
+			},
+			"parameters": {
+				"param0": 10.0,
+				"param1": 10.0,
+				"param2": 0.0,
+				"param3": 0.0,
+				"param4": 32.0,
+				"param5": false
+			},
+			"seed": 343.0,
+			"type": "remote",
+			"widgets": [
+				{
+					"label": "Grid size",
+					"linked_widgets": [
+						{
+							"node": "non_uniform_blur",
+							"widget": "size"
+						},
+						{
+							"node": "buffer",
+							"widget": "size"
+						}
+					],
+					"longdesc": "The resolution of the input",
+					"name": "param0",
+					"shortdesc": "Size",
+					"type": "linked_control"
+				},
+				{
+					"label": "Intensity",
+					"linked_widgets": [
+						{
+							"node": "non_uniform_blur",
+							"widget": "intensity"
+						}
+					],
+					"longdesc": "The maximum blur radius, in pixels, where the intensity map is white",
+					"name": "param1",
+					"shortdesc": "Intensity",
+					"type": "linked_control"
+				},
+				{
+					"label": "Anisotropy",
+					"linked_widgets": [
+						{
+							"node": "non_uniform_blur",
+							"widget": "anisotropy"
+						}
+					],
+					"longdesc": "Squashes the blur disc into an ellipse; 0 is a circle, 1 is a line",
+					"name": "param2",
+					"shortdesc": "Anisotropy",
+					"type": "linked_control"
+				},
+				{
+					"label": "Angle",
+					"linked_widgets": [
+						{
+							"node": "non_uniform_blur",
+							"widget": "angle"
+						}
+					],
+					"longdesc": "The orientation of the blur ellipse when anisotropy is used",
+					"name": "param3",
+					"shortdesc": "Angle",
+					"type": "linked_control"
+				},
+				{
+					"label": "Samples",
+					"linked_widgets": [
+						{
+							"node": "non_uniform_blur",
+							"widget": "samples"
+						}
+					],
+					"longdesc": "The number of samples taken for each pixel. More samples give a smoother result but are slower",
+					"name": "param4",
+					"shortdesc": "Samples",
+					"type": "linked_control"
+				},
+				{
+					"label": "32 Bits",
+					"linked_widgets": [
+						{
+							"node": "buffer",
+							"widget": "f32"
+						}
+					],
+					"longdesc": "Use 32-bits buffer when sampling the input. Reduces banding artifacts but could result in higher video memory usage.",
+					"name": "param5",
+					"shortdesc": "32 Bits",
+					"type": "linked_control"
+				}
+			]
+		},
+		{
+			"name": "gen_inputs",
+			"node_position": {
+				"x": -779.666625976562,
+				"y": -247.392852783203
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0.0,
+					"longdesc": "The input image",
+					"name": "in",
+					"shortdesc": "Input",
+					"type": "rgba"
+				},
+				{
+					"group_size": 0.0,
+					"longdesc": "A grayscale map that scales the blur radius for each pixel",
+					"name": "intensity",
+					"shortdesc": "Intensity map",
+					"type": "f"
+				}
+			],
+			"seed": 91624.0,
+			"seed_locked": true,
+			"type": "ios"
+		},
+		{
+			"name": "gen_outputs",
+			"node_position": {
+				"x": -45.452392578125,
+				"y": -195.392852783203
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0.0,
+					"longdesc": "Shows the generated blurred image",
+					"name": "port0",
+					"shortdesc": "Output",
+					"type": "rgba"
+				}
+			],
+			"seed": 30896.0,
+			"type": "ios"
+		},
+		{
+			"name": "non_uniform_blur",
+			"node_position": {
+				"x": -358.725463867188,
+				"y": -84.178955078125
+			},
+			"parameters": {
+				"size": 10.0,
+				"intensity": 10.0,
+				"anisotropy": 0.0,
+				"angle": 0.0,
+				"samples": 32.0
+			},
+			"seed": -47470.0,
+			"seed_locked": true,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "vec4(1.0)",
+						"function": true,
+						"label": "",
+						"name": "in",
+						"type": "rgba"
+					},
+					{
+						"default": "1.0",
+						"function": true,
+						"label": "",
+						"name": "amount",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"vec4 $(name)_fct(vec2 uv) {",
+					"\tfloat radius = max($intensity*$amount(uv), 0.0)/$size;",
+					"\tif (radius <= 0.0) {",
+					"\t\treturn $in(uv);",
+					"\t}",
+					"\tfloat a = $angle*0.01745329251;",
+					"\tmat2 rotation = mat2(vec2(cos(a), sin(a)), vec2(-sin(a), cos(a)));",
+					"\tvec2 axes = radius*vec2(1.0, 1.0-0.99*$anisotropy);",
+					"\tfloat count = clamp(floor($samples), 1.0, 256.0);",
+					"\tvec4 rv = vec4(0.0);",
+					"\t// Vogel disc: samples spread evenly over the disc using the golden angle",
+					"\tfor (float i = 0.0; i < 256.0; i += 1.0) {",
+					"\t\tif (i >= count) {",
+					"\t\t\tbreak;",
+					"\t\t}",
+					"\t\tfloat t = i*2.39996322973;",
+					"\t\tvec2 offset = vec2(cos(t), sin(t))*sqrt((i+0.5)/count);",
+					"\t\trv += $in(uv+rotation*(offset*axes));",
+					"\t}",
+					"\treturn rv/count;",
+					"}"
+				],
+				"name": "Non-Uniform Blur",
+				"outputs": [
+					{
+						"rgba": "$(name)_fct($uv)",
+						"type": "rgba"
+					}
+				],
+				"parameters": [
+					{
+						"default": 10.0,
+						"first": 4.0,
+						"label": "Size",
+						"last": 13.0,
+						"name": "size",
+						"type": "size"
+					},
+					{
+						"control": "None",
+						"default": 10.0,
+						"label": "Intensity",
+						"max": 64.0,
+						"min": 0.0,
+						"name": "intensity",
+						"step": 0.1,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 0.0,
+						"label": "Anisotropy",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "anisotropy",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 0.0,
+						"label": "Angle",
+						"max": 180.0,
+						"min": -180.0,
+						"name": "angle",
+						"step": 0.1,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 32.0,
+						"label": "Samples",
+						"max": 256.0,
+						"min": 1.0,
+						"name": "samples",
+						"step": 1.0,
+						"type": "float"
+					}
+				]
+			},
+			"type": "shader"
+		},
+		{
+			"name": "buffer",
+			"node_position": {
+				"x": -376.152221679688,
+				"y": -248.576232910156
+			},
+			"parameters": {
+				"f32": false,
+				"filter": true,
+				"mipmap": true,
+				"size": 10.0
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 2
+		}
+	],
+	"parameters": {
+		"param0": 10.0,
+		"param1": 10.0,
+		"param2": 0.0,
+		"param3": 0.0,
+		"param4": 32.0,
+		"param5": false
+	},
+	"scroll_offset": {
+		"x": -868.152221679688,
+		"y": -541.576232910156
+	},
+	"seed_int": 0,
+	"shortdesc": "Non-uniform blur",
+	"type": "graph"
+}

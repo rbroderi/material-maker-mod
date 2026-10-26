@@ -1,0 +1,83 @@
+[gd_resource type="Resource" script_class="TextResource" load_steps=2 format=3]
+
+[ext_resource type="Script" uid="uid://bc3eljtuurjsd" path="res://addons/material_maker/engine/text_resource.gd" id="1_stats"]
+
+[resource]
+script = ExtResource("1_stats")
+text = "#version 450
+
+layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+@DECLARATIONS
+
+layout(set = 3, binding = 0, std140) restrict buffer MM {
+	int mm_chunk_y;
+};
+
+const float PI = 3.14159265359;
+const float TAU = 2.0*PI;
+
+@COMMON_SHADER_FUNCTIONS
+
+const float seed_variation = 0.0;
+
+@GLOBALS
+
+@DEFINITIONS
+
+shared vec4 mm_shared_min[@LOCAL_SIZE];
+shared vec4 mm_shared_max[@LOCAL_SIZE];
+shared vec4 mm_shared_sum[@LOCAL_SIZE];
+
+// Maps a float to an int whose signed ordering matches the float ordering
+int mm_ordered_int(float f) {
+	int i = floatBitsToInt(f);
+	return (i < 0) ? (i ^ 0x7FFFFFFF) : i;
+}
+
+void main() {
+	float _seed_variation_ = seed_variation;
+	vec4 _controlled_variation_ = vec4(0.0);
+	vec2 pixel = gl_GlobalInvocationID.xy+vec2(0.5, 0.5+mm_chunk_y);
+	vec2 image_size = vec2(mm_stats_size);
+	vec2 uv = pixel/image_size;
+	uint l = gl_LocalInvocationID.x;
+	vec4 value_min = vec4(3.402823e38);
+	vec4 value_max = vec4(-3.402823e38);
+	vec4 value_sum = vec4(0.0);
+	if (pixel.x < image_size.x) {
+		@CODE
+		vec4 outColor = @OUTPUT_VALUE;
+		value_min = outColor;
+		value_max = outColor;
+		value_sum = outColor;
+	}
+	mm_shared_min[l] = value_min;
+	mm_shared_max[l] = value_max;
+	mm_shared_sum[l] = value_sum;
+	barrier();
+	// Reduce the work group in shared memory
+	for (uint s = @LOCAL_SIZE/2; s > 0; s >>= 1) {
+		if (l < s) {
+			mm_shared_min[l] = min(mm_shared_min[l], mm_shared_min[l+s]);
+			mm_shared_max[l] = max(mm_shared_max[l], mm_shared_max[l+s]);
+			mm_shared_sum[l] += mm_shared_sum[l+s];
+		}
+		barrier();
+	}
+	if (l == 0) {
+		for (int c = 0; c < 4; ++c) {
+			atomicMin(mm_out.mm_stats[c], mm_ordered_int(mm_shared_min[0][c]));
+			atomicMax(mm_out.mm_stats[4+c], mm_ordered_int(mm_shared_max[0][c]));
+			// The sum is a 64 bits fixed point value (16 bits fraction) stored
+			// as low and high 32 bits words
+			int v = int(round(clamp(mm_shared_sum[0][c], -32767.0, 32767.0)*65536.0));
+			uint previous_low = uint(atomicAdd(mm_out.mm_stats[8+c], v));
+			int carry = (previous_low+uint(v) < previous_low) ? 1 : 0;
+			int high = carry + ((v < 0) ? -1 : 0);
+			if (high != 0) {
+				atomicAdd(mm_out.mm_stats[12+c], high);
+			}
+		}
+	}
+}"

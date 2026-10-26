@@ -32,6 +32,7 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_blur_fast
 	node_filter_blur_directional
 	node_filter_blur_slope
+	node_filter_blur_non-uniform
 	node_filter_edge_detect
 	node_filter_sharpen
 	node_filter_emboss
