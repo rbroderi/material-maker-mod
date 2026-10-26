@@ -46,6 +46,14 @@ Today the graph compiles into large monolithic shaders. That causes slow recompi
 - A **GPU memory budget** with LRU eviction and spill-to-RAM.
 - Reuse the existing compute path for passes that need reductions or scatter.
 
+**Started (2026-10-25):** design in [design/hybrid_evaluator.md](design/hybrid_evaluator.md), with milestones 1–5. **Milestone 1 is done:**
+- **Automatic buffers** (`engine/nodes/gen_auto_buffer.gd`, `MMGenShader.get_function_input_source()`). A function input whose source would inline at least *N* nodes (default 4) is sampled through a hidden, unsaved 2^10 buffer.
+- It's opt-in, under *Preferences → Graph → Automatic Buffers*.
+- Automatic buffers show up in the buffer icon menu and in *Tools → Show buffer render times*.
+- Measured: a 16-sample blur of a 6-node chain at 2048² went from about 400 ms to about 220 ms. The buffered output differs by up to 0.03 on high-frequency detail (the resampling trade-off).
+
+Next: milestone 2, a cost model of instructions × samples and resolution taken from the consumer.
+
 ### 2.2 Per-node output size and format — **L**
 - Output size modes: *relative to parent*, *relative to input*, *absolute*. Support **non-square** sizes up to 16k (and 32k via tiling).
 - Formats: 8-bit, 16-bit, 16F, 32F, mono vs RGBA, with inheritance rules like SD's.
@@ -82,6 +90,13 @@ Equivalent to SD's function graphs, Pixel Processor, and Value Processor:
 - **Value Processor**: evaluated once, outputs a uniform.
 - **Parameter functions**: any exposed parameter can be driven by a function of other parameters (for example `tile_count = density * 4`). Also a visibility/enable condition per parameter.
 - Keep GLSL custom nodes as the power-user path. Consider a "view as GLSL" toggle on any function graph. SD can't do that.
+
+**Started (2026-10-25):** design and IR v1 spec in [design/function_graphs.md](design/function_graphs.md). **Milestone 1 is done:**
+- **Compiler:** typed JSON IR → GLSL (`engine/function_graph/function_graph.gd`). It has about 50 ops, type inference with float broadcasting, and cycle and dangling-reference detection. Errors are reported per node. It's covered by 22 GUT tests (`test/test_function_graph.gd`).
+- **Pixel Processor node:** *Miscellaneous/Pixel Processor* (`gen_pixel_processor.gd`). It compiles its graph into a shader model, so previews, exports, and automatic buffers work unchanged. Only the function graph is saved.
+- Editing is a JSON text dialog for now.
+
+Next: milestone 2, the visual editor.
 
 ### 3.2 FX-Map equivalent — **L**
 A recursive quadrant/iterate/switch splatting system with per-instance random seeds, blend modes, and pattern inputs. Implement as a compute-based instancing pass (it pairs with §2.1). MM's tile and splatter nodes cover the common cases. The gap is the general-purpose programmable version.

@@ -11,6 +11,10 @@ var generic_size : int = 1
 
 var editable : bool = false
 
+# Automatic buffers, indexed by input (see design/hybrid_evaluator.md)
+const AUTO_BUFFER_TYPES : Array[String] = [ "f", "rgb", "rgba" ]
+var auto_buffers : Dictionary = {}
+
 
 func toggle_editable() -> bool:
 	editable = !editable
@@ -483,9 +487,57 @@ func generate_parameter_declarations(rv : ShaderCode) -> void:
 				rv.defs += "uniform float %s = %.9f;\n" % [ sp, params[sp] ]
 			rv.defs += g.get_shader(genname+"_"+p.name)
 
+## Counts the generators that would be inlined when evaluating port, stopping
+## at textures (buffers, images...) and at limit
+static func count_inlined_generators(port : OutputPort, visited : Dictionary, limit : int) -> int:
+	if port == null or visited.size() >= limit:
+		return visited.size()
+	var generator : MMGenBase = port.generator
+	if generator is MMGenTexture or visited.has(generator):
+		return visited.size()
+	visited[generator] = true
+	for i in generator.get_input_defs().size():
+		count_inlined_generators(generator.get_source(i), visited, limit)
+	return visited.size()
+
+## Returns the source to use for a function input: either source itself, or
+## an automatic buffer that samples it if inlining it would be too expensive
+func get_function_input_source(index : int, input : Dictionary, source : OutputPort) -> OutputPort:
+	var use_auto_buffer : bool = false
+	if source != null and mm_globals.get_config("auto_buffer") and input.type in AUTO_BUFFER_TYPES:
+		var threshold : int = int(mm_globals.get_config("auto_buffer_threshold"))
+		use_auto_buffer = count_inlined_generators(source, {}, threshold) >= threshold
+	if not use_auto_buffer:
+		if auto_buffers.has(index):
+			auto_buffers[index].queue_free()
+			auto_buffers.erase(index)
+		return source
+	if auto_buffers.has(index):
+		auto_buffers[index].set_source(source)
+	else:
+		var auto_buffer : MMGenAutoBuffer = MMGenAutoBuffer.new()
+		auto_buffer.name = "auto_buffer_%s" % input.name
+		auto_buffer.parameters.size = int(mm_globals.get_config("auto_buffer_size"))
+		auto_buffer.set_source(source)
+		add_child(auto_buffer)
+		auto_buffers[index] = auto_buffer
+	return OutputPort.new(auto_buffers[index], 0)
+
+func get_buffers(flags : int = BUFFERS_ALL) -> Array:
+	var rv : Array = []
+	for b in auto_buffers.values():
+		rv.append_array(b.get_buffers(flags))
+	return rv
+
+func source_changed(input_index : int) -> void:
+	# Structural changes upstream must regenerate the automatic buffer's shader
+	if auto_buffers.has(input_index):
+		auto_buffers[input_index].update_shader()
+	super.source_changed(input_index)
+
 func generate_input_function(index : int, input: Dictionary, rv : ShaderCode, context : MMGenContext) -> void:
 	var genname = "o"+str(get_instance_id())
-	var source = get_source(index)
+	var source = get_function_input_source(index, input, get_source(index))
 	if source == null:
 		return
 	var local_context = MMGenContext.new(context)

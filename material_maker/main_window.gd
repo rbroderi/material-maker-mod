@@ -1418,10 +1418,11 @@ func show_buffer_render_times():
 	for b in buffers:
 		total_time += b.rendering_time
 		if lines.size() < 20:
-			# Prefix the buffer name with the groups that contain it
+			# Prefix the buffer name with the groups (and, for automatic
+			# buffers, the node) that contain it
 			var path : PackedStringArray = PackedStringArray([ str(b.name) ])
 			var parent = b.get_parent()
-			while parent is MMGenGraph and parent != graph_edit.top_generator:
+			while parent is MMGenBase and parent != graph_edit.top_generator:
 				path.insert(0, parent.get_type_name())
 				parent = parent.get_parent()
 			lines.push_back("%6d ms   %s" % [ b.rendering_time, "/".join(path) ])

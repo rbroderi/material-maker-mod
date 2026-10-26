@@ -40,3 +40,12 @@ The **Advanced Buffer** node has 3 parameters:
 * the *filter* property; if set, the buffer output will be filtered
 
 * the *mipmap* property; if set, mipmaps will be generated for this buffer
+
+Automatic buffers
++++++++++++++++++
+
+When *Automatic Buffers* are enabled in the preferences (Graph tab), Material Maker inserts
+buffers by itself in front of node inputs that are sampled at arbitrary positions (such as
+blur, warp and pixel processor inputs) when they depend on at least the configured number
+of nodes. Automatic buffers are not saved with the graph; they are listed in
+*Tools > Show buffer render times*. This feature is experimental and disabled by default.
