@@ -39,6 +39,12 @@ func _init():
 	iteration_param_name = "o%d_iteration" % get_instance_id()
 	set_current_iteration(0)
 
+func _ready() -> void:
+	super._ready()
+	# Shaders are otherwise only generated when sources change, so an
+	# iterate buffer without inputs would never render
+	update_shaders()
+
 func _exit_tree() -> void:
 	exiting = true
 
@@ -137,7 +143,9 @@ func do_update_shaders() -> void:
 			var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
 			var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 			await shader_compute.compute_shader.set_shader_from_shadercode_ext(shader_template, sources[i], output_textures, [], false, [])
-		mm_deps.buffer_create_compute_material(buffer_name, shader_compute)
+		await mm_deps.buffer_create_compute_material(buffer_name, shader_compute)
+		# The input may have been rendered (and failed) before its shader was set
+		mm_deps.buffer_invalidate(buffer_name)
 	if new_is_greyscale != is_greyscale:
 		is_greyscale = new_is_greyscale
 		notify_output_change(0)
@@ -169,11 +177,28 @@ func on_dep_buffer_invalidated(buffer_name : String):
 	if not exiting and (buffer_name == buffer_name_init_input or buffer_name == buffer_name_loop_input):
 		mm_deps.buffer_invalidate(buffer_name_output)
 
+func get_iteration_count() -> int:
+	var iterations = calculate_float_parameter("iterations")
+	if iterations.has("used_named_parameters"):
+		used_named_parameters = iterations.used_named_parameters
+	if iterations.has("value"):
+		return int(iterations.value)
+	return 1
+
+func is_buffer_updated(buffer_name : String) -> bool:
+	var buffer = mm_deps.buffers[buffer_name]
+	return buffer.status == buffer.Updated
+
 func on_dep_update_buffer(buffer_name : String) -> bool:
 	#print("on_dep_update_buffer(", buffer_name, ")")
 	if is_paused:
 		return false
 	if buffer_name == buffer_name_output:
+		if not is_rendering and current_iteration > get_iteration_count() and is_buffer_updated(buffer_name_init_input) and is_buffer_updated(buffer_name_loop_input):
+			# The output was invalidated after the iterations were done
+			# (e.g. the first and last iterations were rendered in the
+			# same update), so it would otherwise never be updated
+			mm_deps.dependency_update(buffer_name_output, texture, true)
 		return true
 	if is_rendering:
 		print("Already rendering ", buffer_name)
@@ -181,16 +206,15 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	
 	is_rendering = true
 	
+	if buffer_name == buffer_name_init_input and current_iteration != 0:
+		# The first iteration's input was invalidated (e.g. while it was
+		# being rendered, or after the iterations were done), so iterations
+		# must start again. Otherwise the loop pass would be rendered and
+		# this buffer would never be marked as updated.
+		set_current_iteration(0)
 	var first_iteration : bool = ( current_iteration == 0 )
 	var shader_compute : MMShaderCompute = shader_computes[0] if first_iteration else shader_computes[1]
-	# Calculate iteration count
-	var iterations = calculate_float_parameter("iterations")
-	if iterations.has("used_named_parameters"):
-		used_named_parameters = iterations.used_named_parameters
-	if iterations.has("value"):
-		iterations = iterations.value
-	else:
-		iterations = 1
+	var iterations : int = get_iteration_count()
 	if current_iteration > iterations:
 		print("Bad iteration for buffer %s (%d > %d)" % [ buffer_name, current_iteration, iterations ])
 		await get_tree().process_frame
@@ -232,11 +256,26 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	else:
 		set_current_iteration(current_iteration+1)
 	
-	mm_deps.dependency_update(buffer_name_init_input if first_iteration else buffer_name_loop_input, texture, true)
+	var rendered_buffer : String = buffer_name_init_input if first_iteration else buffer_name_loop_input
+	mm_deps.dependency_update(rendered_buffer, texture, true)
+	if buffer_name != rendered_buffer:
+		# The loop pass was requested before the first iteration was
+		# rendered: it must not stay in the updating state (it will be
+		# invalidated again by the next iteration)
+		mm_deps.dependency_update(buffer_name, null, true)
 	if current_iteration > iterations:
+		mm_deps.dependency_update(buffer_name_output, texture, true)
+	elif mm_deps.dependencies.get(buffer_name_loop_output, []).has(buffer_name_loop_input):
+		# The loop input uses the loop output, so it is invalidated by this update
+		mm_deps.dependency_update(buffer_name_loop_output, texture, true)
+	elif not first_iteration:
+		# The loop input does not use the loop output (e.g. it is not
+		# connected): more iterations would give the same result
+		set_current_iteration(iterations+1)
 		mm_deps.dependency_update(buffer_name_output, texture, true)
 	else:
 		mm_deps.dependency_update(buffer_name_loop_output, texture, true)
+		mm_deps.buffer_invalidate(buffer_name_loop_input)
 	
 	#print("done ", status)
 	
