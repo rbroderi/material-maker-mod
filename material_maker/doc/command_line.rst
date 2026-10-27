@@ -89,7 +89,15 @@ Options
 * **--skew <image>** is a skew map for **--high**
 * **--high-texture <image>** is the texture of the **--high** mesh, for the **texture** map
 * **--udim** bakes each UDIM tile used by the input mesh's UVs (with **--high**), to files named
-  <mesh>_<map>.<tile>.png (for example model_normal_tangent.1002.png)
+  <mesh>_<map>.<tile>.png (for example model_normal_tangent.1002.png). With **--export-material**,
+  it exports each UDIM tile of the graph: those of the mesh of its Mesh Map and High Poly Bake
+  nodes, and those of the tile files of its Image nodes (whose path contains **<UDIM>** or a
+  tile number, such as albedo.1001.png). Textures are named <name>.<tile>.png (for example
+  bricks_albedo.1002.png), and MaterialX and USD files use **<UDIM>** in their file names
+* **--udim-tiles <list>** exports these UDIM tiles with **--export-material** (for example
+  1001-1004,1011)
+* **--mesh <mesh>** is the mesh of the graph's Mesh Map and High Poly Bake nodes with
+  **--export-material** and **--render** (as the 3D preview's custom mesh)
 * **--software-raytracing** bakes **--high** maps without hardware ray tracing, even when the GPU
   supports it
 * **--rpc-port <port>** is the port of the JSON-RPC server (the default is 7680). When used without

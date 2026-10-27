@@ -14,6 +14,8 @@ var additional_ids : Dictionary[String, String] = {"$node":"unnamed"}
 
 ## Sections added by plugins (see MMPlugins.API.add_export_menu_section)
 var plugin_sections : Array[Control] = []
+## Extensions of the file types (PNG and EXR, then formats added by plugins)
+var file_type_extensions : Array[String] = [ "png", "exr" ]
 
 func _ready() -> void:
 	for val in export_settings.values():
@@ -25,6 +27,9 @@ func _ready() -> void:
 		if section is Control:
 			plugin_sections.append(section)
 			get_node("VBox").add_child(section)
+	for extension in MMPlugins.image_formats.keys():
+		file_type_extensions.append(extension)
+		%FileType.add_item("."+extension)
 
 ## The previewed generator and output, for plugin sections
 func get_generator() -> MMGenBase:
@@ -57,7 +62,9 @@ func _open() -> void:
 		%Resolution.selected = mm_globals.get_config(export_settings.resolution)
 
 	if mm_globals.has_config(export_settings.extension):
-		%FileType.selected = mm_globals.get_config(export_settings.extension)
+		# Formats of plugins that were disabled are not listed anymore
+		var file_type : int = mm_globals.get_config(export_settings.extension)
+		%FileType.selected = file_type if file_type < %FileType.item_count else 0
 
 	export_notification("")
 
@@ -149,6 +156,8 @@ func _on_image_pressed() -> void:
 			file_dialog.title = 'Save Image'
 			file_dialog.add_filter("*.png; PNG image file")
 			file_dialog.add_filter("*.exr; EXR image file")
+			for f in MMPlugins.get_image_format_filters():
+				file_dialog.add_filter(f)
 
 		file_dialog.current_dir = mm_globals.config.get_value("path", "save_preview", mm_globals.get_home_directory())
 
@@ -194,9 +203,8 @@ func interpret_file_name(file_name: String, path:="") -> String:
 		additional_ids["$name"] = "unnamed"
 
 	var extension := ""
-	match %FileType.selected:
-		0: extension += ".png"
-		1: extension += ".exr"
+	if %FileType.selected >= 0 and %FileType.selected < file_type_extensions.size():
+		extension = "."+file_type_extensions[%FileType.selected]
 	
 	var resolution : String
 	if %CustomResolutionSection.visible:

@@ -141,11 +141,13 @@ since those shaders have no input for it.
 
 The **MaterialX/Procedural** target generates a procedural material: a .mtlx file that defines
 a custom node (*mm_procedural*) whose GLSL implementation (the .glsl file next to it) computes
-the whole graph, including what buffers compute (they are inlined, so no texture is needed;
-iterate buffers are not supported). The node's outputs feed a standard_surface shader. The
-implementation targets MaterialX's GLSL shader generator (genglsl), so it works in GLSL based
-MaterialX renderers and tools (with the .mtlx file's directory in their search path), but not
-in OSL or MDL ones.
+the whole graph, including what buffers compute (they are inlined). Textures the graph still
+needs (iterate buffers, Image nodes, mesh maps...) are exported as EXR files
+(<name>_texture_<n>.exr) and are inputs of the custom node. The node's outputs feed a
+standard_surface shader. The GLSL implementation is used by MaterialX's GLSL shader generator
+(genglsl, with the .mtlx file's directory in its search path). Other shading languages (OSL,
+MDL...) use the node's second implementation, a node graph that reads textures baked from the
+graph (<name>_baked_*.png), so those renderers show the same material, but not procedurally.
 
 MaterialX import
 ^^^^^^^^^^^^^^^^
@@ -278,3 +280,34 @@ selected objects. The **Material Maker** panel of the material properties shows 
 parameters, seed, presets and texture size: with **Live update**, changing them renders the
 textures again.
 See **runtime/blender/README.md** for its installation.
+
+UDIM tiles
+----------
+
+When the graph has UDIM tiles (Mesh Map and High Poly Bake nodes whose mesh's UVs use several
+tiles, or Image nodes whose path contains **<UDIM>** or a tile number, such as
+albedo.1001.png), the export file dialog has a **UDIM tiles** option that exports the textures
+of each tile (<name>_albedo.1001.png, <name>_albedo.1002.png...). For each tile, Mesh Map and
+High Poly Bake nodes bake the tile and Image nodes load the tile's file (a missing tile is
+black); other nodes are the same in all tiles. MaterialX and USD files reference the textures
+with **<UDIM>** in their names. *Export again* remembers the option. On the command line, use
+**--udim** or **--udim-tiles** (see :doc:`command_line`), and over JSON-RPC, the **udim**
+parameter of the **export** method.
+
+Texture formats
+---------------
+
+Three plugins (enabled by default) add these export targets:
+
+* **KTX2/Texture set** (**KTX2 format** plugin): KTX2 textures (albedo, metallic, roughness, normal, emission, height,
+  ambient occlusion) with mipmaps and Zstandard supercompression, 8 bits (sRGB for albedo and
+  emission) and 16 bits floats for the height map. The Material node's colors and multipliers
+  are applied.
+* **TX/Texture set** (**TX format** plugin): the same maps as TX files (tiled and mip-mapped TIFF files, as OpenImageIO's
+  maketx writes them) for renderers that cache textures.
+* **OpenEXR/Multi-layer** (**Multi-layer OpenEXR** plugin): all maps in a single EXR file, a layer per map (albedo.R, albedo.G,
+  albedo.B, albedo.A, normal.X... height.Y), as half floats, with linear colors and normals in
+  [-1, 1].
+
+KTX2 and TX are also image formats of the 2D preview's export menu, and can be used in the file
+names of any export target (in the material editor).

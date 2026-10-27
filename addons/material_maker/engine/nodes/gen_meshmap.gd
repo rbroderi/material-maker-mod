@@ -10,6 +10,10 @@ var timer : Timer
 var filetime : int = 0
 var current_mesh : Mesh = null
 var current_map : MMTexture = null
+## The UDIM tile generated in UDIM exports (0 for the [0, 1] square), and
+## the meshes whose UVs are shifted for tiles
+var udim_tile : int = 0
+var udim_meshes : Dictionary = {}
 
 
 const MESH_MAPS : Array[Dictionary] = [
@@ -112,7 +116,33 @@ func get_map_definition() -> Dictionary:
 	return MESH_MAPS[get_parameter("map")]
 
 func generate_map() -> MMTexture:
-	return await MMMapGenerator.get_map(current_mesh, get_map_definition().map)
+	return await MMMapGenerator.get_map(get_udim_mesh(current_mesh, udim_tile), get_map_definition().map)
+
+## A mesh whose UVs are shifted so a UDIM tile is the [0, 1] square (the
+## mesh itself for tile 0)
+func get_udim_mesh(mesh : Mesh, tile : int) -> Mesh:
+	if mesh == null or tile == 0:
+		return mesh
+	var key : String = "%d:%d" % [ mesh.get_instance_id(), tile ]
+	if not udim_meshes.has(key):
+		udim_meshes[key] = MMHighPolyBaker.udim_tile_mesh(mesh, tile)
+	return udim_meshes[key]
+
+## UDIM tiles of meshes, by instance id (finding them reads all triangles)
+static var mesh_udim_tiles : Dictionary = {}
+
+func get_udim_tiles() -> PackedInt32Array:
+	if current_mesh == null:
+		return PackedInt32Array()
+	var id : int = current_mesh.get_instance_id()
+	if not mesh_udim_tiles.has(id):
+		mesh_udim_tiles[id] = MMHighPolyBaker.udim_tiles(current_mesh)
+	return mesh_udim_tiles[id]
+
+func set_udim_tile(tile : int) -> void:
+	if tile != udim_tile:
+		udim_tile = tile
+		await update_map()
 
 func update_map() -> void:
 	var start_time : int = Time.get_ticks_msec()

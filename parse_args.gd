@@ -12,8 +12,20 @@ static func name_to_lower(s : String) -> String:
 
 ## Height of non-square outputs (--size widthxheight), or 0
 var output_height : int = 0
+## Options of --export-material
+var export_options : Dictionary = {}
+
+## UDIM tiles exported by --export-material (--udim-tiles, or --udim for the
+## graph's tiles)
+static func get_udim_tiles(material : MMGenMaterial, options : Dictionary) -> PackedInt32Array:
+	if options.has("udim_tiles"):
+		return MMCliTools.parse_udim_tiles(options.udim_tiles)
+	if options.get("udim", false):
+		return material.get_graph_udim_tiles()
+	return PackedInt32Array()
 
 func export_files(files, output_dir, target, target_file, image_size, options : Dictionary = {}) -> void:
+	export_options = options
 	var website_materials : Array = []
 	# An Array (and not a PackedStringArray) so export_variation can append to it
 	var export_list : Array = []
@@ -59,7 +71,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			from_website = true
 		if gen != null:
 			add_child(gen)
-			apply_graph_options(gen, f, options)
+			await apply_graph_options(gen, f, options)
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
@@ -99,7 +111,13 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			else:
 				var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
 				print("Saving additional export %s" % file_name)
-			await c.export_material(prefix, best_target, image_size, true, output_height)
+			if c is MMGenMaterial:
+				var tiles : PackedInt32Array = get_udim_tiles(c, export_options)
+				if export_options.has("udim_tiles") and tiles.is_empty():
+					show_error("ERROR: invalid --udim-tiles %s" % export_options.udim_tiles)
+				await c.export_material(prefix, best_target, image_size, true, output_height, tiles)
+			else:
+				await c.export_material(prefix, best_target, image_size, true, output_height)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
@@ -125,6 +143,8 @@ const VALUE_OPTIONS : Dictionary = {
 	"--high-texture": { key="high_texture", type=TYPE_STRING },
 	"--match-names": { key="match_names", type=TYPE_BOOL },
 	"--udim": { key="udim", type=TYPE_BOOL },
+	"--udim-tiles": { key="udim_tiles", type=TYPE_STRING },
+	"--mesh": { key="mesh", type=TYPE_STRING },
 	"--software-raytracing": { key="software_raytracing", type=TYPE_BOOL },
 	"--front": { key="front", type=TYPE_FLOAT },
 	"--rear": { key="rear", type=TYPE_FLOAT },
@@ -174,7 +194,12 @@ Options:
                              with the same name (ignoring _low/_high suffixes)
   --skew <image>             skew map for --high: white bends rays towards the face normal
   --high-texture <image>     texture of the high poly mesh, for the "texture" map of --high
-  --udim                     bake each UDIM tile of the mesh's UVs to <mesh>_<map>.<tile>.png
+  --udim                     bake each UDIM tile of the mesh's UVs to <mesh>_<map>.<tile>.png, or with
+                             --export-material, export each UDIM tile of the graph (of its Mesh Map and
+                             High Poly Bake nodes' mesh and its Image nodes' tile files) to <name>.<tile>.png
+  --udim-tiles <list>        UDIM tiles of --export-material (e.g. 1001-1004,1011)
+  --mesh <mesh>              mesh of the graph's Mesh Map and High Poly Bake nodes (as the 3D preview's
+                             custom mesh), for --export-material and --render
   --software-raytracing      bake --high maps with the software ray caster (by default, hardware
                              ray tracing is used when the GPU supports it)
   --show-window              do not minimize the window (with --headless, builds without headless.patch
@@ -440,11 +465,17 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 		show_error("ERROR: cannot load %s" % f)
 		return null
 	add_child(gen)
-	apply_graph_options(gen, f, options)
+	await apply_graph_options(gen, f, options)
 	return gen
 
 ## Applies --preset, then --set values (presets are applied first)
 func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
+	if options.has("mesh") and gen is MMGenGraph:
+		var mesh : Mesh = MMMeshLoader.load_mesh(options.mesh)
+		if mesh == null:
+			show_error("ERROR: cannot load the mesh %s" % options.mesh)
+		else:
+			await MMCliTools.set_graph_mesh(gen, mesh)
 	if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
 		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(MMCliTools.get_preset_names(gen)) ])
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):

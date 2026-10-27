@@ -142,7 +142,9 @@ Tools menu
   pan the graph to create the screenshot).
 
 * *Show buffer render times* lists the buffers of the current graph (including automatic
-  buffers and mesh maps) with their last rendering time and the GPU memory they use.
+  buffers and mesh maps) with their last rendering time and the GPU memory they use, and the
+  render times of the previews: each visible 2D preview (the time of its shader at its size)
+  and the 3D preview (the GPU time of a frame).
 
 * *Dependencies* lists the files the current graph depends on (images, fonts...) and shows
   the missing ones. A missing file can be relinked to another file, or searched by name in

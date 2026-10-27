@@ -40,6 +40,23 @@ func _exit_tree():
 	mm_deps.delete_buffer("preview_"+str(get_instance_id()))
 
 
+## The GPU time (ms) of a frame of the 3D preview, averaged over frames, or a
+## negative value when it is not visible
+func measure_render_time(frames : int = 10) -> float:
+	if not is_visible_in_tree():
+		return -1.0
+	var viewport : RID = $MaterialPreview.get_viewport_rid()
+	RenderingServer.viewport_set_measure_render_time(viewport, true)
+	var total : float = 0.0
+	# Measures start after a frame
+	for i in frames+2:
+		await get_tree().process_frame
+		if i >= 2:
+			total += RenderingServer.viewport_get_measured_render_time_gpu(viewport)
+	RenderingServer.viewport_set_measure_render_time(viewport, false)
+	return total/frames
+
+
 func _ready() -> void:
 	# Delay setting the sun shadow by one frame. Otherwise, the large 3D preview
 	# attempts to read the setting before the configuration file is loaded.

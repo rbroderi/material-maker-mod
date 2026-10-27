@@ -481,9 +481,20 @@ func api_export(params : Dictionary):
 		return fail("the graph has no material node")
 	if not params.target in material.get_export_profiles():
 		return fail("unknown export target '%s'" % params.target)
+	# UDIM tiles: a list ("1001-1004,1011" or an array), or true for the
+	# graph's tiles
+	var tiles : PackedInt32Array = PackedInt32Array()
+	var udim = params.get("udim", false)
+	if udim is bool:
+		if udim:
+			tiles = material.get_graph_udim_tiles()
+	else:
+		tiles = MMCliTools.parse_udim_tiles(",".join(udim.map(func(t): return str(int(t)))) if udim is Array else str(udim))
+		if tiles.is_empty():
+			return fail("invalid UDIM tiles '%s'" % str(udim))
 	DirAccess.make_dir_recursive_absolute(params.prefix.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
-	await material.export_material(params.prefix, params.target, int(params.get("size", 0)), true, int(params.get("height", 0)))
+	await material.export_material(params.prefix, params.target, int(params.get("size", 0)), true, int(params.get("height", 0)), tiles)
 	return true
 
 func api_undo(_params : Dictionary):

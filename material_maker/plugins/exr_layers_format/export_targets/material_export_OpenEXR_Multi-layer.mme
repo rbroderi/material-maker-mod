@@ -1,0 +1,77 @@
+{
+	"export_extension": "exr",
+	"files": [
+		{
+			"conditions": "$(connected:albedo_tex) or $(connected:opacity_tex)",
+			"expression": "rgba=vec4(mix(pow(($albedo_tex($uv)*$albedo_color.rgb+vec3(0.055))/1.055, vec3(2.4)), ($albedo_tex($uv)*$albedo_color.rgb)/12.92, lessThan($albedo_tex($uv)*$albedo_color.rgb, vec3(0.04045))), $opacity_tex($uv))",
+			"file_name": "$(path_prefix).exr",
+			"layer": "albedo",
+			"options": {
+				"channels": "RGBA"
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:metallic_tex)",
+			"expression": "f=$metallic*$metallic_tex($uv)",
+			"file_name": "$(path_prefix).exr",
+			"layer": "metallic",
+			"options": {
+				"channels": "Y"
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:roughness_tex)",
+			"expression": "f=$roughness*$roughness_tex($uv)",
+			"file_name": "$(path_prefix).exr",
+			"layer": "roughness",
+			"options": {
+				"channels": "Y"
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:normal_tex)",
+			"expression": "rgb=($normal_tex($uv)*vec3(-1.0, 1.0, -1.0)+vec3(1.0, 0.0, 1.0))*2.0-vec3(1.0)",
+			"file_name": "$(path_prefix).exr",
+			"layer": "normal",
+			"options": {
+				"channels": "XYZ"
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:emission_tex)",
+			"expression": "rgb=mix(pow(($emission_tex($uv)*$emission_energy+vec3(0.055))/1.055, vec3(2.4)), ($emission_tex($uv)*$emission_energy)/12.92, lessThan($emission_tex($uv)*$emission_energy, vec3(0.04045)))",
+			"file_name": "$(path_prefix).exr",
+			"layer": "emission",
+			"options": {
+				"channels": "RGB"
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:depth_tex)",
+			"expression": "f=1.0-$depth_tex($uv)",
+			"file_name": "$(path_prefix).exr",
+			"layer": "height",
+			"options": {
+				"channels": "Y"
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:ao_tex)",
+			"expression": "f=$ao_tex($uv)",
+			"file_name": "$(path_prefix).exr",
+			"layer": "ao",
+			"options": {
+				"channels": "Y"
+			},
+			"type": "texture"
+		}
+	],
+	"material": "material",
+	"name": "OpenEXR/Multi-layer"
+}

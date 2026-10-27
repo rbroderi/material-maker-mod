@@ -25,6 +25,8 @@ const STANDARD_INPUTS : Array[String] = [ "albedo_tex", "metallic_tex", "roughne
 ## space when OCIO is used
 const COLOR_OUTPUTS : Array[int] = [ OUTPUT_ALBEDO, OUTPUT_EMISSION ]
 var export_paths : Dictionary = {}
+## Export targets last exported with UDIM tiles (for Export again)
+var export_udim : Dictionary = {}
 var uids = {}
 
 var updating : bool = false
@@ -423,8 +425,10 @@ func process_option_float_uniform_to_const(s : String, is_declaration : bool = f
 	return s
 
 ## Uniforms become global variables (for shading languages, such as MaterialX's
-## GLSL functions, that cannot declare uniforms)
+## GLSL functions, that cannot declare uniforms). Textures (samplers) are
+## removed: templates map them to their own inputs ($(buffer_name)).
 func process_option_uniform_to_global(s : String, is_declaration : bool = false) -> String:
+	s = RegEx.create_from_string("(?m)^uniform\\s+sampler2D\\s[^;\\n]*;[ \\t]*\\n?").sub(s, "", true)
 	return RegEx.create_from_string("(?m)^uniform\\s+").sub(s, "", true)
 
 ## Uniform arrays become constants (Godot shaders cannot have default values
@@ -629,7 +633,7 @@ func process_buffers(template : String) -> String:
 			if l == "$end_buffers":
 				var index : int = 1
 				for t in preview_texture_dependencies.keys():
-					processed += subst_string(gen_buffer, { "$(buffer_index)":str(index) })
+					processed += subst_string(gen_buffer, { "$(buffer_index)":str(index), "$(buffer_name)":t })
 					index += 1
 				generating = false
 			else:
@@ -738,8 +742,9 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 	return dependencies
 
 ## Exports the material with a target (profile), with size x size textures (or
-## size x height when height is not 0)
-func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
+## size x height when height is not 0). With UDIM tiles, textures are exported
+## for each tile (see export_texture_file).
+func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
 	# Exports that generate shader code (procedural materials) export the
 	# buffers their code uses instead of the textures of the preview
 	var export_profile = get_export(profile)
@@ -748,21 +753,136 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 		export_context["@mm_custom_script"] = export_profile.custom
 	var generated_dependencies = get_generated_texture_dependencies(export_profile, export_context)
 	if generated_dependencies == null:
-		await do_export_material(prefix, profile, size, command_line, height)
+		await do_export_material(prefix, profile, size, command_line, height, tiles)
 		await MMPlugins.call_export_hooks(self, prefix, profile)
 		return
 	var saved_dependencies : Dictionary[String, MMTexture] = preview_texture_dependencies
 	preview_texture_dependencies = {}
 	for t in generated_dependencies.keys():
 		preview_texture_dependencies[t] = generated_dependencies[t]
-	await do_export_material(prefix, profile, size, command_line, height)
+	await do_export_material(prefix, profile, size, command_line, height, tiles)
 	preview_texture_dependencies = saved_dependencies
 	# Generating code replaced the preview's textures
 	if not command_line:
 		update()
 	await MMPlugins.call_export_hooks(self, prefix, profile)
 
-func do_export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
+## Waits until the render queue is empty. The queue's size does not change
+## while iterate buffers iterate, so this does not stop when it is stable
+## (that exported textures of unfinished iterate buffers), but only gives up
+## when it does not change for a long time (a buffer that never finishes).
+func wait_for_render_queue() -> void:
+	const STUCK_TIMEOUT_MS : int = 60000
+	var render_queue_size : int = mm_deps.get_render_queue_size()
+	var last_change : int = Time.get_ticks_msec()
+	while render_queue_size > 0:
+		mm_deps.update()
+		await mm_deps.updated
+		if render_queue_size != mm_deps.get_render_queue_size():
+			render_queue_size = mm_deps.get_render_queue_size()
+			last_change = Time.get_ticks_msec()
+		elif Time.get_ticks_msec()-last_change > STUCK_TIMEOUT_MS:
+			push_warning("Exporting while %d buffer(s) are still rendering" % render_queue_size)
+			break
+
+## The file name of a UDIM tile: <UDIM> is replaced by the tile number, or the
+## number is inserted before the extension (albedo.png -> albedo.1001.png)
+static func udim_file_name(file_name : String, tile : int) -> String:
+	if tile == 0:
+		return file_name.replace("<UDIM>", "1001")
+	if file_name.contains("<UDIM>"):
+		return file_name.replace("<UDIM>", str(tile))
+	return "%s.%d.%s" % [ file_name.get_basename(), tile, file_name.get_extension() ]
+
+## The UDIM tiles of the graph that contains the material: those of the meshes
+## of its Mesh Map and High Poly Bake nodes, and of its Image nodes' tile files
+## (sorted, empty if it only uses tile 1001)
+func get_graph_udim_tiles() -> PackedInt32Array:
+	var tiles : Dictionary = {}
+	var pending : Array = [ get_parent() ]
+	while not pending.is_empty():
+		var node = pending.pop_back()
+		for c in node.get_children():
+			if c is MMGenBase:
+				for t in c.get_udim_tiles():
+					tiles[t] = true
+				if c is MMGenGraph:
+					pending.push_back(c)
+	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
+	rv.sort()
+	return PackedInt32Array() if rv.size() == 0 or rv == PackedInt32Array([ 1001 ]) else rv
+
+## Makes the nodes of a graph (and its subgraphs) generate a UDIM tile (0 to
+## go back to their own settings)
+static func set_graph_udim_tile(graph : Node, tile : int) -> void:
+	if graph == null:
+		return
+	for c in graph.get_children():
+		if c is MMGenBase:
+			await c.set_udim_tile(tile)
+			if c is MMGenGraph:
+				await set_graph_udim_tile(c, tile)
+
+## Renders and saves a texture file of an export target (for a UDIM tile if
+## tile is not 0). Files with a layer are added to layers (by file name) and
+## saved later, all layers in a file.
+func export_texture_file(f : Dictionary, export_context : Dictionary, image_size : Vector2i, tile : int, layers : Dictionary) -> Error:
+	await wait_for_render_queue()
+	var file_name : String = subst_string(f.file_name, export_context)
+	if tile != 0 or file_name.contains("<UDIM>"):
+		file_name = udim_file_name(file_name, tile)
+	var output_index : int
+	if f.has("output"):
+		output_index = f.output
+	elif f.has("expression"):
+		var type = "rgba"
+		var expression = f.expression
+		var equal_position = expression.find("=")
+		if equal_position != -1:
+			var type_string = expression.left(equal_position)
+			type_string = type_string.strip_edges()
+			if type_string == "f" or type_string == "rgb" or type_string == "rgba":
+				type = type_string
+				expression = expression.right(-(equal_position+1))
+		export_output_def = { type: expression, "type":type }
+		output_index = EXPORT_OUTPUT_DEF_INDEX
+	else:
+		return FAILED
+	var result : MMTexture = await render_output_to_texture(output_index, image_size)
+	# Options of the image format (formats added by plugins), color maps
+	# being sRGB encoded by default
+	var options : Dictionary = f.get("options", {}).duplicate()
+	if not options.has("srgb"):
+		options.srgb = output_index in COLOR_OUTPUTS
+	# Rendered textures are RGBA: formats that can store fewer channels use
+	# the output's type
+	var output_type : String = "rgba"
+	if output_index == EXPORT_OUTPUT_DEF_INDEX:
+		output_type = export_output_def.type
+	elif output_index < shader_model.outputs.size():
+		output_type = shader_model.outputs[output_index].get("type", "rgba")
+	if not options.has("grayscale"):
+		options.grayscale = output_type == "f"
+	if not options.has("alpha"):
+		options.alpha = output_type == "rgba"
+	var image : Image = null
+	var export_space : String = MMColorManagement.get_export_space()
+	if export_space != "" and output_index in COLOR_OUTPUTS:
+		# Color maps are converted from the working space (OCIO)
+		image = MMColorManagement.convert_image_to((await result.get_texture()).get_image(), export_space)
+		options.srgb = false
+	if f.has("layer"):
+		if image == null:
+			image = (await result.get_texture()).get_image()
+		if not layers.has(file_name):
+			layers[file_name] = []
+		layers[file_name].append({ name=f.layer, image=image, options=options })
+		return OK
+	if image != null:
+		return MMTexture.save_image(image, file_name, options)
+	return await result.save_to_file(file_name, options)
+
+func do_export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
@@ -770,12 +890,19 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 			height = get_image_height()
 	export_last_target = profile
 	export_paths[profile] = prefix
+	if tiles.is_empty():
+		export_udim.erase(profile)
+	else:
+		export_udim[profile] = true
 	var export_context : Dictionary = get_connections_and_parameters_context()
 	export_context["$(path_prefix)"] = prefix
 	export_context["$(file_prefix)"] = prefix.get_file()
 	export_context["$(dir_prefix)"] = prefix.get_base_dir()
 	export_context["$(material_maker_path)"] = MMPaths.get_resource_dir()
 	export_context["$(path_separator)"] = "/"
+	# Templates write texture file names with $(udim_suffix), that is the
+	# tile number placeholder in UDIM exports (MaterialX, USD)
+	export_context["$(udim_suffix)"] = ".<UDIM>" if not tiles.is_empty() else ""
 	var exported_files : Array = []
 	var overwrite_files : Array = []
 	var export_profile = get_export(profile)
@@ -821,66 +948,37 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 		get_tree().get_root().add_child(progress_dialog)
 		progress_dialog.set_text("Exporting material")
 		progress_dialog.set_progress(0)
-	var total_files : int = 0
+	var texture_files : Array = exported_files.filter(func(f): return f.type == "texture")
+	var tile_list : Array = Array(tiles) if not tiles.is_empty() else [ 0 ]
+	var total_files : int = texture_files.size()*tile_list.size()
 	for f in exported_files:
 		match f.type:
-			"texture", "template":
+			"template":
 				total_files += 1
 			"buffers", "buffer_templates":
 				total_files += preview_texture_dependencies.size()
 	var processed_files = 0
 	var error_files = 0
+	# Textures, for each UDIM tile, then the layers of layered files
+	var layers : Dictionary = {}
+	for tile in tile_list:
+		if tile != 0:
+			await set_graph_udim_tile(get_parent(), tile)
+		for f in texture_files:
+			if await export_texture_file(f, export_context, Vector2i(size, height if height > 0 else size), tile, layers) != OK:
+				error_files += 1
+			processed_files += 1
+			if progress_dialog:
+				progress_dialog.set_progress(float(processed_files)/float(total_files))
+	if not tiles.is_empty():
+		await set_graph_udim_tile(get_parent(), 0)
+	for file_name in layers.keys():
+		if MMPlugins.save_layered_image(file_name, layers[file_name]) != OK:
+			error_files += 1
 	for f in exported_files:
 		#print("Exporting ", f)
 		var e: Error = OK
 		match f.type:
-			"texture":
-				# Wait until the render queue is empty
-				if mm_deps.get_render_queue_size() > 0:
-					var render_queue_size : int = mm_deps.get_render_queue_size()
-					while true:
-						mm_deps.update()
-						await mm_deps.updated
-						if render_queue_size == mm_deps.get_render_queue_size():
-							break
-						render_queue_size = mm_deps.get_render_queue_size()
-				var file_name = subst_string(f.file_name, export_context)
-				var output_index : int
-				if f.has("output"):
-					output_index = f.output
-				elif f.has("expression"):
-					var type = "rgba"
-					var expression = f.expression
-					var equal_position = expression.find("=")
-					if equal_position != -1:
-						var type_string = expression.left(equal_position)
-						type_string = type_string.strip_edges()
-						if type_string == "f" or type_string == "rgb" or type_string == "rgba":
-							type = type_string
-							expression = expression.right(-(equal_position+1))
-					export_output_def = { type: expression, "type":type }
-					output_index = EXPORT_OUTPUT_DEF_INDEX
-				else:
-					# Error! Just ignore it
-					e = FAILED
-					processed_files += 1
-					error_files += 1
-					if progress_dialog:
-						progress_dialog.set_progress(float(processed_files)/float(total_files))
-					continue
-				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, height if height > 0 else size))
-				var export_space : String = MMColorManagement.get_export_space()
-				if export_space != "" and output_index in COLOR_OUTPUTS:
-					# Color maps are converted from the working space (OCIO)
-					var image : Image = (await result.get_texture()).get_image()
-					e = MMTexture.save_image(MMColorManagement.convert_image_to(image, export_space), file_name)
-				else:
-					e = await result.save_to_file(file_name)
-				if e != OK:
-					error_files += 1
-				processed_files += 1
-				if progress_dialog:
-					progress_dialog.set_progress(float(processed_files)/float(total_files))
 			"template":
 				var file_export_context = export_context.duplicate()
 				if f.has("file_params"):
@@ -894,15 +992,7 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 				if progress_dialog:
 					progress_dialog.set_progress(float(processed_files)/float(total_files))
 			"buffers":
-				# Wait until the render queue is empty
-				if mm_deps.get_render_queue_size() > 0:
-					var render_queue_size : int = mm_deps.get_render_queue_size()
-					while true:
-						mm_deps.update()
-						await mm_deps.updated
-						if render_queue_size == mm_deps.get_render_queue_size():
-							break
-						render_queue_size = mm_deps.get_render_queue_size()
+				await wait_for_render_queue()
 				var index : int = 1
 				for t in preview_texture_dependencies.keys():
 					var file_name = subst_string(f.file_name, export_context)
@@ -910,8 +1000,15 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 					var texture : Texture2D = await preview_texture_dependencies[t].get_texture()
 					var image : Image = texture.get_image()
 					if image:
-						image.convert(Image.FORMAT_RGBA8)
-						e = image.save_png(file_name)
+						# PNG files (8 bits), or the format of the file name
+						# (e.g. EXR to keep the precision of iterate buffers)
+						if file_name.get_extension().to_lower() == "png":
+							image.convert(Image.FORMAT_RGBA8)
+							e = image.save_png(file_name)
+						else:
+							if image.get_format() < Image.FORMAT_RF:
+								image.convert(Image.FORMAT_RGBAH)
+							e = MMTexture.save_image(image, file_name)
 						if e != OK:
 							error_files += 1
 					else:
@@ -961,6 +1058,8 @@ func _serialize_data(data: Dictionary) -> Dictionary:
 	if export_last_target != "":
 		data.export_last_target = export_last_target
 	data.export_paths = export_paths
+	if not export_udim.is_empty():
+		data.export_udim = export_udim
 	return data
 
 func _serialize(data: Dictionary) -> Dictionary:
@@ -974,6 +1073,8 @@ func _deserialize(data : Dictionary) -> void:
 		export_last_target = data.export_last_target
 	if data.has("export_paths"):
 		export_paths = data.export_paths.duplicate()
+	if data.has("export_udim"):
+		export_udim = data.export_udim.duplicate()
 
 func get_shader_model_for_edit():
 	var edit_shader_model = shader_model.duplicate()

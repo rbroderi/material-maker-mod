@@ -570,13 +570,18 @@ func quick_export() -> void:
 	mm_globals.set_tip_text(
 			"Quick exported %s file(s) to %s" % [len(exports), export_prefix], 3, 1)
 
-func export_material(file_path : String, profile : String) -> void:
+## Exports the current material (each UDIM tile of the graph with udim)
+func export_material(file_path : String, profile : String, udim : bool = false) -> void:
 	var project = get_current_project()
 	if project == null:
 		return
 	mm_globals.config.set_value("path", export_profile_config_key(profile), file_path.get_base_dir())
 	var export_prefix = file_path.trim_suffix("."+file_path.get_extension())
-	project.export_material(export_prefix, profile)
+	var tiles : PackedInt32Array = PackedInt32Array()
+	var material_node = project.get_material_node()
+	if udim and material_node is MMGenMaterial:
+		tiles = material_node.get_graph_udim_tiles()
+	project.export_material(export_prefix, profile, tiles)
 	mm_steam.unlock_achievement("ACH_MATERIALIZED")
 
 func export_again_is_disabled() -> bool:
@@ -599,7 +604,7 @@ func export_again() -> void:
 	if export_target == "":
 		return
 	var export_path : String = material_node.get_export_path(export_target)
-	export_material(export_path, export_target)
+	export_material(export_path, export_target, material_node.export_udim.get(export_target, false) if material_node is MMGenMaterial else false)
 
 func create_menu_export_material(menu : MMMenuManager.MenuBase, prefix : String = "",
 		export_profiles = null, add_quick_export : bool = true) -> void:
@@ -681,10 +686,17 @@ func _on_ExportMaterial_id_pressed(id : int) -> void:
 		else:
 			dialog.current_file = tr("unnamed")
 
+		# Graphs with UDIM tiles (meshes of Mesh Map and High Poly Bake nodes,
+		# tile files of Image nodes) can export each tile
+		var udim_tiles : PackedInt32Array = material_node.get_graph_udim_tiles() if material_node is MMGenMaterial else PackedInt32Array()
+		if not udim_tiles.is_empty():
+			dialog.add_option(tr("UDIM tiles"), [ tr("Tile 1001 only"), tr("All tiles (%s)") % ", ".join(Array(udim_tiles).map(func(t): return str(t))) ],
+				1 if material_node.export_udim.get(profile, false) else 0)
 		add_child(dialog)
 		var files : Array = await dialog.select_files()
 		if files.size() > 0:
-			export_material(files[0], profile)
+			var udim : bool = not udim_tiles.is_empty() and dialog.get_selected_options().get(tr("UDIM tiles"), 0) == 1
+			export_material(files[0], profile, udim)
 
 func create_menu_set_theme(menu : MMMenuManager.MenuBase) -> void:
 	menu.clear()
@@ -1518,15 +1530,44 @@ func show_buffer_render_times():
 				path.insert(0, parent.get_type_name())
 				parent = parent.get_parent()
 			lines.push_back("%6d ms  %7.1f MB   %s" % [ b.rendering_time, memory/BYTES_PER_MB, "/".join(path) ])
-	if buffers.is_empty():
+	var preview_lines : PackedStringArray = await get_preview_render_times()
+	if buffers.is_empty() and preview_lines.is_empty():
 		accept_dialog("This graph has no buffers.")
 		return
 	var text : String = tr("%d buffer(s), %d ms in total (last render of each), %.1f MB") % [ buffers.size(), total_time, total_memory/BYTES_PER_MB ]
 	var gpu_memory : Dictionary = MMTexture.get_gpu_memory_usage()
 	var budget : float = float(mm_globals.get_config("gpu_memory_budget"))
 	text += "\n" + tr("GPU memory: %d MB in %d texture(s), budget: %s") % [ int(gpu_memory.bytes/BYTES_PER_MB), gpu_memory.count, (tr("%d MB") % budget) if budget > 0.0 else tr("unlimited") ]
-	text += "\n\n" + "\n".join(lines)
+	if not lines.is_empty():
+		text += "\n\n" + "\n".join(lines)
+	if not preview_lines.is_empty():
+		text += "\n\n" + tr("Previews (rendered again when the view changes):") + "\n" + "\n".join(preview_lines)
 	accept_dialog(text)
+
+## Render times of the visible 2D previews (their shader, at their size) and
+## of the 3D preview (GPU time of a frame)
+func get_preview_render_times() -> PackedStringArray:
+	var rv : PackedStringArray = PackedStringArray()
+	for p in preview_2d:
+		if p == null:
+			continue
+		var time : int = await p.measure_render_time()
+		if time >= 0:
+			rv.push_back("%6d ms  %s   %s (%s)" % [ time, " ".repeat(10), p.name, tr("%s, %dx%d px") % [ get_node_title_path(p.generator), int(p.size.x), int(p.size.y) ] ])
+	if preview_3d != null and preview_3d.has_method("measure_render_time"):
+		var time : float = await preview_3d.measure_render_time()
+		if time >= 0.0:
+			rv.push_back("%6.1f ms  %s   %s (%s)" % [ time, " ".repeat(10), preview_3d.name, tr("GPU time of a frame, %dx%d px") % [ int(preview_3d.size.x), int(preview_3d.size.y) ] ])
+	return rv
+
+## A generator's name, prefixed with the groups that contain it
+func get_node_title_path(generator : MMGenBase) -> String:
+	var path : PackedStringArray = PackedStringArray([ mm_globals.get_node_title_from_gen(generator) ])
+	var parent = generator.get_parent()
+	while parent is MMGenGraph and parent.get_parent() is MMGenGraph:
+		path.insert(0, parent.get_type_name())
+		parent = parent.get_parent()
+	return "/".join(path)
 
 ## Returns the rendering device memory used by a generator's texture
 func get_generator_gpu_memory(generator : MMGenBase) -> int:

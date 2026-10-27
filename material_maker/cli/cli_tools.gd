@@ -189,6 +189,29 @@ static func wait_for_renders(tree : SceneTree, max_frames : int = 6000) -> void:
 		if idle_frames >= IDLE_FRAMES_DONE:
 			return
 
+## Sets the mesh of a graph's Mesh Map and High Poly Bake nodes (as the 3D
+## preview's custom mesh does) and waits until their maps are generated
+static func set_graph_mesh(graph : MMGenGraph, mesh : Mesh) -> void:
+	graph.current_mesh = mesh
+	for g in collect_generators(graph, func(g): return g is MMGenMeshMap):
+		g.current_mesh = mesh
+		await g.update_map()
+
+## UDIM tiles from a list ("1001-1004,1011"), empty if it is invalid
+static func parse_udim_tiles(list : String) -> PackedInt32Array:
+	var tiles : PackedInt32Array = PackedInt32Array()
+	for item in list.split(",", false):
+		var bounds : PackedStringArray = item.strip_edges().split("-")
+		if bounds.size() > 2 or not bounds[0].is_valid_int() or not bounds[-1].is_valid_int():
+			return PackedInt32Array()
+		for t in range(bounds[0].to_int(), bounds[-1].to_int()+1):
+			if t < 1001 or t > 1999:
+				return PackedInt32Array()
+			if not t in tiles:
+				tiles.append(t)
+	tiles.sort()
+	return tiles
+
 ## The generator and output of a node output spec ("node/path" or
 ## "node/path:output"): { generator, output }, or { error }
 static func resolve_node_output(graph : MMGenBase, node_spec : String) -> Dictionary:

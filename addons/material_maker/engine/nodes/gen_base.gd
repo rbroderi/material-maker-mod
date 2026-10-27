@@ -563,6 +563,15 @@ func render(object: Object, output_index : int, size : int, preview : bool = fal
 	renderer = await renderer.render_shader(object, shader, size, output_type != "rgba")
 	return renderer
 
+## UDIM tiles this node can generate (e.g. those of a baked mesh's UVs)
+func get_udim_tiles() -> PackedInt32Array:
+	return PackedInt32Array()
+
+## Makes the node generate a UDIM tile, for UDIM exports (0 goes back to the
+## node's own settings). It can be a coroutine.
+func set_udim_tile(_tile : int) -> void:
+	pass
+
 ## A compute shader that renders an output as an RGBA image (outputs of other
 ## types are converted as in the 2D preview), or null if it does not compile
 func create_output_compute_shader(output_index : int) -> MMComputeShader:

@@ -132,10 +132,10 @@ func get_image_parameter(parameter_name : String) -> Texture2D:
 		return ImageTexture.create_from_image(image) if image != null else null)
 
 ## The current mesh, with the UVs of the baked UDIM tile in [0, 1] (cached, so
-## bakes of the same tile are not done again)
+## bakes of the same tile are not done again). UDIM exports choose the tile.
 func get_tile_mesh() -> Mesh:
 	var low : Mesh = get_low_mesh()
-	var tile : int = int(get_parameter("udim"))
+	var tile : int = udim_tile if udim_tile != 0 else int(get_parameter("udim"))
 	return cached("tile_mesh", "tile:%d:%d" % [ low.get_instance_id(), tile ], func(): return MMHighPolyBaker.udim_tile_mesh(low, tile))
 
 ## The current mesh, with its parts as separate surfaces when matching by name

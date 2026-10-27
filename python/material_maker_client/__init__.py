@@ -242,10 +242,11 @@ class MaterialMaker:
     def list_export_targets(self):
         return self.call("list_export_targets")
 
-    def export(self, target, prefix, size=0, height=0):
+    def export(self, target, prefix, size=0, height=0, udim=None):
         """Exports the material; prefix is the path of the files without extension
-        (height: for non-square textures)"""
-        return self.call("export", target=target, prefix=_path(prefix), size=size, height=height)
+        (height: for non-square textures). udim exports UDIM tiles: True for
+        the graph's tiles, or a list of tiles ("1001-1004,1011" or [1001, 1002])."""
+        return self.call("export", **_given(target=target, prefix=_path(prefix), size=size, height=height, udim=udim))
 
     def export_mmr(self, path, size=0, height=0):
         """Exports a runtime package (.mmr) of the material, for engine runtimes

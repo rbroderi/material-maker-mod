@@ -132,6 +132,23 @@ func create_image(_renderer_function : String, _params : Array, image_size : Vec
 		var _texture : MMTexture = await generator.render_output_to_texture(output, image_size)
 
 
+## The time (ms) to render the previewed output at the preview's size (as
+## buffers are timed: the preview's shader draws each of its pixels), or -1
+## when it shows nothing
+func measure_render_time() -> int:
+	if generator == null or not is_visible_in_tree():
+		return -1
+	var compute_shader : MMComputeShader = await generator.create_output_compute_shader(output)
+	if compute_shader == null:
+		return -1
+	var texture : MMTexture = MMTexture.new()
+	var render_size : Vector2i = Vector2i(size).clamp(Vector2i(1, 1), Vector2i(4096, 4096))
+	# The first render also creates the pipeline
+	for i in 2:
+		await compute_shader.render_ext([ texture ], render_size)
+	return compute_shader.render_time
+
+
 func export_as_image_file(file_name : String, image_size : Vector2i) -> void:
 	mm_globals.config.set_value("path", "save_preview", file_name.get_base_dir())
 	if generator != null:

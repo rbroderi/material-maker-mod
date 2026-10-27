@@ -11,14 +11,14 @@ extends RefCounted
 
 const VOLUME_TYPES : Array[String] = [ "tex3d", "tex3d_gs", "sdf3d", "sdf3dc" ]
 const FORMATS : Array[String] = [ "vdb", "dds", "ktx2" ]
-## Texel formats of DDS and KTX2 files: Godot image format, texel size,
-## component size (bytes), DXGI format (DDS) and Vulkan format (KTX2)
+## Texel formats of DDS and KTX2 files: Godot image format, texel size and
+## DXGI format (DDS; KTX2 files are written by the ktx2_format plugin)
 const TEXEL_FORMATS : Dictionary = {
-	rgba16f={ image=Image.FORMAT_RGBAH, size=8, type_size=2, dxgi=10, vulkan=97 },
-	rgba32f={ image=Image.FORMAT_RGBAF, size=16, type_size=4, dxgi=2, vulkan=109 },
-	rgba8={ image=Image.FORMAT_RGBA8, size=4, type_size=1, dxgi=28, vulkan=37 },
-	r16f={ image=Image.FORMAT_RH, size=2, type_size=2, dxgi=54, vulkan=76 },
-	r32f={ image=Image.FORMAT_RF, size=4, type_size=4, dxgi=41, vulkan=100 },
+	rgba16f={ image=Image.FORMAT_RGBAH, size=8, dxgi=10 },
+	rgba32f={ image=Image.FORMAT_RGBAF, size=16, dxgi=2 },
+	rgba8={ image=Image.FORMAT_RGBA8, size=4, dxgi=28 },
+	r16f={ image=Image.FORMAT_RH, size=2, dxgi=54 },
+	r32f={ image=Image.FORMAT_RF, size=4, dxgi=41 },
 }
 
 
@@ -180,82 +180,15 @@ static func write_dds(file_name : String, volume : Volume, texel_format : String
 	file.store_buffer(get_texel_data(volume, texel_format))
 	return OK
 
+## Writes a 3D KTX2 file with the KTX2 writer of the ktx2_format plugin
+## (a dependency of this plugin)
 static func write_ktx2(file_name : String, volume : Volume, texel_format : String) -> Error:
+	var ktx2 = MMPlugins.load_plugin_file("ktx2_format", "ktx2.gd")
+	if ktx2 == null:
+		return ERR_UNAVAILABLE
 	var size : int = volume.resolution
-	var channel_count : int = 4 if texel_format.begins_with("rgba") else 1
-	var is_float : bool = texel_format.ends_with("f")
-	var bits : int = 8*TEXEL_FORMATS[texel_format].type_size
-	# Data format descriptor: a basic block with one sample per channel
-	var dfd : StreamPeerBuffer = StreamPeerBuffer.new()
-	var block_size : int = 24+16*channel_count
-	dfd.put_u32(4+block_size)
-	dfd.put_u32(0)
-	dfd.put_u32(2 | (block_size << 16))
-	# Color model RGBSDA, BT709 primaries, linear transfer, straight alpha
-	dfd.put_u32(1 | (1 << 8) | (1 << 16))
-	dfd.put_u32(0)
-	dfd.put_u32(texel_size(texel_format))
-	dfd.put_u32(0)
-	for c in channel_count:
-		var channel_id : int = [ 0, 1, 2, 15 ][c]
-		var channel_type : int = channel_id | (0xC0 if is_float else 0)
-		dfd.put_u32((c*bits) | ((bits-1) << 16) | (channel_type << 24))
-		dfd.put_u32(0)
-		if is_float:
-			dfd.put_u32(0xBF800000)
-			dfd.put_u32(0x3F800000)
-		else:
-			dfd.put_u32(0)
-			dfd.put_u32((1 << bits)-1)
-	# Key/value data
-	var kvd : StreamPeerBuffer = StreamPeerBuffer.new()
-	var entry : PackedByteArray = "KTXwriter".to_utf8_buffer()
-	entry.append(0)
-	entry.append_array("Material Maker".to_utf8_buffer())
-	entry.append(0)
-	kvd.put_u32(entry.size())
-	kvd.put_data(entry)
-	while kvd.get_size()%4 != 0:
-		kvd.put_u8(0)
-	var data : PackedByteArray = get_texel_data(volume, texel_format)
-	var dfd_offset : int = 80+24
-	var kvd_offset : int = dfd_offset+dfd.get_size()
-	var data_offset : int = kvd_offset+kvd.get_size()
-	var padding : int = (16-data_offset%16)%16
-	data_offset += padding
-	var header : StreamPeerBuffer = StreamPeerBuffer.new()
-	header.put_data(PackedByteArray([ 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A ]))
-	header.put_u32(TEXEL_FORMATS[texel_format].vulkan)
-	header.put_u32(TEXEL_FORMATS[texel_format].type_size)
-	header.put_u32(size)
-	header.put_u32(size)
-	header.put_u32(size)
-	# Layers, faces, levels, supercompression
-	header.put_u32(0)
-	header.put_u32(1)
-	header.put_u32(1)
-	header.put_u32(0)
-	header.put_u32(dfd_offset)
-	header.put_u32(dfd.get_size())
-	header.put_u32(kvd_offset)
-	header.put_u32(kvd.get_size())
-	header.put_u64(0)
-	header.put_u64(0)
-	# Level 0
-	header.put_u64(data_offset)
-	header.put_u64(data.size())
-	header.put_u64(data.size())
-	var file : FileAccess = FileAccess.open(file_name, FileAccess.WRITE)
-	if file == null:
-		return FileAccess.get_open_error()
-	file.store_buffer(header.data_array)
-	file.store_buffer(dfd.data_array)
-	file.store_buffer(kvd.data_array)
-	var zeros : PackedByteArray = PackedByteArray()
-	zeros.resize(padding)
-	file.store_buffer(zeros)
-	file.store_buffer(data)
-	return OK
+	var levels : Array[PackedByteArray] = [ get_texel_data(volume, texel_format) ]
+	return ktx2.write(file_name, levels, Vector3i(size, size, size), texel_format)
 
 #
 # OpenVDB

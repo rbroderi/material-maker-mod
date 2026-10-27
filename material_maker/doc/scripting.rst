@@ -63,7 +63,9 @@ graph (and in **list_nodes**).
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
 * **render(node, output, size, path, height)** renders a node output to a PNG or EXR file (with an
   optional height for non-square images)
-* **list_export_targets()** and **export(target, prefix, size, height)** export the material
+* **list_export_targets()** and **export(target, prefix, size, height, udim)** export the material
+  (**udim** exports UDIM tiles: true for the graph's tiles, or a list such as "1001-1004,1011"
+  or [1001, 1002])
 * **export_mmr(path, size, height)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
   SDF output as a volume (.vdb, .dds or .ktx2)
@@ -131,6 +133,16 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   **update(generator, output_index)** method is called when the previewed output changes
 * export hooks, called after each material export with the material node, the exported file
   prefix and the export target: **api.add_export_hook(callable)**
+* image file formats: **api.add_image_format(extension, description, callable)**, used wherever
+  images are saved (texture exports, the 2D preview's export menu). The callable receives the
+  image, the file name and options (the **options** of the export target's texture file, plus
+  **srgb**, **grayscale** and **alpha** from the exported output) and returns an error code
+* files that hold several images: **api.add_layered_image_format(extension, description,
+  callable)**. Texture files of an export target with a **layer** name and the same file name
+  are saved together: the callable receives the file name and the layers (**{ name, image,
+  options }**)
+* **MMPlugins.load_plugin_file(plugin_id, file_name)** loads a file of another (loaded) plugin, for
+  example a script shared with the plugins that depend on it
 * **api.get_main_window()**, the main window (null on the command line), to add panels or dialogs
 
 Export targets of plugins (**export_targets** folder) are listed with the Material node's own
@@ -151,8 +163,11 @@ The **material_maker/plugins/example** folder contains an example plugin (disabl
 Several features of Material Maker are bundled plugins, enabled by default, that can be disabled
 in *Tools > Plugins...*: **materialx_import** (MaterialX import), **runtime_export** (runtime
 packages, **--export-mmr**), **volume_export** (volumes, **--export-volume**), **export_targets**
-(the Godot 4, Unity and Unreal Engine 5 shader exports, MaterialX and USD), **car_paint** (the
+(the Godot 4, Unity and Unreal Engine 5 shader exports, MaterialX and USD), **ktx2_format**,
+**tx_format** and **exr_layers_format** (the KTX2 and TX image formats, multi-layer OpenEXR,
+and their export targets), **car_paint** (the
 Car Paint Material node) and **axf_import** (AxF import, that depends on **car_paint**).
+**volume_export** depends on **ktx2_format**, that writes its KTX2 files.
 
 Cooking runtime packages
 ------------------------

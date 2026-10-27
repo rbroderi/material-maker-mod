@@ -89,10 +89,62 @@ func set_parameter(n : String, v) -> void:
 	if n == "image" or (n in [ "color_space", "ocio_space" ] and int(get_parameter("color_space")) == COLOR_SPACE_OCIO) or (n == "color_space" and parameters.has("image")):
 		load_image()
 
+## The UDIM tile loaded in UDIM exports (0 otherwise)
+var udim_tile : int = 0
+
+## A tile number in a file name (albedo.1001.png, albedo_1002.exr)
+static func udim_regex() -> RegEx:
+	return RegEx.create_from_string("(?<=[._])1\\d\\d\\d(?=\\.[^./\\\\]+$)")
+
+## The file of the image: paths with <UDIM> (MaterialX and USD's placeholder)
+## or a tile number load the tile of UDIM exports, and tile 1001 otherwise
+func get_image_file() -> String:
+	var path : String = get_parameter("image")
+	if path.contains("<UDIM>"):
+		return path.replace("<UDIM>", str(udim_tile if udim_tile != 0 else 1001))
+	if udim_tile != 0:
+		var number : RegExMatch = udim_regex().search(path)
+		if number != null:
+			return path.substr(0, number.get_start())+str(udim_tile)+path.substr(number.get_end())
+	return path
+
+func get_udim_tiles() -> PackedInt32Array:
+	var path : String = get_parameter("image")
+	var pattern : String
+	if path.contains("<UDIM>"):
+		pattern = path.get_file().replace("<UDIM>", "*")
+	else:
+		var number : RegExMatch = udim_regex().search(path.get_file())
+		if number == null:
+			return PackedInt32Array()
+		pattern = path.get_file().substr(0, number.get_start())+"*"+path.get_file().substr(number.get_end())
+	var tiles : PackedInt32Array = PackedInt32Array()
+	for f in DirAccess.get_files_at(path.get_base_dir()):
+		if f.match(pattern):
+			var number : RegExMatch = udim_regex().search(f)
+			if number != null and f == pattern.replace("*", number.get_string()):
+				tiles.append(number.get_string().to_int())
+	tiles.sort()
+	return tiles
+
+func set_udim_tile(tile : int) -> void:
+	if tile == udim_tile:
+		return
+	var file_path : String = get_image_file()
+	udim_tile = tile
+	if get_image_file() != file_path:
+		load_image()
+
 ## Loads the image file, converting it to the working space in OCIO mode
 func load_image() -> void:
-	var file_path : String = get_parameter("image")
+	var file_path : String = get_image_file()
 	if not FileAccess.file_exists(file_path):
+		if udim_tile != 0:
+			# Tiles without an image are transparent black
+			push_warning("No image for UDIM tile %d (%s)" % [ udim_tile, file_path ])
+			var empty : Image = Image.create_empty(1, 1, false, Image.FORMAT_RGBA8)
+			texture.set_texture(ImageTexture.create_from_image(empty))
+			mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
 		return
 	filetime = get_filetime(file_path)
 	var image : Image = Image.new()
@@ -112,7 +164,7 @@ func load_image() -> void:
 	mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
 
 func _on_timeout() -> void:
-	if filetime != get_filetime(get_parameter("image")):
+	if filetime != get_filetime(get_image_file()):
 		load_image()
 
 func _serialize(data: Dictionary) -> Dictionary:
