@@ -3228,7 +3228,7 @@
 			"\tNORMAL_MAP = texture(texture_normal, base_uv).rgb;",
 			"\tNORMAL_MAP_DEPTH = $normal;",
 			"\tvec3 emission_tex = texture(texture_emission, base_uv).rgb;",
-			"\tEMISSION = emission_tex*$emission_energy;",
+			"\tEMISSION = mix(pow((emission_tex + vec3(0.055))/vec3(1.055), vec3(2.4)), emission_tex/vec3(12.92), lessThan(emission_tex, vec3(0.04045)))*$emission_energy;",
 			"\tAO = orm_tex.r;",
 			"\tAO_LIGHT_AFFECT = $ao;",
 			"$if $(connected:opacity_tex) and $(param:flags_transparent)",
