@@ -419,6 +419,10 @@ func process_option_unreal5(s : String, is_declaration : bool = false, declarati
 	s = s.replace("elapsed_time", "Time")
 	s = s.replace("uniform sampler2D", "// uniform sampler2D ")
 	if is_declaration:
+		# textureLod is a macro that uses the texture's sampler: remove the DX9
+		# style function of hlsl_defs.tmpl (Shader Model 5 and 6 compilers
+		# reject its tex2D call)
+		s = RegEx.create_from_string("inline\\s+float4\\s+textureLod\\s*\\([^)]*\\)\\s*\\{[^}]*\\}").sub(s, "")
 		s = s.replace("// EngineSpecificDefinitions", "#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, lod)");
 		for d in preprocess_option_unreal5(s):
 			s = s.replace(d.strings[0], d.strings[1]+" "+d.strings[2]+d.strings[3]+";")
