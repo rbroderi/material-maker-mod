@@ -136,13 +136,20 @@ func thread_loop():
 
 func thread_run(c : Callable, p : Array = [], stop_thread = false):
 	if render_in_separate_thread:
-		if rendering_thread == null:
-			return
-		while rendering_thread_working and is_inside_tree():
+		# Waiting for the rendering thread needs the scene tree. At exit the
+		# renderer may be out of the tree (and its thread stopped): just return
+		if rendering_thread == null or not is_inside_tree():
+			return null
+		while rendering_thread_working:
 			await get_tree().process_frame
+			if rendering_thread == null or not is_inside_tree():
+				return null
 		rendering_thread_working = true
-		while not rendering_mutex.try_lock() and is_inside_tree():
+		while not rendering_mutex.try_lock():
 			await get_tree().process_frame
+			if not is_inside_tree():
+				rendering_thread_working = false
+				return null
 		rendering_callable = c
 		rendering_parameters = p
 		rendering_thread_running = not stop_thread
@@ -152,13 +159,21 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 		var rv
 		while running:
 			while not rendering_mutex.try_lock():
-				if is_inside_tree():
-					await get_tree().process_frame
+				await get_tree().process_frame
+				if not is_inside_tree():
+					rendering_thread_working = false
+					return null
 			running = rendering_thread_running
 			rv = rendering_return_value
 			rendering_mutex.unlock()
+		# Don't keep references to the job (e.g. MMTextures, freed at exit
+		# while this node is being destroyed)
+		rendering_callable = Callable()
+		rendering_parameters = []
+		rendering_return_value = null
 		rendering_thread_working = false
-		await get_tree().process_frame
+		if is_inside_tree():
+			await get_tree().process_frame
 		return rv
 	else:
 		return await c.callv(p)
