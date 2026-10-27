@@ -27,7 +27,7 @@ func draw_list_extra_setup(rd : RenderingDevice, draw_list : int, shader : RID, 
 
 func set_shader(vertex_source : String, fragment_source : String, replaces : Dictionary = {}) -> bool:
 	replaces["@DECLARATIONS"] = get_uniform_declarations()+"\n"+get_input_texture_declarations()
-	var rd : RenderingDevice = mm_renderer.rendering_device
+	var rd : RenderingDevice = await mm_renderer.wait_for_rendering_device()
 	shader = do_compile_shader(rd, { vertex=vertex_source, fragment=fragment_source }, replaces)
 	return shader.is_valid()
 

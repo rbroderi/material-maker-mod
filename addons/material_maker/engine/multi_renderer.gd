@@ -166,6 +166,14 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 func create_rendering_device():
 	rendering_device = RenderingServer.create_local_rendering_device()
 
+# The rendering device is created asynchronously in the rendering thread, so
+# shaders compiled at startup (e.g. when loading a graph from the command line)
+# must wait for it
+func wait_for_rendering_device() -> RenderingDevice:
+	while rendering_device == null:
+		await get_tree().process_frame
+	return rendering_device
+
 func destroy_rendering_device():
 	pass
 
