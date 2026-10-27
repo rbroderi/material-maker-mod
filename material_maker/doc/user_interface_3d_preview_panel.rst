@@ -43,6 +43,12 @@ replacing its whole lighting model, so ambient light and reflections still use G
 
 The *Environment* menu provides different environments, as well as tonemap options.
 
+When OpenColorIO support is built (see the **native/ocio** directory of the source
+repository), the post-processing menu has a **View transform (OCIO)** list with the
+display/view transforms of the OpenColorIO config. A transform replaces Godot's tonemapper:
+the 3D view is then rendered in HDR (linear Rec.709 values, not clamped) and the transform is
+applied when it is displayed, with a LUT whose input is shaped so it covers values up to 16.
+
 The *Export* menu can also render the preview:
 
 * **Path traced render...** renders the object from the current view with a progressive path
@@ -50,8 +56,11 @@ The *Export* menu can also render the preview:
   emission, coat, sheen) and the environment's panorama, with the given size and number of
   samples. PNG files are tone mapped, EXR files contain linear values. With **Transparent
   background**, the background is transparent instead of showing the environment.
-  Generated preview models are rendered with their untesselated version, and height maps do
-  not displace the surface.
+  The brightest visible directional light (the sun) is sampled directly (with soft shadows
+  of its angular size), in addition to the environment. The transmission channel is rendered
+  as thin walled transmission. When the Material node has a depth scale, the object is
+  subdivided and displaced by its depth map (as by the Tesselated Material node). Generated
+  preview models are rendered with their untesselated version.
 
 * **Turntable...** renders a full turn of the object (the given number of frames) with the
   preview's renderer, as a sprite sheet, or as a PNG sequence if the file name contains #

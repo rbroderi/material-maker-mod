@@ -22,6 +22,11 @@ Three types of layers are available:
 
 The painted material is a combination of all layers, applied from bottom to top.
 
+The **Layer from material...** item of the add layer menu creates a paint layer from a material
+graph (a .ptex file): its maps (albedo, metallic, roughness, emission, normal, depth and
+occlusion) are rendered at the project's texture size into the layer, which can then be
+painted over, erased or masked like any paint layer.
+
 This panel has a tool bar that can be used to create, duplicate, delete, reorder and
 configure layers. Configuring a layer consists in defining a transparency level for each
 component of paint and procedural layers.

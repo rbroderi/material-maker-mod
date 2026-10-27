@@ -186,6 +186,15 @@ static func interpret_file_name(file_name : String, path : String = "", file_ext
 	return file_name
 
 func load_gen(filename: String) -> MMGenBase:
+	# MaterialX materials are imported as graphs
+	if filename.get_extension().to_lower() == "mtlx":
+		var imported : Dictionary = MMMaterialXImporter.import_file(filename)
+		if imported.is_empty():
+			return null
+		for w in imported.warnings:
+			print("MaterialX import: ", w)
+		imported.erase("warnings")
+		return await create_gen(imported)
 	var file : FileAccess = FileAccess.open(filename, FileAccess.READ)
 	if file != null:
 		var data = string_to_dict_tree(file.get_as_text())

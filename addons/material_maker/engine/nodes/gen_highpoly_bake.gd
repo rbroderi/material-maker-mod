@@ -48,6 +48,12 @@ const BAKE_MAPS : Array[Dictionary] = [
 		output_type="f",
 		map="normal_tangent",
 		output="texture($TEXTURE, $UV).a"
+	},
+	{
+		name="Transferred texture",
+		output_type="rgb",
+		map="texture",
+		output="texture($TEXTURE, $UV).rgb"
 	}
 ]
 
@@ -84,6 +90,12 @@ func get_parameter_defs() -> Array:
 			longdesc="Maximum distance of the high poly surface behind the current mesh, relative to its bounding box diagonal" },
 		{ name="samples", type="enum", label="Antialiasing", default=1,
 			values=[ { name="None", value="1" }, { name="4 samples", value="4" }, { name="16 samples", value="16" } ] },
+		{ name="match_by_name", type="boolean", label="Match by name", default=false,
+			longdesc="Rays from each part (object) of the current mesh only hit the part of the high poly mesh with the same name (ignoring _low and _high suffixes)" },
+		{ name="skew_map", type="file", label="Skew map", filters=[ "*.png,*.jpg,*.exr,*.tga,*.webp;Image file" ], default="",
+			longdesc="Optional grayscale image (in the current mesh's UV space): white bends rays towards the face normal, to fix skewed details near hard edges" },
+		{ name="high_texture", type="file", label="High poly texture", filters=[ "*.png,*.jpg,*.exr,*.tga,*.webp;Image file" ], default="",
+			longdesc="Texture of the high poly mesh (in its UV space), for the Transferred texture map" },
 	]
 
 func get_map_definition() -> Dictionary:
@@ -95,17 +107,45 @@ func get_mesh_parameter(parameter_name : String) -> Mesh:
 		return null
 	# Reload the mesh when the file changes
 	var key : String = "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
+	var parts : bool = get_parameter("match_by_name")
+	key += ":parts" if parts else ""
 	if not loaded_meshes.has(parameter_name) or loaded_meshes[parameter_name].key != key:
-		# High poly materials are separate surfaces, for material ID maps
-		loaded_meshes[parameter_name] = { key=key, mesh=MMMeshLoader.load_mesh(path, parameter_name == "high_mesh") }
+		# High poly materials are separate surfaces, for material ID maps (or
+		# objects when matching parts by name)
+		loaded_meshes[parameter_name] = { key=key, mesh=MMMeshLoader.load_mesh(path, parameter_name == "high_mesh", parts) }
 	return loaded_meshes[parameter_name].mesh
+
+func get_image_parameter(parameter_name : String) -> Texture2D:
+	var path : String = get_parameter(parameter_name)
+	if path == "" or not FileAccess.file_exists(path):
+		return null
+	var key : String = "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
+	if not loaded_meshes.has(parameter_name) or loaded_meshes[parameter_name].key != key:
+		var image : Image = Image.load_from_file(path)
+		loaded_meshes[parameter_name] = { key=key, mesh=ImageTexture.create_from_image(image) if image != null else null }
+	return loaded_meshes[parameter_name].mesh
+
+## The current mesh, with its parts as separate surfaces when matching by name
+func get_low_mesh() -> Mesh:
+	if not get_parameter("match_by_name") or not current_mesh.has_meta("file_path"):
+		return current_mesh
+	var path : String = current_mesh.get_meta("file_path")
+	var key : String = "%s:%d:parts" % [ path, FileAccess.get_modified_time(path) ]
+	if not loaded_meshes.has("low_mesh") or loaded_meshes.low_mesh.key != key:
+		loaded_meshes.low_mesh = { key=key, mesh=MMMeshLoader.load_mesh(path, false, true) }
+	return loaded_meshes.low_mesh.mesh if loaded_meshes.low_mesh.mesh != null else current_mesh
 
 func generate_map() -> MMTexture:
 	var high : Mesh = get_mesh_parameter("high_mesh")
 	if current_mesh == null or high == null:
 		return await MMMapGenerator.get_map(null, "position")
-	return await MMHighPolyBaker.bake(current_mesh, high, get_map_definition().map, 1 << int(get_parameter("size")),
-		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"))
+	var options : Dictionary = { match_by_name=get_parameter("match_by_name") }
+	for p in [ "skew_map", "high_texture" ]:
+		var texture : Texture2D = get_image_parameter(p)
+		if texture != null:
+			options[p] = texture
+	return await MMHighPolyBaker.bake(get_low_mesh(), high, get_map_definition().map, 1 << int(get_parameter("size")),
+		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"), options)
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
@@ -123,7 +163,7 @@ func get_texture_parameter_name() -> String:
 
 # Mesh paths are stored relative to the project, as for images
 
-const MESH_PARAMETERS : Array[String] = [ "high_mesh", "cage_mesh" ]
+const MESH_PARAMETERS : Array[String] = [ "high_mesh", "cage_mesh", "skew_map", "high_texture" ]
 
 func _serialize_data(data: Dictionary) -> Dictionary:
 	for p in MESH_PARAMETERS:

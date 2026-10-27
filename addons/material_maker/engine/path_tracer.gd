@@ -9,9 +9,14 @@ class_name MMPathTracer
 
 
 const MAP_SIZE : int = 1024
-## Material outputs: albedo, ORM, emission, normal (OpenGL), and coat/coat
-## roughness/anisotropy/sheen
-const MAPS : Dictionary = { albedo_tex=0, orm_tex=1, emission_tex=2, normal_tex=3, extra_tex=14 }
+## Material outputs: albedo, ORM, emission, normal (OpenGL), coat/coat
+## roughness/anisotropy/sheen and transmission
+const MAPS : Dictionary = { albedo_tex=0, orm_tex=1, emission_tex=2, normal_tex=3, extra_tex=14, transmission_tex=19 }
+## Material output of the depth, used for displacement
+const DEPTH_OUTPUT : int = 4
+## Displaced meshes are subdivided up to about this number of triangles (the
+## BVH is built in GDScript)
+const DISPLACEMENT_TRIANGLES : int = 60000
 
 var compute : MMComputeShader
 var accumulation : Array[MMTexture] = [ MMTexture.new(), MMTexture.new() ]
@@ -22,7 +27,7 @@ var dummy : MMTexture
 
 ## Positions (in world space) of the faces of all surfaces of a mesh, and per
 ## face attributes: for each vertex, (normal, u), (tangent), (v, 0, 0, 0)
-static func prepare_mesh(mesh : Mesh, transform : Transform3D) -> Dictionary:
+static func prepare_mesh(mesh : Mesh, transform : Transform3D, depth : Image = null, depth_scale : float = 0.0, uv_scale : Vector2 = Vector2(1, 1)) -> Dictionary:
 	var vertices : PackedVector3Array = PackedVector3Array()
 	var indices : PackedInt32Array = PackedInt32Array()
 	var attributes : PackedFloat32Array = PackedFloat32Array()
@@ -68,6 +73,11 @@ static func prepare_mesh(mesh : Mesh, transform : Transform3D) -> Dictionary:
 				attributes.append_array([ n.x, n.y, n.z, uv.x, t.x, t.y, t.z, sign, uv.y, 0.0, 0.0, 0.0 ])
 	if indices.is_empty():
 		return {}
+	if depth != null and depth_scale > 0.0:
+		var displaced : Array = displace(vertices, indices, attributes, depth, depth_scale*transform.basis.get_scale().x, uv_scale)
+		vertices = displaced[0]
+		indices = displaced[1]
+		attributes = displaced[2]
 	var merged : ArrayMesh = ArrayMesh.new()
 	var merged_arrays : Array = []
 	merged_arrays.resize(Mesh.ARRAY_MAX)
@@ -79,6 +89,65 @@ static func prepare_mesh(mesh : Mesh, transform : Transform3D) -> Dictionary:
 	var height : int = (texel_count+width-1)/width
 	attributes.resize(width*height*4)
 	return { mesh=merged, attributes=Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, attributes.to_byte_array()), aabb=merged.get_aabb() }
+
+## Subdivides triangles (attributes are 12 floats per face vertex: normal, u,
+## tangent, sign, v, unused) and moves vertices inside along their normal by the
+## depth map times depth_scale, as the Tesselated Material does in the preview
+static func displace(vertices : PackedVector3Array, indices : PackedInt32Array, attributes : PackedFloat32Array, depth : Image, depth_scale : float, uv_scale : Vector2) -> Array:
+	var triangles : Array = []
+	for f in indices.size()/3:
+		var triangle : Array = []
+		for k in 3:
+			var a : int = 12*(3*f+k)
+			triangle.append([ vertices[indices[3*f+k]], attributes.slice(a, a+12) ])
+		triangles.append(triangle)
+	while triangles.size()*4 <= DISPLACEMENT_TRIANGLES:
+		var subdivided : Array = []
+		for t in triangles:
+			var m01 : Array = midpoint(t[0], t[1])
+			var m12 : Array = midpoint(t[1], t[2])
+			var m20 : Array = midpoint(t[2], t[0])
+			subdivided.append_array([ [ t[0], m01, m20 ], [ m01, t[1], m12 ], [ m20, m12, t[2] ], [ m01, m12, m20 ] ])
+		triangles = subdivided
+	# Corners at the same position (e.g. on both sides of a UV seam or of a box
+	# edge) move together, along their average normal by their average depth,
+	# so the surface does not crack open
+	var depth_size : Vector2 = Vector2(depth.get_size())
+	var welded : Dictionary = {}
+	for t in triangles:
+		for corner in t:
+			var a : PackedFloat32Array = corner[1]
+			var uv : Vector2 = Vector2(a[3], a[8])*uv_scale
+			uv = uv-uv.floor()
+			var d : float = depth.get_pixelv(Vector2i((uv*depth_size).floor()).clamp(Vector2i(), depth.get_size()-Vector2i(1, 1))).r
+			var key : Vector3i = Vector3i((corner[0]*100000.0).round())
+			if not welded.has(key):
+				welded[key] = [ Vector3(), 0.0, 0 ]
+			var w : Array = welded[key]
+			w[0] += Vector3(a[0], a[1], a[2])
+			w[1] += d
+			w[2] += 1
+	var new_vertices : PackedVector3Array = PackedVector3Array()
+	var new_indices : PackedInt32Array = PackedInt32Array()
+	var new_attributes : PackedFloat32Array = PackedFloat32Array()
+	for t in triangles:
+		for corner in t:
+			var w : Array = welded[Vector3i((corner[0]*100000.0).round())]
+			new_indices.append(new_vertices.size())
+			new_vertices.append(corner[0]-w[0].normalized()*(w[1]/w[2])*depth_scale)
+			new_attributes.append_array(corner[1])
+	return [ new_vertices, new_indices, new_attributes ]
+
+static func midpoint(a : Array, b : Array) -> Array:
+	var attributes : PackedFloat32Array = PackedFloat32Array()
+	attributes.resize(12)
+	for i in 12:
+		attributes[i] = 0.5*(a[1][i]+b[1][i])
+	var n : Vector3 = Vector3(attributes[0], attributes[1], attributes[2]).normalized()
+	attributes[0] = n.x
+	attributes[1] = n.y
+	attributes[2] = n.z
+	return [ 0.5*(a[0]+b[0]), attributes ]
 
 ## Triangle indices of a triangle strip (degenerate triangles are skipped)
 static func strip_to_triangles(strip_indices, vertex_count : int) -> PackedInt32Array:
@@ -105,19 +174,24 @@ static func make_texture(image : Image) -> MMTexture:
 ## Prepares a render of a mesh instance with a Material node's maps, seen from
 ## a camera, lit by an environment. Generated preview meshes are replaced by
 ## their (much lighter) fallback meshes, and their UV scale is used.
-func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false) -> bool:
+func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = true) -> bool:
 	image_size = size
 	sample_count = 0
 	var mesh : Mesh = object.mesh
 	if object.get("fallback_mesh") != null:
 		mesh = object.fallback_mesh
 	var uv_scale : Vector2 = object.uv_scale if object.get("uv_scale") is Vector2 else Vector2(1, 1)
-	var prepared : Dictionary = prepare_mesh(mesh, object.global_transform)
+	await MMCliTools.wait_for_renders(material.get_tree())
+	var depth : Image = null
+	var depth_scale : float = float(material.get_parameter("depth_scale")) if displacement else 0.0
+	if depth_scale > 0.0:
+		depth = (await (await material.render_output_to_texture(DEPTH_OUTPUT, Vector2i(512, 512))).get_texture()).get_image()
+		depth.convert(Image.FORMAT_RF)
+	var prepared : Dictionary = prepare_mesh(mesh, object.global_transform, depth, depth_scale, uv_scale)
 	if prepared.is_empty():
 		return false
 	var bvh : MMTexture = MMTexture.new()
 	bvh.set_texture(MMBvhGenerator.generate(prepared.mesh))
-	await MMCliTools.wait_for_renders(material.get_tree())
 	var maps : Dictionary = {}
 	for m in MAPS.keys():
 		maps[m] = await material.render_output_to_texture(MAPS[m], Vector2i(MAP_SIZE, MAP_SIZE))
@@ -142,6 +216,7 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 	var environment_texture : MMTexture = make_texture(env_image)
 	dummy = make_texture(Image.create(1, 1, false, Image.FORMAT_RGBAH))
 	var basis : Basis = camera.global_transform.basis.orthonormalized()
+	var sun : Dictionary = find_sun(object)
 	var albedo_color = MMType.deserialize_value(material.get_parameter("albedo_color"))
 	compute = MMComputeShader.new()
 	compute.clear()
@@ -158,12 +233,24 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 		[ "metallic_value", "float", float(material.get_parameter("metallic")) ], [ "roughness_value", "float", float(material.get_parameter("roughness")) ],
 		[ "emission_energy", "float", float(material.get_parameter("emission_energy")) ], [ "normal_strength", "float", float(material.get_parameter("normal")) ],
 		[ "coat_value", "float", float(material.get_parameter("coat")) ], [ "coat_roughness_value", "float", float(material.get_parameter("coat_roughness")) ],
-		[ "sheen_value", "float", float(material.get_parameter("sheen")) ],
+		[ "sheen_value", "float", float(material.get_parameter("sheen")) ], [ "transmission_value", "float", float(material.get_parameter("transmission")) ],
+		[ "sun_direction", "vec3", sun.direction ], [ "sun_color", "vec3", sun.color ], [ "sun_energy", "float", sun.energy ], [ "sun_angle", "float", sun.angle ],
 		[ "uv_scale", "vec2", uv_scale ], [ "scene_scale", "float", max(prepared.aabb.size.length(), 0.001) ], [ "firefly_clamp", "float", 20.0 ] ]
 	for v in values:
 		compute.add_parameter_or_texture(v[0], v[1], v[2])
 	var template : String = load("res://addons/material_maker/engine/path_tracer_compute.tres").text
 	return await compute.set_shader_ext(template, [ { name="OUTPUT_TEXTURE", type=3 } ])
+
+## The brightest visible directional light of the object's scene (direction
+## towards the light, color, energy and angular radius), or no light
+static func find_sun(object : Node3D) -> Dictionary:
+	var sun : Dictionary = { direction=Vector3(0, 1, 0), color=Vector3(1, 1, 1), energy=0.0, angle=0.01 }
+	for l in object.get_viewport().find_children("*", "DirectionalLight3D", true, false):
+		if not l.is_visible_in_tree() or l.light_energy <= sun.energy:
+			continue
+		var c : Color = l.light_color.srgb_to_linear()
+		sun = { direction=l.global_transform.basis.z.normalized(), color=Vector3(c.r, c.g, c.b), energy=l.light_energy, angle=max(deg_to_rad(l.light_angular_distance)*0.5, 0.001) }
+	return sun
 
 ## Adds samples to the render
 func render_samples(count : int) -> bool:

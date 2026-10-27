@@ -56,6 +56,7 @@ const SETTING_PREVIEW_TONEMAP_WHITE : String = "ui_3d_preview_tonemap_white"
 const SETTING_PREVIEW_TONEMAP_AGX_WHITE : String = "ui_3d_preview_tonemap_agx_white"
 const SETTING_PREVIEW_TONEMAP_AGX_CONTRAST : String = "ui_3d_preview_tonemap_agx_contrast"
 const SETTING_PREVIEW_TONEMAP_EXPOSURE : String = "ui_3d_preview_tonemap_exposure"
+const SETTING_PREVIEW_OCIO_VIEW : String = "ui_3d_preview_ocio_view"
 
 const SETTING_PREVIEW_GLOW_ENABLED : String = "ui_3d_preview_glow_enabled"
 const SETTING_PREVIEW_GLOW_SIZE : String = "ui_3d_preview_glow_size"
@@ -158,6 +159,8 @@ func _ready() -> void:
 		DepthOfField.button_pressed = mm_globals.get_config(SETTINGS_PREVIEW_DOF_ENABLED)
 		DepthOfFieldSection.visible = DepthOfField.button_pressed
 	restore_dof_settings()
+
+	add_ocio_view()
 
 func _on_glow_blending_item_selected(index : Environment.GlowBlendMode) -> void:
 	environment.glow_blend_mode = index
@@ -340,6 +343,40 @@ func restore_dof_settings() -> void:
 		camera_attributes.dof_blur_near_transition = NearTransition.value
 
 	setting_changed.emit(Section.DOF)
+
+## OpenColorIO display/view transforms, when OpenColorIO support is built.
+## They replace Godot's tonemapper.
+func add_ocio_view() -> void:
+	if not MMColorManagement.is_available() or MMColorManagement.get_scene_linear_space() == "":
+		return
+	var box : Node = TonemapSection.get_parent()
+	var label : Label = Label.new()
+	label.text = "View transform (OCIO)"
+	box.add_child(label)
+	box.move_child(label, 0)
+	var ocio_view : OptionButton = OptionButton.new()
+	ocio_view.add_item("None")
+	var current : String = mm_globals.get_config(SETTING_PREVIEW_OCIO_VIEW) if mm_globals.has_config(SETTING_PREVIEW_OCIO_VIEW) else ""
+	for v in MMColorManagement.get_views():
+		ocio_view.add_item(v)
+		if v == current:
+			ocio_view.select(ocio_view.item_count-1)
+	ocio_view.item_selected.connect(func(i : int): set_ocio_view("" if i == 0 else ocio_view.get_item_text(i)))
+	box.add_child(ocio_view)
+	box.move_child(ocio_view, 1)
+	if current != "":
+		set_ocio_view(current)
+
+func set_ocio_view(view : String) -> void:
+	mm_globals.set_config(SETTING_PREVIEW_OCIO_VIEW, view)
+	var active : bool = preview3D.set_ocio_view(view)
+	Tonemap.disabled = active
+	if active:
+		TonemapSection.visible = false
+		environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+		environment.tonemap_white = 1.0
+	else:
+		_on_tonemap_toggled(Tonemap.button_pressed)
 
 func _on_tonemap_toggled(toggled_on : bool) -> void:
 	TonemapSection.visible = toggled_on

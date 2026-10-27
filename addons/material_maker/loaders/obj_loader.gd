@@ -1,8 +1,10 @@
 extends RefCounted
 
 ## Loads an OBJ file. With split_materials, each material (usemtl) is a
-## separate surface (used to bake material IDs).
-static func load_obj_file(path : String, split_materials : bool = false) -> ArrayMesh:
+## separate surface (used to bake material IDs). With split_objects, each
+## object or group (o, g) is a separate surface named after it (used to match
+## low and high poly parts by name).
+static func load_obj_file(path : String, split_materials : bool = false, split_objects : bool = false) -> ArrayMesh:
 	if path == null:
 		return null
 	var ext := path.get_extension()
@@ -25,13 +27,19 @@ static func load_obj_file(path : String, split_materials : bool = false) -> Arra
 
 	var mdl : ArrayMesh = ArrayMesh.new()
 	var material_count : int = max(1, newTriMsh.material_count) if split_materials else 1
-	for material in material_count:
+	var object_names : Array = newTriMsh.objects.keys()
+	var object_count : int = max(1, object_names.size()) if split_objects else 1
+	for surface in material_count*object_count:
+		var material : int = surface%material_count
+		var object : int = surface/material_count
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
 		var empty : bool = true
 		for i in newTriMsh.indices.size():
 			var triangle : Triangle = newTriMsh.indices[i]
 			if split_materials and triangle.material != material:
+				continue
+			if split_objects and triangle.object != object:
 				continue
 			empty = false
 			for v in 3:
@@ -49,6 +57,8 @@ static func load_obj_file(path : String, split_materials : bool = false) -> Arra
 		if hasTex:
 			st.generate_tangents()
 		st.commit(mdl)
+		if split_objects and not object_names.is_empty():
+			mdl.surface_set_name(mdl.get_surface_count()-1, object_names[object])
 
 	return mdl
 
@@ -95,6 +105,13 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					float(lineData[3])
 				)
 				newMsh.normals.push_back(normal)
+			"o ", "g ":
+				if lineData.size() >= 2:
+					var object_name : String = " ".join(lineData.slice(1))
+					if not newMsh.objects.has(object_name):
+						# Faces before the first object belong to it
+						newMsh.objects[object_name] = newMsh.objects.size()
+					newMsh.current_object = newMsh.objects[object_name]
 			"us":
 				if lineData.size() >= 2 and lineData[0] == "usemtl":
 					if not newMsh.materials.has(lineData[1]):
@@ -150,6 +167,7 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					triangle.nrm_id_2 = int(normIndices.z)
 
 					triangle.material = newMsh.current_material
+					triangle.object = newMsh.current_object
 
 					newMsh.indices.push_back(triangle)
 
@@ -161,6 +179,8 @@ class TriMesh:
 	var materials : Dictionary = {}
 	var current_material : int = 0
 	var material_count : int = 0
+	var objects : Dictionary = {}
+	var current_object : int = 0
 	var normals : Array
 	var uvs : Array
 	var indices : Array
@@ -176,3 +196,4 @@ class Triangle:
 	var uv_id_2 : int
 	var nrm_id_2 : int
 	var material : int = 0
+	var object : int = 0

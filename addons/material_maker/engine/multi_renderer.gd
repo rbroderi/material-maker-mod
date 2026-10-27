@@ -170,6 +170,8 @@ func create_rendering_device():
 # shaders compiled at startup (e.g. when loading a graph from the command line)
 # must wait for it
 func wait_for_rendering_device() -> RenderingDevice:
+	if rendering_device == null and DisplayServer.get_name() == "headless":
+		push_error("No RenderingDevice in headless mode: Material Maker cannot render")
 	while rendering_device == null:
 		await get_tree().process_frame
 	return rendering_device

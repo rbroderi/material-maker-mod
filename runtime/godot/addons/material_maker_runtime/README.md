@@ -26,9 +26,11 @@ Copy `addons/material_maker_runtime` into your project, then:
 
 ```gdscript
 var mmr : MMRMaterial = MMRMaterial.load_material("res://materials/bricks.mmr")
+# or MMRMaterial.load_material("res://materials/bricks.mmr", 512) for 512x512 textures
 $MeshInstance3D.material_override = mmr.material
 # Names or labels of the remote parameters
 mmr.set_parameter("Hue", 0.3)
+mmr.set_parameter("seed", 3)  # materials with random nodes, as Material Maker's --seed
 mmr.set_parameters({ "Saturation": 0.5, "Value": 0.8 })
 ```
 

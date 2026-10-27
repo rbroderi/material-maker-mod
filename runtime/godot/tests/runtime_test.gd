@@ -2,7 +2,7 @@ extends SceneTree
 
 # Renders a runtime package's outputs, before and after changing parameters.
 #
-#	godot --path runtime/godot -s res://tests/runtime_test.gd -- <package.mmr> <output dir> [name=value ...] [preset=name]
+#	godot --path runtime/godot -s res://tests/runtime_test.gd -- <package.mmr> <output dir> [size=n] [name=value ...] [preset=name]
 
 func _initialize():
 	run.call_deferred()
@@ -12,7 +12,11 @@ func run():
 	var out : String = args[1]
 	DirAccess.make_dir_recursive_absolute(out)
 	var start : int = Time.get_ticks_msec()
-	var mmr : MMRMaterial = MMRMaterial.load_material(args[0])
+	var size : int = 0
+	if args.size() > 2 and args[2].begins_with("size="):
+		size = int(args[2].substr(5))
+		args.remove_at(2)
+	var mmr : MMRMaterial = MMRMaterial.load_material(args[0], size)
 	if not mmr.is_valid():
 		print("TEST error: ", mmr.error_message)
 		quit(1)

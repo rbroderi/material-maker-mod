@@ -23,9 +23,9 @@ Sizes: **S** ≈ days, **M** ≈ 1–3 weeks, **L** ≈ 1–3 months, **XL** ≈
 | Node library | ~300+ nodes, strong SDF/3D | Atomic nodes plus a very large library; Shape Splatter v2, splines/paths, Ribbon | Medium |
 | Mesh baking | Same-mesh maps (position, normal, tangent, AO, bent normals, thickness, curvature, seams, adjacency), plus high→low with cages, AA, tangent/object normals, height, vertex color, material ID and position ✅ (§4.1). No UDIMs | Full baker suite: high→low, cages, ID, thickness, bent normals, UDIM | **High** |
 | SD interop | `.sbsar` → `.ptex` via the separate sbsar2ptex tool (baked maps; node translation in progress) | n/a | MM-side opportunity |
-| 3D viewport | Godot renderer, with an OpenPBR approximation for direct light, a progressive GPU path tracer and turntables ✅ (§4.2) | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium |
-| Color management | Image color spaces, plus OpenColorIO 2.6 through an optional GDExtension (input transforms, ACES and other display/view transforms in the 2D preview) ✅ (§4.3) | OCIO/ACES | **High** for studios |
-| Runtime format | `.mmr` runtime packages, a Godot runtime addon, a C++/Vulkan renderer and a Blender add-on ✅ (§5.1); no Unreal, Unity or Houdini plugins yet | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
+| 3D viewport | Godot renderer, with an OpenPBR approximation for direct light, OCIO view transforms, a progressive GPU path tracer (sun, displacement, transmission) and turntables ✅ (§4.2) | OpenPBR, GPU path tracer, tessellation/displacement popup, OCIO | Medium |
+| Color management | Image color spaces, plus OpenColorIO 2.6 through an optional GDExtension (input transforms, display/view transforms in the 2D and 3D previews, HDR LUTs, export transforms) ✅ (§4.3) | OCIO/ACES | **High** for studios |
+| Runtime format | `.mmr` runtime packages (with seeds and resizable outputs), a Godot runtime addon, a C++/Vulkan renderer and a Blender add-on ✅ (§5.1), plus procedural shader exports for Godot, Unity and Unreal (§6); no Unreal, Unity or Houdini plugins yet | `.sbsar` + engine plugins (Unreal, Unity, Houdini, Maya, Max, Blender) | **Critical** for pipelines |
 | Automation | CLI export, render, bake, `--set` overrides and variations, plus a JSON-RPC server and Python client ✅ (§5.2) | Python API, plugins, Automation Toolkit (cooker/render/baker/mutator) | **High** |
 | Packages / dependencies | Library panel, user nodes | Packages, dependency manager, instance versioning, update outdated | Medium |
 | Scan processing | — | Multi-angle-to-material, AxF, scan workflows | Medium (niche) |
@@ -83,7 +83,7 @@ Per-node *format* control is §2.2.
 - Measured: an 8-bit buffer uses half the memory and stays within 1/255 of the 16F result. A relative buffer followed the material from 2048 to 1024.
 
 Not done:
-- Non-square sizes: every texture-size uniform and the size widgets assume square textures, so this is a separate refactor.
+- Non-square sizes: every texture-size uniform and the size widgets assume square textures, so this is a separate refactor. ✅ **Outputs done (M12):** `--render`, `--export-material` and `--export-mmr` accept `--size <width>x<height>` (and the RPC `render`, `export` and `export_mmr` a `height`). The graph is stretched to the image's shape, and buffers stay square. Verified: a 512×256 runtime package renders pixel-identical to MM's 512×256 render. Still missing: non-square buffers and per-node sizes, and non-square sizes in the user interface.
 - ✅ **Done (2026-10-26): badges and warnings.** Advanced Buffers show their resolution and format under the node, for example *512 px 8 bits gray*. An orange warning appears when an 8-bit buffer stores grayscale data (heights) or feeds a node that computes normals or reads heights.
 
 ### 2.3 GPU reductions and analysis — **M**
@@ -231,12 +231,14 @@ Audit against SD's library. Priority gaps to check or build:
   - The ray-traced bakes (AO, thickness, bent normals) segfaulted on Vulkan, upstream too. The denoise compute shader used `texture(tex, uv, 0)`, and a LOD bias isn't allowed outside fragment shaders (D3D12 rejected the shader outright). It now uses `textureLod` at pixel centers.
   - UV-space rasterization culled back faces, so mirrored UV islands were never baked, for any mesh map. Culling is now disabled for bakes and stays on for the painter.
   - The ray/box test produced NaN (0/0) for rays with an exactly null direction component starting on a box face, so whole low-poly triangles missed at sphere poles. Fixed in both ray-traced shaders.
+- ✅ **Done (2026-10-26, M12): match by name, skew maps and texture transfer** (High Poly Bake node parameters, and `--match-names`, `--skew`, `--high-texture` and the `texture` map in the CLI):
+  - **Match by name:** parts (OBJ objects and groups, glTF/FBX mesh nodes, now loaded with their names and transforms) of the low poly mesh only hit the high poly part with the same name, ignoring `_low`/`_high` suffixes and Blender's `.001` numbers. Low poly meshes with several parts are merged before baking (only the first surface was baked before).
+  - **Skew maps:** a grayscale image bends rays from the vertex normals (or cage) direction to the flat face normal.
+  - **Transferred texture:** the high poly mesh's own texture, sampled with its UVs at the hit point (per-face UVs were added to the baker's attributes).
+  - **Verified** with synthetic meshes: a high poly part overlapping a neighbor bleeds into its height map without matching and not with it; a texture on a high poly plane with mirrored UVs is transferred mirrored (max error 0.004); with a white skew map, rays from tilted vertex normals hit right below each texel (max position error 0.003).
 - **Still missing:**
   - UDIMs.
   - Hardware ray tracing.
-  - Match-by-name.
-  - Skew maps.
-  - A "transferred texture" map (sampling the high-poly mesh's own textures).
 
 ### 4.2 Viewport and rendering — **L**
 - **Displacement/tessellation** preview with height scale and level controls (like SD 16's displacement popup).
@@ -260,7 +262,12 @@ Audit against SD's library. Priority gaps to check or build:
   - **Fixed along the way (upstream bug):** nested `$if` blocks in export templates ran inside skipped outer blocks, and `$else` toggled the wrong level (`gen_material.gd`, `process_conditionals`).
   - **Verified:** Godot loads the exported .tres with all features. The HDRP .mat YAML and its .meta GUIDs are consistent, and the Unreal script compiles as Python. The OpenPBR preview shader compiles and renders without NaN. Path traced renders (bricks, 32 to 128 samples at 256² and 512²) have no NaN or infinite values; a 256² render with 32 samples takes about 3 s. Transparent backgrounds have alpha 0, and turntable frames differ and restore the object's rotation.
   - **Not verified:** the Unity and Unreal exports were not imported into Unity or Unreal (neither is installed here).
-  - **Still missing:** the path tracer has no direct light sampling (environment only, so it's noisy with small bright sources), no displacement, and no subsurface or refraction. OCIO in the 3D preview.
+  - ~~**Still missing:** the path tracer has no direct light sampling (environment only, so it's noisy with small bright sources), no displacement, and no subsurface or refraction. OCIO in the 3D preview.~~ ✅ **Done (M12):**
+    - **Sun light:** the brightest visible directional light is sampled directly (shadow rays in the cone of its angular size, with the full coat/fuzz/GGX/diffuse BSDF). It isn't part of the environment, so there's no double counting. Verified: the render gets brighter with the sun (mean 0.024 → 0.060) and keeps the same coverage.
+    - **Displacement:** when the Material node has a depth scale, the mesh is subdivided (up to about 60k triangles, for the GDScript BVH) and moved inside by the depth map, as the Tesselated Material does. Corners shared by several faces (box edges, UV seams) move together, so the surface doesn't crack.
+    - **Transmission:** thin walled transmission (light passes through surfaces), sampled and lit by the sun from behind.
+    - Subsurface scattering and refraction are still missing.
+    - OCIO in the 3D preview: see §4.3.
 
 ### 4.3 Color management — **L, high for studio adoption**
 - **OCIO** integration: working space, per-bitmap input transforms, and display/view transforms in the 2D and 3D views.
@@ -285,10 +292,10 @@ Audit against SD's library. Priority gaps to check or build:
     - The *Un-tone-mapped* view LUT is exactly identity, and the ACES 2.0 SDR view maps white to 0.707.
     - The preview shader compiles in the full app, with the transform and after removing it.
   - **Still missing:**
-    - OCIO in the 3D preview, which uses Godot's tonemappers.
+    - ~~OCIO in the 3D preview, which uses Godot's tonemappers.~~ ✅ **Done (M12):** the post-processing menu has a *View transform (OCIO)* list. A transform replaces Godot's tonemapper: the preview viewport renders in HDR (linear and unclamped), and the transform's LUT (from the config's linear Rec.709 space) is applied when the viewport is drawn. Verified: *sRGB - Display / Un-tone-mapped* matches Godot's own linear output to 1/255 (mean 0.008/255), and removing the transform restores the preview exactly.
     - ~~Output transforms on export (e.g. writing ACEScg EXRs).~~ ✅ **Done (M11):** color maps (albedo and emission) are converted to the color space set in *Preferences → Color* or with `--color-space` (for example ACEScg). Data maps are never converted. Verified: an sRGB albedo exported with `--color-space ACEScg` gives the expected ACEScg values, and ORM is unchanged.
     - Linux and macOS builds of the extension, and CI.
-    - Values above 1 are clamped before the preview LUT (a shaper would fix that for HDR values).
+    - ~~Values above 1 are clamped before the preview LUT (a shaper would fix that for HDR values).~~ ✅ **Done (M12):** LUTs (now 49³) have a shaped input: [0, 1] uses three quarters of the LUT (linearly for the working space, so LDR values are as precise as before, and as a square root for scene linear values), and values up to 16 the rest, logarithmically. Verified against OCIO's CPU transform from 0 to 10: max error 0.07/255.
 
 **Full OCIO plan (assessed 2026-10-26, medium effort):**
 - **GDExtension (moderate, mostly build work).** A small godot-cpp wrapper around OpenColorIO 2.x that exposes:
@@ -347,8 +354,8 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - CI builds of the C++ runtime for each platform.
   - ~~Blender plugin.~~ ✅ **Done (M11): Blender add-on** (`runtime/blender/material_maker_runtime`, Blender 4.2+ extension). It imports `.mmr` packages as Principled BSDF materials, rendering textures with `mmr_render`, and its *Material Maker* panel edits the package's parameters and presets, with optional live updates. Verified in Blender 5.2: the extension builds, installs and enables; importing a package creates a material with the right maps and color spaces, which Cycles renders without missing textures; and parameter changes (live update) and presets render new textures.
   - Unreal, Unity and Houdini plugins.
-  - Live link and exposed seeds. (Presets were done in M7: the `presets` in the manifest, `apply_preset` in the Godot runtime, and `--preset` in `mmr_render`.)
-  - Runtime-resizable outputs.
+  - Live link. (Presets were done in M7: the `presets` in the manifest, `apply_preset` in the Godot runtime, and `--preset` in `mmr_render`.)
+  - ~~Exposed seeds and runtime-resizable outputs.~~ ✅ **Done (M12):** packages with random nodes have a `seed` parameter. Its targets list the seeds each seed uniform sums (a node's seed and the ones it inherits), so runtimes compute exactly what `--seed` does. Runtimes can also scale all passes to another output size (`MMRMaterial.load_material(path, size)`, `mmr_render --size`, the Blender add-on's *Texture size*). Verified: `--set seed=3` renders byte-identical to a package exported with `--seed 3` (bricks and medieval_wall, C++ and Godot runtimes identical); half size renders are within 0.33 and 1.19/255 (mean) of downsampled full size renders; in Blender, the seed and texture size update the textures.
 
 ### 5.2 Scripting and automation — **L, high**
 - A documented **Python API** (via a Godot Python binding or a JSON-RPC bridge), plus the existing GDScript. Cover graph creation and edit, cook, export, and baking.
@@ -374,7 +381,7 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
 - Tested end to end: 20 checks without the user interface and 10 with it, including undo/redo.
 - Still missing:
   - A plugin system.
-  - Truly headless runs. Godot's `--headless` has no RenderingDevice, so a minimized window is still needed.
+  - Truly headless runs. Godot's `--headless` has no RenderingDevice, so a minimized window is still needed. **Investigated (M12):** `--headless` (with any rendering driver, Vulkan or D3D12) replaces the renderer by a dummy one, and neither the global nor a local RenderingDevice can be created. With a normal display driver, a local RenderingDevice works while the root window is hidden, but Godot refuses to hide its main window (*Can't change visibility of main window*), so command line modes keep the 1×1, transparent, minimized window. `--headless` now stops with an explanation (it used to wait forever for a device), and the documentation suggests a virtual display (xvfb-run) for Linux servers. A truly headless mode would need an engine change (a RenderingDevice without a display server).
   - `mm-cook`, which depends on §5.1.
 - **Upstream bug found and fixed in M4 (§4.1):** baking ambient occlusion, thickness and bent normals segfaulted on Vulkan, in the CLI, with the full user interface, and on the upstream base commit. The cause was an invalid `texture()` call with a LOD bias in the denoise compute shader.
 
@@ -387,7 +394,10 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
 ✅ **Done (2026-10-26): MaterialX and USD texture-set export.** There are three new targets on the Material node (`nodes/material.mmg`): *MaterialX/Standard Surface* (1.38), *MaterialX/OpenPBR* (1.39) and *USD/UsdPreviewSurface*.
 - **What's exported:** maps are written only for connected inputs (albedo + opacity, metallic, roughness, normal, emission, height, and AO for USD). The Material node's color and multipliers are applied in the graph, and the normal map uses the OpenGL convention.
 - **Validation:** the files pass MaterialX 1.39.5 `validate()` and MaterialX GLSL generation. They also open in USD (`usd-core`) with every connection and texture resolved, tested on three graphs including one with every input connected.
-- Still missing: procedural MaterialX export, MaterialX import, and glTF KHR extensions.
+- ~~Still missing: procedural MaterialX export, MaterialX import, and glTF KHR extensions.~~ ✅ **Done (2026-10-26, M12):**
+  - **Procedural MaterialX** (*MaterialX/Procedural*): a custom node with a genglsl implementation (the graph's generated GLSL, with buffers inlined: `MMGenBuffer.inline_buffers`) feeds a standard_surface. Verified with MaterialX 1.39.5: the documents validate, and MaterialX's own GLSL texture baker renders the four examples (1941 lines of GLSL for medieval_wall). Base color and roughness have the same structure as MM's maps but differ per texel by 10 to 39/255 (mean), because MM's hash noises are sensitive to the precision of each compiler (here OpenGL's). GLSL targets only (not OSL or MDL), and iterate buffers are not supported.
+  - **MaterialX import** (`engine/materialx_import.gd`, no MaterialX dependency): .mtlx files can be loaded in the user interface, from the command line and over RPC. The material's standard_surface, open_pbr_surface, UsdPreviewSurface or gltf_pbr inputs become Material inputs and parameters, through image, tiledimage, UsdUVTexture, constant, multiply, convert, extract, swizzle, separate and normalmap nodes (with file prefixes and color spaces). Unsupported nodes are reported. Verified: MM's Standard Surface and OpenPBR exports of bricks and medieval_wall round trip to the same maps (max 1/255), and a hand written UsdPreviewSurface material with an ORM texture, a linear EXR and a scaled emission imports as expected.
+  - **glTF:** the *GLTF/Plane* export has KHR_materials_clearcoat, sheen, anisotropy and transmission, with textures for connected inputs. Verified: Blender 5.2's glTF importer links coat, coat roughness, anisotropy and transmission to the textures and reads the sheen.
 
 ### 5.4 Scan and photo workflows — **L (niche)**
 - Multi-angle-to-material and photometric-stereo normal reconstruction. ✅ **Photometric stereo done (2026-10-26):** a **Photometric Stereo** node (*Filter/Photometric Stereo*) reconstructs a normal map, in MM's convention, and an albedo map from 4 photos lit from the right, top, left and bottom at a known elevation. On synthetic Lambertian renders it recovers albedo 0.698 (true value 0.7), and normals are within 0.006 of the true ones.
@@ -429,7 +439,11 @@ What it means for this plan:
    - It reads one layer, or all visible layers composited as the painter does (masks, channel opacities, normal and occlusion backgrounds), in the node's generated shader.
    - It follows the project when it is saved again.
    - Painting with graphs already existed as procedural layers. ✅ **Live updates (M11):** when the project is open in the painter, the node reads its layers from memory after each stroke and each layer change, without saving.
-2. **Graph → native shader export**: runtime-procedural materials with no plugin at all.
+   - ✅ **Graph outputs paintable (M12):** *Layer from material...* in the painter's add layer menu renders a material graph's maps (albedo, metallic, roughness, emission, normal, depth, occlusion) into a paint layer at the project's size, which can then be painted over, erased or masked. Verified: the layer gets bricks' maps with the painter's channel packing and normal convention.
+2. **Graph → native shader export**: runtime-procedural materials with no plugin at all. ✅ **Done (2026-10-26, M12):** the Static PBR Material has *Godot/Godot 4 Shader*, *Unity/Built-in Shader* and *Unreal/Unreal Engine 5 Shader* targets (upstream's Dynamic PBR Material had similar ones, which this work also fixes). The shader computes the graph; buffers are exported as textures.
+   - **Godot:** graph parameters are shader uniforms with their values (editable in the inspector; uniform arrays are constants, as Godot can't initialize them). Verified on bricks, wood, lava and medieval_wall: the shader's albedo, ORM, emission and normal match the texture export texel for texel (albedo mean 0.4 to 0.5/255, 100% within 2/255; normals within 0.7 to 2.6/255 mean), and lit renders match too (lava 1.07/255 mean). Constants instead of uniforms broke the match: compile-time evaluation changes MM's precision-sensitive hash noise.
+   - **Unity and Unreal:** HLSL translations, compiled with Slang for all four examples (with stubs for the engines' definitions). Running the Unreal code on the GPU gives the same material structure but a different noise instance (mean 17/255 on bricks), for the same precision reasons, even with uniforms. Neither engine was available to test in.
+   - **Upstream bugs fixed along the way:** templates with several `$begin_generate` blocks repeated the code of previous blocks and reused their variables (redefinitions, or code using another block's UVs); exports whose templates generate code didn't export (or bind) the buffers that code samples; the HLSL definitions lacked GLSL constructor forms (`vec2(vec2)`, `vec4(float, vec2, float)`...); Unreal 5's initializations of buffer sizes didn't use the renamed buffers, and its DX9 `textureLod` helper doesn't compile; the parallax used `-VERTEX` as the view direction (wrong for orthographic views); emission was not linearized. The Godot 4 Standard export didn't set `ao_light_affect`, so exported AO didn't darken direct light as MM's preview does.
 3. **True 3D/volumetric textures and SDF scenes**: MM's SDF and raymarching heritage is ahead of SD 16's new SDF nodes. Add 3D texture export (VDB, 3D DDS/KTX) for volumetrics. ✅ **Done (2026-10-26):** `engine/volume_export.gd` samples TEX3D and SDF3D outputs (all slices in one compute pass) and writes:
    - **OpenVDB** (format 224, uncompressed, sparse 5-4-3 trees): SDFs as narrow band level sets, grayscale textures as fog volumes, colors as a vec3 grid plus density.
    - **3D DDS** (DX10 header) and **KTX2** (with a data format descriptor), in 16F, 32F or 8 bits.
@@ -466,6 +480,7 @@ What it means for this plan:
 | **M9: Engine follow-ups** ✅ (2026-10-26: nested FX-Map iterations, SVG Bézier curves, pins kept when grouping, calibrated buffer costs, buffer badges and precision warnings) | Leftovers of 2.1, 2.2, 3.2 and 3.3 | Closes the small gaps left in phases 0 and 1 |
 | **M10: Painting and volumes** ✅ (2026-10-26: Paint Layer node, VDB/3D DDS/KTX2 export) | §6 items 1 and 3 | Leans into what SD can't do |
 | **M11: Viewport and pipeline** ✅ (2026-10-26: OpenPBR preview shading, path tracer, turntables, extra channel exports, OCIO on export, .ptex schema, live paint layers, Blender add-on) | 4.2 and 4.3 leftovers, first DCC plugin of 5.1 | Presentation renders and the first plugin outside Godot |
+| **M12: Shaders and interop** ✅ (2026-10-26: procedural shader exports, procedural MaterialX and MaterialX import, glTF KHR extensions, paintable graph outputs, baker match-by-name/skew/texture transfer, path tracer sun/displacement/transmission, OCIO in the 3D preview with HDR LUTs, runtime seeds and sizes, non-square outputs, headless investigation) | §6 item 2, 5.3 leftovers, follow-ups of M4–M11 | Materials that run in engines without textures, and the remaining interop gaps |
 
 **Quick wins** (status as of 2026-10-25):
 1. ✅ **Profiler summary**: Iterate Buffer timing, plus *Tools → Show buffer render times* (§2.4).

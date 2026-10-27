@@ -99,7 +99,15 @@ func set_parameter(parameter_name : String, value) -> bool:
 	for target in parameter.targets:
 		var p : Dictionary = package.get_pass(target["pass"])
 		var layout : Dictionary = p.parameters[target.parameter]
-		encode_value(parameter_data[p.name], int(layout.offset), layout.type, value)
+		if parameter.type == "seed":
+			# As Material Maker's --seed: unlocked seeds are offset by the
+			# golden ratio times the seed, modulo 1
+			var sum : float = 0.0
+			for term in target.terms:
+				sum += float(term[0]) if term[1] else fmod(float(term[0])+0.6180339887*float(value), 1.0)
+			encode_value(parameter_data[p.name], int(layout.offset), layout.type, sum)
+		else:
+			encode_value(parameter_data[p.name], int(layout.offset), layout.type, value)
 		mark_dirty(p.name)
 	return true
 

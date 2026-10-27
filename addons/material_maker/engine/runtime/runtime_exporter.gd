@@ -32,11 +32,13 @@ var errors : PackedStringArray = PackedStringArray()
 
 
 ## Exports graph to an .mmr file, returns the errors (warnings are printed)
-static func export_package(graph : MMGenGraph, path : String, size : int = 0) -> PackedStringArray:
+## Exports a runtime package, whose outputs are size x size pixels (or size x
+## height when height is not 0)
+static func export_package(graph : MMGenGraph, path : String, size : int = 0, height : int = 0) -> PackedStringArray:
 	var exporter : MMRuntimeExporter = MMRuntimeExporter.new()
-	return await exporter.do_export(graph, path, size)
+	return await exporter.do_export(graph, path, size, height)
 
-func do_export(graph : MMGenGraph, path : String, size : int) -> PackedStringArray:
+func do_export(graph : MMGenGraph, path : String, size : int, height : int = 0) -> PackedStringArray:
 	var material : MMGenBase = null
 	for c in graph.get_children():
 		if c.has_method("get_export_profiles"):
@@ -59,7 +61,7 @@ func do_export(graph : MMGenGraph, path : String, size : int) -> PackedStringArr
 		if compute_shader == null:
 			errors.append("cannot compile the %s output" % channel.name)
 			continue
-		outputs[channel.name] = await add_pass(compute_shader, Vector2i(size, size))
+		outputs[channel.name] = await add_pass(compute_shader, Vector2i(size, height if height > 0 else size))
 	var material_parameters : Dictionary = {}
 	for p in MATERIAL_PARAMETERS:
 		material_parameters[p] = to_json_value(material.get_parameter(p))
@@ -250,7 +252,33 @@ func get_runtime_parameters(graph : MMGenGraph) -> Dictionary:
 			time_targets.append({ "pass": p.name, "parameter": "elapsed_time" })
 	if not time_targets.is_empty():
 		parameters.append({ name="time", label="Time", type="float", default=0.0, min=0.0, max=60.0, step=0.01, targets=time_targets })
+	# Materials with random nodes have a seed parameter, that changes their
+	# seeds as --seed does (see MMCliTools.reseed)
+	var seed_targets : Array = []
+	add_seed_targets(graph, graph, seed_targets)
+	if not seed_targets.is_empty():
+		parameters.append({ name="seed", label="Seed", type="seed", default=0, min=0, max=1000, step=1, targets=seed_targets })
 	return { parameters=parameters, baked=baked }
+
+## Seed uniforms of a generator and its children: each is the sum of the
+## seed of its node and of the parents it inherits seeds from (terms are
+## [ seed, locked ], locked seeds and the seed of the top graph do not change)
+func add_seed_targets(generator : Node, top : Node, targets : Array) -> void:
+	for c in generator.get_children():
+		if not c is MMGenBase:
+			continue
+		var uniform_name : String = "seed_o%d" % c.get_instance_id()
+		var terms : Array = []
+		var node : Node = c
+		while node is MMGenBase:
+			terms.append([ node.seed_value, node == top or not node.has_randomness() or node.is_seed_locked() ])
+			if node.is_seed_locked() or node.get_parent().get("transmits_seed") == null or not node.get_parent().transmits_seed:
+				break
+			node = node.get_parent()
+		for p in passes:
+			if p.parameters.has(uniform_name):
+				targets.append({ "pass": p.name, "parameter": uniform_name, "terms": terms })
+		add_seed_targets(c, top, targets)
 
 ## Presets of the remote nodes, restricted to the runtime parameters
 func get_presets(graph : MMGenGraph, parameters : Array) -> Dictionary:

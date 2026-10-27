@@ -1,7 +1,8 @@
 # Runtime packages (`.mmr`) and engine runtimes
 
-Status (2026-10-26): exporter, format v1, Godot runtime and C++/Vulkan runtime done.
-Deferred: Blender/Unreal/Unity plugins, live link, CI builds of the C++ runtime.
+Status (2026-10-26): exporter, format v1, Godot runtime, C++/Vulkan runtime, Blender add-on,
+seed parameter and output resizing done. Deferred: Unreal/Unity plugins, live link, CI builds of
+the C++ runtime.
 
 ## Goal
 
@@ -79,6 +80,16 @@ textures/<name>.exr|.png   embedded textures (images, mesh maps, results
 
 Passes are listed in dependency order (inputs before the passes that use
 them).
+
+Parameters of type `seed` (named `seed`, for materials with random nodes)
+change the seeds of all random nodes, as Material Maker's `--seed` option.
+Each target has `terms`, the `[ value, locked ]` seeds whose sum is the
+uniform (a node's own seed, then those of the parents it inherits seeds
+from). For a seed `s`, the uniform is the sum of `value` for locked terms and
+of `fmod(value+0.6180339887*s, 1.0)` for the others.
+
+Runtimes can render packages at another size: all passes are scaled by the
+same factor, so that the largest output pass has the requested size.
 
 ### Binding layout (same as Material Maker's)
 

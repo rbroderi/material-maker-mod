@@ -8,7 +8,17 @@ class_name MMColorManagement
 # can show a display/view transform (baked into a 3D LUT).
 
 
-const LUT_SIZE : int = 33
+const LUT_SIZE : int = 49
+## The input of view LUTs is shaped so they also cover HDR values: [0, 1] uses
+## the first SHAPER_KNEE of the LUT, and values above 1 the rest, in log2 up
+## to 2^SHAPER_STOPS. [0, 1] is spaced linearly for the working space (so LDR
+## values are as precise as with a plain LUT), and as a square root for
+## scene linear values (display transforms are steep near black)
+const SHAPER_KNEE : float = 0.75
+const SHAPER_STOPS : float = 4.0
+## Names of the linear Rec.709 color space (Godot's 3D rendering space) in
+## common configs
+const SCENE_LINEAR_NAMES : Array[String] = [ "Linear Rec.709 (sRGB)", "lin_rec709_srgb", "Utility - Linear - sRGB", "lin_srgb", "Linear" ]
 
 static var ocio = null
 static var ocio_config : String = ""
@@ -83,16 +93,48 @@ static func convert_image_to(image : Image, destination : String) -> Image:
 		return image
 	return converted
 
+## The color space of Godot's 3D rendering (linear Rec.709) in the config
+static func get_scene_linear_space() -> String:
+	var spaces : PackedStringArray = get_color_spaces()
+	for n in SCENE_LINEAR_NAMES:
+		if n in spaces:
+			return n
+	return ""
+
+static func shaper_inverse(t : float, scene_linear : bool = false) -> float:
+	if t <= SHAPER_KNEE:
+		return t*t/(SHAPER_KNEE*SHAPER_KNEE) if scene_linear else t/SHAPER_KNEE
+	return pow(2.0, (t-SHAPER_KNEE)/(1.0-SHAPER_KNEE)*SHAPER_STOPS)
+
 ## A 3D texture that applies a display/view transform ("display / view") to
-## working space values in [0, 1], or null
-static func get_view_lut(view_name : String) -> ImageTexture3D:
-	if view_luts.has(view_name):
-		return view_luts[view_name]
+## values of a color space (by default the working space), with a shaped
+## input (see get_view_shader_code), or null
+static func get_view_lut(view_name : String, source : String = "") -> ImageTexture3D:
+	if source == "":
+		source = get_working_space()
+	var key : String = view_name+"|"+source
+	if view_luts.has(key):
+		return view_luts[key]
 	var o = get_ocio()
 	var parts : PackedStringArray = view_name.split(" / ", true, 1)
-	if o == null or parts.size() != 2:
+	if o == null or parts.size() != 2 or source == "":
 		return null
-	var data : PackedFloat32Array = o.bake_display_view_lut(get_working_space(), parts[0], parts[1], LUT_SIZE)
+	var grid : PackedFloat32Array = PackedFloat32Array()
+	var scene_linear : bool = source != get_working_space() and source == get_scene_linear_space()
+	for i in LUT_SIZE:
+		grid.append(shaper_inverse(float(i)/(LUT_SIZE-1), scene_linear))
+	var lattice : PackedFloat32Array = PackedFloat32Array()
+	lattice.resize(LUT_SIZE*LUT_SIZE*LUT_SIZE*4)
+	var index : int = 0
+	for b in LUT_SIZE:
+		for g in LUT_SIZE:
+			for r in LUT_SIZE:
+				lattice[index] = grid[r]
+				lattice[index+1] = grid[g]
+				lattice[index+2] = grid[b]
+				lattice[index+3] = 1.0
+				index += 4
+	var data : PackedFloat32Array = o.display_view(lattice, source, parts[0], parts[1])
 	if data.is_empty():
 		push_error("OCIO: %s" % o.get_error())
 		return null
@@ -102,16 +144,19 @@ static func get_view_lut(view_name : String) -> ImageTexture3D:
 		slices.append(Image.create_from_data(LUT_SIZE, LUT_SIZE, false, Image.FORMAT_RGBAF, data.slice(b*slice_size, (b+1)*slice_size).to_byte_array()))
 	var texture : ImageTexture3D = ImageTexture3D.new()
 	texture.create(Image.FORMAT_RGBAF, LUT_SIZE, LUT_SIZE, LUT_SIZE, false, slices)
-	view_luts[view_name] = texture
+	view_luts[key] = texture
 	return texture
 
-## Shader code that applies a view LUT (mm_ocio_lut) to a color
-static func get_view_shader_code() -> String:
+## Shader code that applies a view LUT (mm_ocio_lut) to a color, for a LUT
+## baked from the working space or (scene_linear) from get_scene_linear_space()
+static func get_view_shader_code(scene_linear : bool = false) -> String:
 	# Samples at texel centers: [0, 1] maps to [0.5/size, 1-0.5/size]
 	var scale : float = float(LUT_SIZE-1)/LUT_SIZE
 	var offset : float = 0.5/LUT_SIZE
 	var code : String = "uniform sampler3D mm_ocio_lut : filter_linear, repeat_disable;\n"
 	code += "vec3 mm_ocio_view(vec3 c) {\n"
-	code += "\treturn textureLod(mm_ocio_lut, clamp(c, 0.0, 1.0)*%f+vec3(%f), 0.0).rgb;\n" % [ scale, offset ]
+	code += "\tc = max(c, vec3(0.0));\n"
+	code += "\tvec3 shaped = mix(%s*%f, vec3(%f)+%f*log2(max(c, vec3(1.0))), greaterThan(c, vec3(1.0)));\n" % [ "sqrt(c)" if scene_linear else "c", SHAPER_KNEE, SHAPER_KNEE, (1.0-SHAPER_KNEE)/SHAPER_STOPS ]
+	code += "\treturn textureLod(mm_ocio_lut, clamp(shaped, 0.0, 1.0)*%f+vec3(%f), 0.0).rgb;\n" % [ scale, offset ]
 	code += "}\n"
 	return code

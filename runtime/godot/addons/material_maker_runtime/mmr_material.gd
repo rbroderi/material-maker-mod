@@ -8,6 +8,10 @@ class_name MMRMaterial
 #	var mmr : MMRMaterial = MMRMaterial.load_material("res://bricks.mmr")
 #	$MeshInstance3D.material_override = mmr.material
 #	mmr.set_parameter("Hue", 0.3)
+#
+# The textures can be rendered at another size than the exported one
+# (load_material("res://bricks.mmr", 512)), and materials with random nodes
+# have a "seed" parameter.
 
 
 var package : MMRPackage
@@ -17,13 +21,15 @@ var textures : Dictionary = {}
 var error_message : String = ""
 
 
-static func load_material(path : String) -> MMRMaterial:
+static func load_material(path : String, size : int = 0) -> MMRMaterial:
 	var mmr : MMRMaterial = MMRMaterial.new()
 	mmr.package = MMRPackage.load_package(path)
 	if not mmr.package.is_valid():
 		mmr.error_message = mmr.package.error_message
 		push_error("%s: %s" % [ path, mmr.error_message ])
 		return mmr
+	if size > 0:
+		mmr.package.set_output_size(size)
 	mmr.renderer = MMRRenderer.new(mmr.package)
 	if not mmr.renderer.is_valid():
 		mmr.error_message = mmr.renderer.error_message

@@ -642,6 +642,19 @@ struct Renderer::Impl {
 			}
 			size_t count = layout->second.type == "float" ? 1 : layout->second.type == "vec2" ? 2 : layout->second.type == "vec3" ? 3 : 4;
 			uint8_t *destination = (uint8_t *)state.parameters.mapped + layout->second.offset;
+			if (parameter->type == "seed") {
+				// As Material Maker's --seed: unlocked seeds are offset by the
+				// golden ratio times the seed, modulo 1
+				double seed = value.empty() ? 0.0 : value[0];
+				double sum = 0.0;
+				for (const SeedTerm &term : target.seed_terms) {
+					sum += term.locked ? term.value : std::fmod(term.value + 0.6180339887 * seed, 1.0);
+				}
+				float uniform = float(sum);
+				memcpy(destination, &uniform, 4);
+				mark_dirty(it->second);
+				continue;
+			}
 			for (size_t i = 0; i < count && i < value.size(); i++) {
 				memcpy(destination + 4 * i, &value[i], 4);
 			}

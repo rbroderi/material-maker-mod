@@ -176,8 +176,9 @@ static func wait_for_renders(tree : SceneTree, max_frames : int = 6000) -> void:
 		if idle_frames >= 10:
 			return
 
-## Renders a node output ("node/path" or "node/path:output") to a file
-static func render_node(graph : MMGenBase, node_spec : String, size : int, file_name : String) -> String:
+## Renders a node output ("node/path" or "node/path:output") to a file, size
+## pixels wide and height pixels high (0 for a square image)
+static func render_node(graph : MMGenBase, node_spec : String, size : int, file_name : String, height : int = 0) -> String:
 	var node_path : String = node_spec.get_slice(":", 0)
 	var output : int = node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0
 	var generator = graph.get_node_or_null(NodePath(node_path))
@@ -190,7 +191,7 @@ static func render_node(graph : MMGenBase, node_spec : String, size : int, file_
 	# be rendered first
 	generator.get_shader_code("uv", output, MMGenContext.new())
 	await wait_for_renders(generator.get_tree())
-	var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(size, size))
+	var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(size, height if height > 0 else size))
 	if await texture.save_to_file(file_name) != OK:
 		return "could not save '%s'" % file_name
 	return ""
@@ -237,22 +238,33 @@ static func collect_buffers(generator : Node, buffers : Array) -> void:
 
 ## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors.
 ## With a high poly mesh (options.high), maps are baked from it (see
-## MMHighPolyBaker) with options.front, options.rear and options.samples.
+## MMHighPolyBaker) with options.front, options.rear and options.samples,
+## and optionally options.match_names, options.skew (image) and
+## options.high_texture (image).
 static func bake(mesh_path : String, maps : Array, size : int, prefix : String, options : Dictionary = {}) -> PackedStringArray:
 	var errors : PackedStringArray = PackedStringArray()
-	var mesh : Mesh = MMMeshLoader.load_mesh(mesh_path)
+	var match_names : bool = options.get("match_names", false)
+	var mesh : Mesh = MMMeshLoader.load_mesh(mesh_path, false, match_names)
 	if mesh == null:
 		errors.append("could not load mesh '%s'" % mesh_path)
 		return errors
+	var bake_options : Dictionary = { match_by_name=match_names }
+	for o in [ [ "skew", "skew_map" ], [ "high_texture", "high_texture" ] ]:
+		if options.get(o[0], "") != "":
+			var image : Image = Image.load_from_file(options[o[0]])
+			if image == null:
+				errors.append("could not load image '%s'" % options[o[0]])
+				return errors
+			bake_options[o[1]] = ImageTexture.create_from_image(image)
 	var high_mesh : Mesh = null
 	if options.get("high", "") != "":
-		high_mesh = MMMeshLoader.load_mesh(options.high, true)
+		high_mesh = MMMeshLoader.load_mesh(options.high, true, match_names)
 		if high_mesh == null:
 			errors.append("could not load mesh '%s'" % options.high)
 			return errors
 	var cage_mesh : Mesh = null
 	if options.get("cage", "") != "":
-		cage_mesh = MMMeshLoader.load_mesh(options.cage)
+		cage_mesh = MMMeshLoader.load_mesh(options.cage, false, match_names)
 		if cage_mesh == null:
 			errors.append("could not load mesh '%s'" % options.cage)
 			return errors
@@ -263,7 +275,7 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 			continue
 		var texture : MMTexture
 		if m in MMHighPolyBaker.MAPS and high_mesh != null:
-			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh)
+			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh, bake_options)
 		else:
 			texture = await MMMapGenerator.get_map(mesh, m, size, true)
 		var file_name : String = "%s_%s.png" % [ prefix, m ]

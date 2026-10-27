@@ -1,8 +1,10 @@
 // Renders the outputs of a Material Maker runtime package
 //
-//   mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--exr] [--list] [--device n]
+//   mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--size n] [--exr] [--list] [--device n]
 //
-// Values are numbers, or comma separated lists for colors (r,g,b,a).
+// Values are numbers, or comma separated lists for colors (r,g,b,a). --size
+// renders the outputs at n x n pixels (all passes are scaled), and packages
+// with random nodes have a "seed" parameter (--set seed=3).
 
 #include "mmr/mmr.h"
 
@@ -34,6 +36,7 @@ int main(int argc, char **argv) {
 	bool exr = false;
 	bool list = false;
 	int device = -1;
+	uint32_t size = 0;
 	for (int i = 1; i < argc; i++) {
 		std::string arg = argv[i];
 		if ((arg == "-o" || arg == "--output-dir") && i + 1 < argc) {
@@ -59,8 +62,10 @@ int main(int argc, char **argv) {
 			list = true;
 		} else if (arg == "--device" && i + 1 < argc) {
 			device = std::atoi(argv[++i]);
+		} else if (arg == "--size" && i + 1 < argc) {
+			size = (uint32_t)std::max(1, std::atoi(argv[++i]));
 		} else if (arg == "-h" || arg == "--help") {
-			printf("usage: mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--exr] [--list] [--device n]\n");
+			printf("usage: mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--size n] [--exr] [--list] [--device n]\n");
 			return 0;
 		} else {
 			package_path = arg;
@@ -76,6 +81,12 @@ int main(int argc, char **argv) {
 		return fail(package_path + ": " + error);
 	}
 	printf("Loaded %s: %zu passes, %zu textures (%.1f ms)\n", package_path.c_str(), package.passes.size(), package.textures.size(), elapsed_ms(start));
+	if (size != 0) {
+		if (!package.set_output_size(size, error)) {
+			return fail(error);
+		}
+		printf("Output size: %u\n", size);
+	}
 	if (list) {
 		for (const mmr::Parameter &p : package.parameters) {
 			printf("  %s (%s): %s, %zu targets\n", p.name.c_str(), p.label.c_str(), p.type.c_str(), p.targets.size());

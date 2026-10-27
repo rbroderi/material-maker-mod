@@ -21,8 +21,10 @@ Blender.
   (albedo, occlusion/roughness/metallic, normal, emission and height), with the
   settings of the graph's Material node.
 - The *Material Maker* panel of the Material properties shows the package's
-  parameters and presets. With *Live update*, changing a parameter renders the
-  textures again (mmr_render re-renders only what the parameter affects).
+  parameters (including the seed of random nodes) and presets, and the size of
+  the textures (0 for the size they were exported with). With *Live update*,
+  changing them renders the textures again (mmr_render re-renders only what a
+  parameter affects).
 
 Textures are rendered in a `material_maker_runtime` folder of the system's
 temporary folder. The images are not packed in the .blend file: use *File >

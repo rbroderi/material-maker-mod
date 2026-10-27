@@ -386,7 +386,7 @@ func api_render(params : Dictionary):
 		return null
 	var graph : MMGenGraph = await get_graph()
 	await MMCliTools.wait_for_renders(get_tree())
-	var error : String = await MMCliTools.render_node(graph, "%s:%d" % [ params.node, int(params.get("output", 0)) ], int(params.get("size", 1024)), params.path)
+	var error : String = await MMCliTools.render_node(graph, "%s:%d" % [ params.node, int(params.get("output", 0)) ], int(params.get("size", 1024)), params.path, int(params.get("height", 0)))
 	if error == "":
 		var failed : PackedStringArray = mm_deps.get_failed_buffers(graph)
 		if not failed.is_empty():
@@ -480,7 +480,7 @@ func api_export(params : Dictionary):
 		return fail("unknown export target '%s'" % params.target)
 	DirAccess.make_dir_recursive_absolute(params.prefix.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
-	await material.export_material(params.prefix, params.target, int(params.get("size", 0)), true)
+	await material.export_material(params.prefix, params.target, int(params.get("size", 0)), true, int(params.get("height", 0)))
 	return true
 
 func api_undo(_params : Dictionary):
@@ -507,7 +507,7 @@ func api_export_mmr(params : Dictionary):
 		top = top.get_parent()
 	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
-	var errors : PackedStringArray = await MMRuntimeExporter.export_package(top, params.path, int(params.get("size", 0)))
+	var errors : PackedStringArray = await MMRuntimeExporter.export_package(top, params.path, int(params.get("size", 0)), int(params.get("height", 0)))
 	return fail(", ".join(errors)) if not errors.is_empty() else params.path
 
 ## Quits Material Maker (only when there is no main window)

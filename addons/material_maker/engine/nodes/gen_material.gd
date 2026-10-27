@@ -283,7 +283,12 @@ func process_shader(shader_text : String, custom_script : String = "", force_uni
 	for l in shader_text.split("\n"):
 		if generating:
 			if l == "$end_generate":
-				var subst_code = replace_variables(gen_buffer, variables, rv, context)
+				# Each block is generated on its own (it may use other UVs and
+				# be in another scope): its code does not include the code of
+				# previous blocks. A child context generates the code again,
+				# while functions are only defined once (by the parent context).
+				rv.code = ""
+				var subst_code = replace_variables(gen_buffer, variables, rv, MMGenContext.new(context))
 				# Add generated code
 				var new_code : String = rv.code+"\n"
 				new_code += subst_code+"\n"
@@ -396,6 +401,17 @@ func process_option_float_uniform_to_const(s : String, is_declaration : bool = f
 	s = s.replace("uniform int", "const int")
 	return s
 
+## Uniforms become global variables (for shading languages, such as MaterialX's
+## GLSL functions, that cannot declare uniforms)
+func process_option_uniform_to_global(s : String, is_declaration : bool = false) -> String:
+	return RegEx.create_from_string("(?m)^uniform\\s+").sub(s, "", true)
+
+## Uniform arrays become constants (Godot shaders cannot have default values
+## for uniform arrays), other uniforms keep their values as defaults
+func process_option_array_uniform_to_const(s : String, is_declaration : bool = false) -> String:
+	var re : RegEx = RegEx.create_from_string("(?m)^uniform(\\s+\\w+\\s+\\w+\\s*\\[\\d*\\]\\s*=)")
+	return re.sub(s, "const$1", true)
+
 func process_option_rename_buffers(s : String, is_declaration : bool = false) -> String:
 	var index : int = 1
 	for t in preview_texture_dependencies.keys():
@@ -434,6 +450,9 @@ func process_option_unreal5(s : String, is_declaration : bool = false, declarati
 	s = s.replace("elapsed_time", "Time")
 	s = s.replace("uniform sampler2D", "// uniform sampler2D ")
 	if is_declaration:
+		# textureLod is a macro that uses the texture's sampler (the DX9 style
+		# function of hlsl_defs.tmpl does not compile in Unreal 5)
+		s = RegEx.create_from_string("inline\\s+float4\\s+textureLod\\s*\\([^)]*\\)\\s*\\{[^}]*\\}").sub(s, "")
 		s = s.replace("// EngineSpecificDefinitions", "#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, lod)");
 		for d in preprocess_option_unreal5(s):
 			s = s.replace(d.strings[0], d.strings[1]+" "+d.strings[2]+d.strings[3]+";")
@@ -456,7 +475,8 @@ func process_option_unreal5(s : String, is_declaration : bool = false, declarati
 						if value.count("(") == value.count(")"):
 							break
 					initializations += d.strings[2]+"["+str(i)+"] = "+value.strip_edges()+";\n"
-		s = initializations+s
+		# Declarations are renamed with the buffers, so are their initializations
+		s = process_option_rename_buffers(initializations)+s
 	s = s.replace("sampler2D", "sampler")
 	return s
 
@@ -628,13 +648,23 @@ func process_uids(template : String) -> String:
 		template = template.replace(result.strings[0], uid)
 	return template
 
+## Generates the code of an export template. Templates with a $inline_buffers
+## line are fully procedural: buffers generate their input's code instead of
+## being textures (iterate buffers are still textures).
+func process_export_shader(template : String, custom_script : String) -> Dictionary:
+	var inline_buffers : bool = template.contains("$inline_buffers\n")
+	MMGenBuffer.inline_buffers = inline_buffers
+	var result : Dictionary = process_shader(template.replace("$inline_buffers\n", ""), custom_script, true)
+	MMGenBuffer.inline_buffers = false
+	return result
+
 func create_file_from_template(template : String, file_name : String, export_context : Dictionary) -> Error:
 	template = get_template_text(template)
 	var processed_template : String = process_uids(process_buffers(process_conditionals(process_template(template, export_context))))
 	var custom_script = ""
 	if export_context.has("@mm_custom_script"):
 		custom_script = export_context["@mm_custom_script"]
-	processed_template = process_shader(processed_template, custom_script, true).shader_code
+	processed_template = process_export_shader(processed_template, custom_script).shader_code
 	if file_name == "clipboard":
 		DisplayServer.clipboard_set("\n".join(processed_template.split("\n", false)))
 	else:
@@ -667,7 +697,49 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
-func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
+## Textures (buffers) used by the shader code that templates of an export
+## generate ($begin_generate), or null if no template generates code
+func get_generated_texture_dependencies(export_profile : Dictionary, export_context : Dictionary):
+	var dependencies = null
+	for f in export_profile.files:
+		if f.type != "template":
+			continue
+		var template : String = get_template_text(f.template)
+		if template.find("$begin_generate") == -1:
+			continue
+		if dependencies == null:
+			dependencies = {}
+		var custom_script : String = export_context.get("@mm_custom_script", "")
+		var result = process_export_shader(process_conditionals(process_template(template, export_context)), custom_script)
+		for u in result.uniforms:
+			if u.type == "sampler2D" and u.value is MMTexture:
+				dependencies[u.name] = u.value
+	return dependencies
+
+## Exports the material with a target (profile), with size x size textures (or
+## size x height when height is not 0)
+func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
+	# Exports that generate shader code (procedural materials) export the
+	# buffers their code uses instead of the textures of the preview
+	var export_profile = get_export(profile)
+	var export_context : Dictionary = get_connections_and_parameters_context()
+	if export_profile.has("custom"):
+		export_context["@mm_custom_script"] = export_profile.custom
+	var generated_dependencies = get_generated_texture_dependencies(export_profile, export_context)
+	if generated_dependencies == null:
+		await do_export_material(prefix, profile, size, command_line, height)
+		return
+	var saved_dependencies : Dictionary[String, MMTexture] = preview_texture_dependencies
+	preview_texture_dependencies = {}
+	for t in generated_dependencies.keys():
+		preview_texture_dependencies[t] = generated_dependencies[t]
+	await do_export_material(prefix, profile, size, command_line, height)
+	preview_texture_dependencies = saved_dependencies
+	# Generating code replaced the preview's textures
+	if not command_line:
+		update()
+
+func do_export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
@@ -771,7 +843,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					if progress_dialog:
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
 					continue
-				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
+				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, height if height > 0 else size))
 				var export_space : String = MMColorManagement.get_export_space()
 				if export_space != "" and output_index in COLOR_OUTPUTS:
 					# Color maps are converted from the working space (OCIO)

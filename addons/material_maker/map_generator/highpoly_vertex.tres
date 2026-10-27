@@ -13,6 +13,7 @@ layout(location = 2) out vec3 normal;
 layout(location = 3) out vec4 tangent;
 layout(location = 4) out vec2 uv;
 layout(location = 5) out vec3 cage_vert;
+layout(location = 6) flat out int match_surface;
 
 layout(binding = 0, std430) buffer restrict readonly Positions {
 	float positions[];
@@ -33,6 +34,10 @@ layout(binding = 4, std430) buffer restrict readonly UVs {
 layout(binding = 5, std430) buffer restrict readonly CagePositions {
 	float cage_positions[];
 };
+// The high poly surface rays can hit (-1 for any), for matching by name
+layout(binding = 6, std430) buffer restrict readonly MatchSurfaces {
+	float match_surfaces[];
+};
 
 @DECLARATIONS
 
@@ -42,6 +47,7 @@ void main() {
 	tangent = vec4(tangents[4*gl_VertexIndex], tangents[4*gl_VertexIndex+1], tangents[4*gl_VertexIndex+2], tangents[4*gl_VertexIndex+3]);
 	uv = uvs[gl_VertexIndex];
 	cage_vert = vec3(cage_positions[3*gl_VertexIndex], cage_positions[3*gl_VertexIndex+1], cage_positions[3*gl_VertexIndex+2]);
+	match_surface = int(match_surfaces[gl_VertexIndex]);
 	// Sub-pixel jitter, for anti-aliasing over several passes
 	gl_Position = vec4(uv*2.0-vec2(1.0)+jitter, 0.0, 1.0);
 }

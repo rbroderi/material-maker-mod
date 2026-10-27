@@ -176,6 +176,76 @@ func add_layer(layer_type : int = 0) -> void:
 	layers_array.push_front(layer)
 	select_layer(layer)
 
+const PACK_SHADER : String = """#version 450
+
+// Packs a material's outputs into the channels of a paint layer (see
+// MMPaintLayer): albedo, metallic/roughness, emission, normal (Material
+// Maker's convention) and depth/occlusion, fully opaque
+
+layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+@DECLARATIONS
+
+layout(set = 3, binding = 0, std140) restrict buffer MM {
+	int mm_chunk_y;
+};
+
+void main() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy)+ivec2(0, mm_chunk_y);
+	vec2 uv = (vec2(pixel)+vec2(0.5))/vec2(imageSize(albedo_out));
+	vec4 orm = textureLod(orm_in, uv, 0.0);
+	imageStore(albedo_out, pixel, vec4(textureLod(albedo_in, uv, 0.0).rgb, 1.0));
+	imageStore(mr_out, pixel, vec4(orm.b, orm.g, 1.0, 1.0));
+	imageStore(emission_out, pixel, vec4(textureLod(emission_in, uv, 0.0).rgb, 1.0));
+	// The Material's normal output is converted for engines
+	vec3 normal = textureLod(normal_in, uv, 0.0).rgb;
+	imageStore(normal_out, pixel, vec4(1.0-normal.x, normal.y, 1.0-normal.z, 1.0));
+	imageStore(do_out, pixel, vec4(textureLod(depth_in, uv, 0.0).r, orm.r, 1.0, 1.0));
+}
+"""
+
+## Adds a paint layer with the maps of a material graph (.ptex): graph outputs
+## become paintable pixels (the layer can then be painted over or erased)
+func add_layer_from_material(path : String) -> bool:
+	var generator : MMGenBase = await mm_loader.load_gen(path)
+	if generator == null:
+		return false
+	add_child(generator)
+	var material : MMGenBase = null
+	for c in generator.get_children():
+		if c.has_method("get_export_profiles"):
+			material = c
+	var ok : bool = material != null
+	if ok:
+		await MMCliTools.wait_for_renders(get_tree())
+		var size : Vector2i = Vector2i(int(texture_size), int(texture_size))
+		var compute : MMComputeShader = MMComputeShader.new()
+		compute.clear()
+		for o in [ [ "albedo_in", 0 ], [ "orm_in", 1 ], [ "emission_in", 2 ], [ "normal_in", 3 ], [ "depth_in", 4 ] ]:
+			compute.add_parameter_or_texture(o[0], "sampler2D", await material.render_output_to_texture(o[1], size))
+		var outputs : Array[Dictionary] = []
+		var textures : Array[MMTexture] = []
+		for c in [ "albedo", "mr", "emission", "normal", "do" ]:
+			outputs.append({ name=c+"_out", type=MMPipeline.TEXTURE_TYPE_RGBA16F })
+			textures.append(MMTexture.new())
+		ok = await compute.set_shader_ext(PACK_SHADER, outputs) and await compute.render_ext(textures, size)
+		if ok:
+			var layer : MMPaintLayer = LayerPaint.new()
+			layer.name = path.get_file().get_basename()
+			layer.index = get_unused_layer_index()
+			layer.hidden = false
+			var channels : Array = layer.get_channels()
+			for i in channels.size():
+				var image : Image = (await textures[i].get_texture()).get_image()
+				image.convert(Image.FORMAT_RGBAH)
+				layer.set(channels[i], ImageTexture.create_from_image(image))
+			layers.push_front(layer)
+			select_layer(layer)
+			_on_layers_changed()
+	remove_child(generator)
+	generator.queue_free()
+	return ok
+
 func duplicate_layer(source_layer : MMLayer) -> void:
 	var layers_array : Array = find_parent_array(source_layer)
 	var layer = source_layer.duplicate()

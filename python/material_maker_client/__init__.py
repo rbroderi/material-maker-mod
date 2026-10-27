@@ -177,9 +177,10 @@ class MaterialMaker:
 
     # Output
 
-    def render(self, node, path, output=0, size=1024):
-        """Renders an output of a node to an image file (.png or .exr)"""
-        return self.call("render", node=node, path=_path(path), output=output, size=size)
+    def render(self, node, path, output=0, size=1024, height=0):
+        """Renders an output of a node to an image file (.png or .exr), size
+        pixels wide and height pixels high (0 for a square image)"""
+        return self.call("render", node=node, path=_path(path), output=output, size=size, height=height)
 
     def export_volume(self, node, path, output=0, resolution=128, extent=1.0, texel_format=""):
         """Exports a 3D texture or SDF output as a volume: OpenVDB (.vdb), 3D DDS
@@ -202,13 +203,15 @@ class MaterialMaker:
     def list_export_targets(self):
         return self.call("list_export_targets")
 
-    def export(self, target, prefix, size=0):
-        """Exports the material; prefix is the path of the files without extension"""
-        return self.call("export", target=target, prefix=_path(prefix), size=size)
+    def export(self, target, prefix, size=0, height=0):
+        """Exports the material; prefix is the path of the files without extension
+        (height: for non-square textures)"""
+        return self.call("export", target=target, prefix=_path(prefix), size=size, height=height)
 
-    def export_mmr(self, path, size=0):
-        """Exports a runtime package (.mmr) of the material, for engine runtimes"""
-        return self.call("export_mmr", path=_path(path), size=size)
+    def export_mmr(self, path, size=0, height=0):
+        """Exports a runtime package (.mmr) of the material, for engine runtimes
+        (height: for non-square outputs)"""
+        return self.call("export_mmr", path=_path(path), size=size, height=height)
 
     def quit(self):
         """Quits Material Maker (--rpc mode only)"""

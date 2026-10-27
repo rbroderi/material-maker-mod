@@ -40,7 +40,8 @@ func _notification(what : int) -> void:
 	match what:
 		NOTIFICATION_PREDELETE:
 			gpu_textures.erase(texture_id)
-			if mm_renderer:
+			# At exit, the renderer (and its device) is already gone
+			if is_instance_valid(mm_renderer) and mm_renderer.is_inside_tree():
 				await mm_renderer.thread_run(in_thread_free_rid, [rid, rd])
 
 func get_gpu_size() -> int:

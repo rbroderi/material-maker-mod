@@ -44,7 +44,8 @@ Paths must be absolute (the Python client converts them). Node names are those s
 graph (and in **list_nodes**).
 
 * **ping()** returns the version and whether the user interface is running
-* **new_graph(template)**, **load(path)**, **save(path)** create, load and save .ptex files.
+* **new_graph(template)**, **load(path)**, **save(path)** create, load and save .ptex files
+  (**load** also imports MaterialX materials, .mtlx files).
   The optional template is an output template (a name returned by **list_templates()**, or
   an export target) that sets the export target of the new material
 * **list_nodes()** returns the nodes with their type, inputs, outputs and parameters
@@ -55,14 +56,15 @@ graph (and in **list_nodes**).
 * **create_node(type, name, position, parameters)** creates a node from its type (such as
   "perlin") or, with the user interface, from a library item (such as "Noise/Perlin"), and
   returns its name
-* **delete_node(node)**, **connect(from, from_port, to, to_port)**, **disconnect(from, from_port, to, to_port)**
+* **delete_node(node)**, **connect(from, to, from_port, to_port)**, **disconnect(from, to, from_port, to_port)**
 * **list_presets()**, **apply_preset(name)**, **save_preset(name, node)** manage the presets of
   the graph's remote nodes, and **randomize_parameters(seed)** sets random values to their
   parameters
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
-* **render(node, output, size, path)** renders a node output to a PNG or EXR file
-* **list_export_targets()** and **export(target, prefix, size)** export the material
-* **export_mmr(path, size)** exports a runtime package (.mmr) of the material
+* **render(node, output, size, path, height)** renders a node output to a PNG or EXR file (with an
+  optional height for non-square images)
+* **list_export_targets()** and **export(target, prefix, size, height)** export the material
+* **export_mmr(path, size, height)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
   SDF output as a volume (.vdb, .dds or .ktx2)
 * **render_path_traced(path, size, samples, transparent)** and **render_turntable(path, frames, size)**

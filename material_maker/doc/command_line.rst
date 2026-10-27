@@ -9,6 +9,9 @@ extension so double-clicking on them will directly open them.
 
 Material Maker can also process files without user interface, using one of the following
 modes. The window is minimized (rendering needs a GPU), unless **--show-window** is used.
+Godot's **--headless** option cannot be used: it replaces the renderer by a dummy one, so no
+GPU device can be created (Material Maker then stops with an error). On Linux servers without
+a display, use a virtual one (for example **xvfb-run**).
 
  material_maker --export-material [options] <input_files>
  material_maker --render --node <node[:output]> [options] <input_files>
@@ -19,7 +22,8 @@ modes. The window is minimized (rendering needs a GPU), unless **--show-window**
  material_maker --rpc [--rpc-port <port>] [<input_file>]
  material_maker -- --help
 
-Input files are .ptex files (wildcards are accepted). Godot handles some short options
+Input files are .ptex files (wildcards are accepted), or MaterialX files (.mtlx) that are
+imported (see :ref:`export-section`). Godot handles some short options
 itself (such as **-t** and **--help**), so they only reach Material Maker after **--**.
 
 Modes
@@ -48,7 +52,9 @@ Options
 * **-o <path>**, **--output-dir <path>** is the directory where files will be generated (created if needed)
 * **--output-file <pattern>** is the file name of exported materials (%f is the input file name,
   %n and %N the material name, %a and %A its author)
-* **--size <size>** is the size of generated images
+* **--size <size>** is the size of generated images. For **--render**, **--export-material** and
+  **--export-mmr**, **<width>x<height>** (for example 2048x1024) generates non-square outputs:
+  the graph is stretched to the image's shape, and buffers keep their (square) sizes
 * **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values)
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example
@@ -70,6 +76,10 @@ Options
 * **--front <d>** and **--rear <d>** are the ray distances in front of and behind the input mesh
   for **--high**, relative to the diagonal of its bounding box (the default is 0.01)
 * **--samples <n>** is the number of antialiasing samples for **--high** (the default is 4)
+* **--match-names** matches the parts of the input mesh and of the **--high** mesh by name (see the
+  High Poly Bake node)
+* **--skew <image>** is a skew map for **--high**
+* **--high-texture <image>** is the texture of the **--high** mesh, for the **texture** map
 * **--rpc-port <port>** is the port of the JSON-RPC server (the default is 7680). When used without
   **--rpc**, Material Maker starts with its user interface and a server
 

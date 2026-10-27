@@ -50,6 +50,25 @@ func read(path : String) -> String:
 	zip.close()
 	return ""
 
+## Size of the outputs (the largest output pass)
+func get_output_size() -> int:
+	var size : int = 0
+	for o in manifest.outputs.values():
+		var p : Dictionary = get_pass(o)
+		if not p.is_empty():
+			size = max(size, int(p.size[0]), int(p.size[1]))
+	return size
+
+## Scales all passes so the outputs are size x size pixels (before creating
+## a renderer). Outputs and buffers keep their relative sizes.
+func set_output_size(size : int) -> void:
+	var current : int = get_output_size()
+	if size <= 0 or current <= 0:
+		return
+	var scale : float = float(size)/current
+	for p in manifest.passes:
+		p.size = [ max(1, roundi(p.size[0]*scale)), max(1, roundi(p.size[1]*scale)) ]
+
 func get_pass(pass_name : String) -> Dictionary:
 	for p in manifest.passes:
 		if p.name == pass_name:

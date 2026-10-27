@@ -19,12 +19,22 @@ struct Image {
 	std::vector<float> pixels;
 };
 
+/// A term of a seed uniform: a node's seed, and whether it is locked
+struct SeedTerm {
+	float value = 0.0f;
+	bool locked = false;
+};
+
 struct ParameterTarget {
 	std::string pass;
 	std::string parameter;
+	/// For "seed" parameters: the uniform is the sum of these seeds, each
+	/// (unless locked) offset by 0.6180339887*seed modulo 1
+	std::vector<SeedTerm> seed_terms;
 };
 
-/// A parameter that can be changed at runtime ("float" or "color")
+/// A parameter that can be changed at runtime ("float", "color", or "seed"
+/// for the seed of all random nodes, as Material Maker's --seed)
 struct Parameter {
 	std::string name;
 	std::string label;
@@ -69,6 +79,11 @@ public:
 	const Pass *find_pass(const std::string &name) const;
 	/// Finds a parameter by name or label
 	const Parameter *find_parameter(const std::string &name) const;
+	/// Scales all passes so the outputs are size x size pixels (call it before
+	/// Renderer::load). Outputs and buffers keep their relative sizes.
+	bool set_output_size(uint32_t size, std::string &error);
+	/// Size of the outputs (the largest output pass)
+	uint32_t output_size() const;
 
 	std::string name;
 	int version = 0;

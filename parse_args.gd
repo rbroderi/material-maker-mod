@@ -10,6 +10,9 @@ static func name_to_lower(s : String) -> String:
 	s = s.remove_chars("()/\"")
 	return s
 
+## Height of non-square outputs (--size widthxheight), or 0
+var output_height : int = 0
+
 func export_files(files, output_dir, target, target_file, image_size, options : Dictionary = {}) -> void:
 	var website_materials : Array = []
 	# An Array (and not a PackedStringArray) so export_variation can append to it
@@ -99,7 +102,7 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			else:
 				var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
 				print("Saving additional export %s" % file_name)
-			await c.export_material(prefix, best_target, image_size, true)
+			await c.export_material(prefix, best_target, image_size, true, output_height)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
@@ -121,7 +124,8 @@ Options:
   --target <target>          export target (e.g. "Godot/Godot 4 Standard", "MaterialX/Standard Surface")
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
-  --size <size>              image size in pixels
+  --size <size>              image size in pixels, or <width>x<height> for non-square outputs of --render,
+                             --export-material and --export-mmr (buffers stay square)
   --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
@@ -138,12 +142,16 @@ Options:
   --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position,
                              or normal_tangent,height with --high)
   --high <mesh>              high poly mesh for --bake, that adds the normal_tangent, normal_object, height,
-                             color, material_id and position maps
+                             color, material_id, position and texture (with --high-texture) maps
   --front <d>, --rear <d>    ray distances in front of and behind the mesh for --high, relative to the
                              diagonal of its bounding box (default: 0.01)
   --cage <mesh>              cage mesh for --high, with the same topology as the baked mesh
   --samples <n>              antialiasing samples for --high (default: 4)
-  --show-window              do not minimize the window
+  --match-names              with --high, rays from each part (object) of a mesh only hit the high poly part
+                             with the same name (ignoring _low/_high suffixes)
+  --skew <image>             skew map for --high: white bends rays towards the face normal
+  --high-texture <image>     texture of the high poly mesh, for the "texture" map of --high
+  --show-window              do not minimize the window (rendering needs a window, not --headless)
   --rpc-port <port>          port of the JSON-RPC server (localhost only, default 7680)
 """
 
@@ -173,8 +181,16 @@ func _ready():
 		print(HELP)
 		get_tree().quit()
 		return
-	# Rendering needs a window (the GPU is not available in headless mode),
-	# but it does not need to be visible
+	# Rendering needs a window: Godot's headless mode replaces the renderer by
+	# a dummy one, so no RenderingDevice can be created. The window (1x1 and
+	# transparent, see project.godot) is minimized instead: Godot does not
+	# allow hiding its main window.
+	if DisplayServer.get_name() == "headless" and mode != "--list-parameters":
+		printerr("ERROR: Material Maker needs a GPU, which Godot does not provide with --headless.")
+		printerr("Run without --headless: the window is minimized in command line modes (on Linux")
+		printerr("servers without a display, use a virtual one, for example xvfb-run).")
+		get_tree().quit(1)
+		return
 	if not "--show-window" in args:
 		get_window().mode = Window.MODE_MINIMIZED
 	var dir : DirAccess = DirAccess.open(".")
@@ -200,8 +216,11 @@ func _ready():
 				options.output_file = value
 				i += 1
 			"--size":
-				options.size = int(value)
-				if options.size <= 0:
+				# A size, or width x height (e.g. 2048x1024) for non-square outputs
+				var dimensions : PackedStringArray = value.to_lower().split("x")
+				options.size = int(dimensions[0])
+				output_height = int(dimensions[1]) if dimensions.size() == 2 else 0
+				if options.size <= 0 or dimensions.size() > 2 or (dimensions.size() == 2 and output_height <= 0):
 					show_error("ERROR: incorrect size "+value)
 					get_tree().quit(1)
 					return
@@ -224,9 +243,14 @@ func _ready():
 			"--preset":
 				options.preset = value
 				i += 1
-			"--high", "--cage":
+			"--high", "--cage", "--skew":
 				options[arg.substr(2)] = value
 				i += 1
+			"--high-texture":
+				options.high_texture = value
+				i += 1
+			"--match-names":
+				options.match_names = true
 			"--front", "--rear":
 				options[arg.substr(2)] = float(value)
 				i += 1
@@ -367,7 +391,7 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 	if options.get("frames", 1) > 1:
 		error = await MMCliTools.render_flipbook(gen, options.node, options.size, options.frames, options.get("duration", 1.0), options.get("columns", 0), file_name)
 	else:
-		error = await MMCliTools.render_node(gen, options.node, options.size, file_name)
+		error = await MMCliTools.render_node(gen, options.node, options.size, file_name, output_height)
 	if error != "":
 		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
 	else:
@@ -432,7 +456,7 @@ func export_mmr_variation(suffix : String, gen : MMGenBase, f : String, options 
 	var file_name : String = options.output_dir.path_join(f.get_file().get_basename()+suffix+".mmr")
 	# The material's size is used unless --size is given
 	var size : int = options.size if "--size" in OS.get_cmdline_args()+OS.get_cmdline_user_args() else 0
-	for e in await MMRuntimeExporter.export_package(gen, file_name, size):
+	for e in await MMRuntimeExporter.export_package(gen, file_name, size, output_height):
 		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
 	print("Exported %s" % file_name)
 

@@ -102,5 +102,6 @@ When OpenColorIO support is built (see the **native/ocio** directory of the sour
 repository), the **View** menu has a **View transform (OCIO)** list with the display/view
 transforms of the OpenColorIO config (by default OCIO's ACES studio config), such as
 *sRGB - Display / ACES 2.0 - SDR 100 nits (Rec.709)*. The transform is applied to the
-preview only, from Material Maker's working space (sRGB encoded colors by default), and
-values are clamped to [0, 1] before it.
+preview only, from Material Maker's working space (sRGB encoded colors by default). Values
+above 1 (up to 16) are transformed too: the LUT's input is shaped (linear in [0, 1],
+logarithmic above).

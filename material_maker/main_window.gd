@@ -808,6 +808,7 @@ func load_project() -> void:
 		dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
 		dialog.add_filter("*.ptex;Procedural Textures File")
 		dialog.add_filter("*.mmpp;Model Painting File")
+		dialog.add_filter("*.mtlx;MaterialX material (imported)")
 		dialog.current_dir = mm_globals.config.get_value("path", "project", mm_globals.get_home_directory())
 		var files = await dialog.select_files()
 		if files.size() > 0:
@@ -838,7 +839,7 @@ func do_load_projects(filenames) -> void:
 func do_load_project(file_name : String) -> bool:
 	var status : bool = false
 	match file_name.get_extension():
-		"ptex":
+		"ptex", "mtlx":
 			status = await do_load_material(file_name, false)
 			hierarchy.update_from_graph_edit(get_current_graph_edit())
 		"mmpp":

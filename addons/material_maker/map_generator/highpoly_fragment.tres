@@ -16,8 +16,13 @@ layout(location = 2) in vec3 normal;
 layout(location = 3) in vec4 tangent;
 layout(location = 4) in vec2 uv;
 layout(location = 5) in vec3 cage_vert;
+layout(location = 6) flat in int match_surface;
 
 @DECLARATIONS
+
+// Attributes of a face: 3 normals (w of the first one is the surface index),
+// 3 colors, then UVs (u0, v0, u1, v1), (u2, v2, 0, 0)
+const int ATTRIBUTES_PER_FACE = 8;
 
 const int MODE_NORMAL_TANGENT = 0;
 const int MODE_NORMAL_OBJECT = 1;
@@ -25,6 +30,7 @@ const int MODE_HEIGHT = 2;
 const int MODE_COLOR = 3;
 const int MODE_MATERIAL_ID = 4;
 const int MODE_POSITION = 5;
+const int MODE_TEXTURE = 6;
 
 float intersect_aabb(vec3 ray_origin, vec3 ray_dir, vec3 box_min, vec3 box_max, bool solid) {
 	// Null direction components would give 0/0 (NaN) for origins on a box face
@@ -119,7 +125,8 @@ float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hi
 					vec4 tri_a = get_data(j);
 					vec2 bary;
 					float tri_t = intersects_triangle(ray_start, ray_dir, tri_a.xyz, get_data(j + 1).xyz, get_data(j + 2).xyz, bary);
-					if (tri_t != -1.0 && tri_t < t) {
+					// When matching by name, other parts of the high poly mesh are ignored
+					if (tri_t != -1.0 && tri_t < t && (match_surface < 0 || int(get_attribute(int(tri_a.w) * ATTRIBUTES_PER_FACE).w) == match_surface)) {
 						t = tri_t;
 						hit_face = int(tri_a.w);
 						hit_bary = bary;
@@ -210,9 +217,6 @@ float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hi
 	return t;
 }
 
-// Attributes of a face: 3 normals (w of the first one is the surface index), then 3 colors
-const int ATTRIBUTES_PER_FACE = 6;
-
 vec3 id_color(int id) {
 	// Well separated hues, with a few brightness levels
 	float h = fract(float(id) * 0.618034);
@@ -233,6 +237,15 @@ void main() {
 		ray_start = cage_vert;
 		front = length(model_vert - cage_vert);
 		ray_dir = front > 0.0 ? (model_vert - cage_vert) / front : -n;
+	}
+	if (use_skew != 0) {
+		// The skew map bends rays towards the (flat) face normal
+		vec3 face_normal = cross(dFdx(model_vert), dFdy(model_vert));
+		if (dot(face_normal, face_normal) > 0.0) {
+			face_normal = normalize(face_normal) * (dot(face_normal, n) < 0.0 ? -1.0 : 1.0);
+			ray_dir = normalize(mix(ray_dir, -face_normal, clamp(texture(skew_tex, uv).r, 0.0, 1.0)));
+			ray_start = model_vert - ray_dir * front;
+		}
 	}
 	int face;
 	vec2 bary;
@@ -286,6 +299,13 @@ void main() {
 			case MODE_POSITION:
 				value = vec4((ray_start + ray_dir * hit - aabb_position) / aabb_size, 1.0);
 				break;
+			case MODE_TEXTURE: {
+				vec4 uv01 = get_attribute(base + 6);
+				vec2 uv2 = get_attribute(base + 7).xy;
+				vec2 high_uv = w.x * uv01.xy + w.y * uv01.zw + w.z * uv2;
+				value = vec4(texture(high_texture, high_uv).rgb, 1.0);
+				break;
+			}
 		}
 	}
 	// Average of the jittered passes

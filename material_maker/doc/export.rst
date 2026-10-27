@@ -20,6 +20,27 @@ The `Add Principled Texture Setup <https://docs.blender.org/manual/en/latest/add
 .. image:: images/blender_mat_demo.gif
   :align: center
 
+Procedural shaders
+------------------
+
+The **Godot/Godot 4 Shader**, **Unity/Built-in Shader** and **Unreal/Unreal Engine 5 Shader**
+targets export the material as a shader that computes the graph, instead of textures: the
+material can be tiled at any resolution without a texture budget. Buffers of the graph (for
+example the ones of normal map nodes) are exported as textures that the shader samples.
+
+* **Godot 4**: a .gdshader and a .tres ShaderMaterial. The parameters of the graph are shader
+  uniforms (with their current values), so they can be changed in Godot's inspector. Verified on
+  the examples: the shader's maps match the texture export texel for texel.
+* **Unity**: a surface shader (built-in render pipeline) and a .mat file, with the buffer
+  textures and their .meta files.
+* **Unreal Engine 5**: a Python script that creates the material, with a Custom node that
+  contains the generated HLSL code (the .shader file).
+
+The Unity and Unreal shaders are HLSL translations of the graph's GLSL code. They have been
+compiled (but not run in Unity or Unreal), and their outputs have the same structure as Material
+Maker's, but the random patterns of noise nodes can differ: Material Maker's hash functions are
+very sensitive to the precision of the operations, which differs between shading languages.
+
 Godot game engine
 -----------------
 
@@ -118,12 +139,40 @@ Parameters of the Material node (albedo color, metallic, roughness, normal stren
 energy and depth scale) are applied in the MaterialX graph. Ambient occlusion is not exported,
 since those shaders have no input for it.
 
+The **MaterialX/Procedural** target generates a procedural material: a .mtlx file that defines
+a custom node (*mm_procedural*) whose GLSL implementation (the .glsl file next to it) computes
+the whole graph, including what buffers compute (they are inlined, so no texture is needed;
+iterate buffers are not supported). The node's outputs feed a standard_surface shader. The
+implementation targets MaterialX's GLSL shader generator (genglsl), so it works in GLSL based
+MaterialX renderers and tools (with the .mtlx file's directory in their search path), but not
+in OSL or MDL ones.
+
+MaterialX import
+^^^^^^^^^^^^^^^^
+
+MaterialX files (.mtlx) can be loaded (**File/Load**, command line input files, or the **load**
+scripting method): the first material is imported as a new graph, with a Material node whose
+inputs and parameters come from the material's standard_surface, open_pbr_surface,
+UsdPreviewSurface or gltf_pbr shader. Images become Image nodes (color spaces are taken into
+account), and the nodes that select, convert or scale them (constant, multiply, convert,
+extract, swizzle, separate, normalmap) are followed. Procedural MaterialX nodes are not
+translated: the inputs they drive are listed in the console and left unconnected.
+
 USD
 ---
 
 The **USD/UsdPreviewSurface** target generates a .usda file with a UsdPreviewSurface material
 named /Material and its textures (including ambient occlusion). It can be referenced from USD
 stages, or imported in applications that support USD materials.
+
+glTF
+----
+
+The **GLTF/Plane** target generates a .gltf file (a plane with the material) and its textures.
+The material uses the KHR_materials_clearcoat, KHR_materials_sheen, KHR_materials_anisotropy and
+KHR_materials_transmission extensions for the coat, sheen, anisotropy and transmission of the
+Material node (with textures when the corresponding inputs are connected). Blender's glTF
+importer reads them (coat, sheen, anisotropy and transmission of the Principled BSDF).
 
 Volumes
 -------
@@ -176,7 +225,14 @@ Packages can be used in Godot 4.3+ with the **Material Maker Runtime** addon, in
     mmr.set_parameter("Hue", 0.3)
     mmr.apply_preset("Mossy")    # presets saved in the remote node, see get_preset_names()
 
-Animated materials (using $time) have a **time** parameter, in seconds.
+Animated materials (using $time) have a **time** parameter, in seconds, and materials with
+random nodes have a **seed** parameter that changes their seeds as the **--seed** command line
+option does (a package rendered with seed=3 is identical to a package exported with --seed 3).
+
+Packages can be rendered at another size than the one they were exported with: all passes
+(outputs and buffers) are scaled with the outputs (**MMRMaterial.load_material(path, size)** in
+Godot, **--size** for **mmr_render**). Non-square packages are exported with **--size
+<width>x<height>**.
 
 A standalone renderer written in C++ with Vulkan (in the **runtime/cpp** directory of the
 source repository) renders packages without Godot, and can be embedded in other engines'
@@ -185,6 +241,7 @@ plugins:
  mmr_render bricks.mmr -o textures --set Hue=0.3
  mmr_render bricks.mmr -o textures --preset Mossy
  mmr_render bricks.mmr --list   # parameters, outputs and presets
+ mmr_render bricks.mmr -o textures --size 512 --set seed=3
 
 Blender add-on
 ^^^^^^^^^^^^^^
@@ -194,5 +251,6 @@ that imports runtime packages as Blender materials, using **mmr_render** to rend
 textures. **File > Import > Material Maker package (.mmr)** creates a Principled BSDF
 material from the package's outputs and the Material node's settings, and assigns it to the
 selected objects. The **Material Maker** panel of the material properties shows the package's
-parameters and presets: with **Live update**, changing a parameter renders the textures again.
+parameters, seed, presets and texture size: with **Live update**, changing them renders the
+textures again.
 See **runtime/blender/README.md** for its installation.

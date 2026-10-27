@@ -6,6 +6,8 @@
 #include <miniz.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 
 namespace mmr {
@@ -104,6 +106,31 @@ const Parameter *Package::find_parameter(const std::string &parameter_name) cons
 	return nullptr;
 }
 
+uint32_t Package::output_size() const {
+	uint32_t size = 0;
+	for (const auto &[channel, pass_name] : outputs) {
+		const Pass *pass = find_pass(pass_name);
+		if (pass != nullptr) {
+			size = std::max(size, std::max(pass->width, pass->height));
+		}
+	}
+	return size;
+}
+
+bool Package::set_output_size(uint32_t size, std::string &error) {
+	uint32_t current = output_size();
+	if (size == 0 || current == 0) {
+		error = "invalid output size";
+		return false;
+	}
+	double scale = double(size) / double(current);
+	for (Pass &pass : passes) {
+		pass.width = std::max<uint32_t>(1, uint32_t(std::lround(pass.width * scale)));
+		pass.height = std::max<uint32_t>(1, uint32_t(std::lround(pass.height * scale)));
+	}
+	return true;
+}
+
 bool Package::load(const std::string &path, std::string &error) {
 	ZipReader zip(path);
 	if (!zip.is_open()) {
@@ -175,7 +202,13 @@ bool Package::load(const std::string &path, std::string &error) {
 		parameter.max = p.value("max", 1.0f);
 		parameter.step = p.value("step", 0.0f);
 		for (const auto &t : p["targets"]) {
-			parameter.targets.push_back(ParameterTarget{ t["pass"].get<std::string>(), t["parameter"].get<std::string>() });
+			ParameterTarget target{ t["pass"].get<std::string>(), t["parameter"].get<std::string>(), {} };
+			if (t.contains("terms")) {
+				for (const auto &term : t["terms"]) {
+					target.seed_terms.push_back(SeedTerm{ term[0].get<float>(), term[1].get<bool>() });
+				}
+			}
+			parameter.targets.push_back(std::move(target));
 		}
 		parameters.push_back(std::move(parameter));
 	}

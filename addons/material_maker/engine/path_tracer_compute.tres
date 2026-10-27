@@ -284,6 +284,47 @@ vec3 ggx_bounce(inout vec3 dir, vec3 n, vec3 v, float a, vec3 f0) {
 	return f*smith_g1(NdotV, a)*smith_g1(NdotL, a)*VdotH/(NdotH*NdotV);
 }
 
+// The BSDF (times the cosine) for a light direction l, used for the sun
+vec3 evaluate_bsdf(vec3 n, vec3 v, vec3 l, vec3 albedo, float metallic, float roughness, float coat, float coat_roughness, float fuzz, float transmission) {
+	float NdotV = max(dot(n, v), 0.0001);
+	float NdotL = dot(n, l);
+	float cNdotL = abs(NdotL);
+	vec3 h = normalize(v+l);
+	float NdotH = max(dot(n, h), 0.0001);
+	float VdotH = max(dot(v, h), 0.0001);
+	float fresnel = pow(1.0-NdotV, 5.0);
+	float coat_fresnel = 0.04+0.96*fresnel;
+	float below_coat = 1.0-coat*coat_fresnel;
+	float below_fuzz = 1.0-0.5*fuzz;
+	float base_fresnel = 0.04+0.96*fresnel;
+	vec3 diffuse = albedo*(1.0-metallic)*(1.0-base_fresnel)/PI;
+	if (NdotL <= 0.0) {
+		// Thin walled transmission, light from behind
+		return below_coat*below_fuzz*transmission*diffuse*cNdotL;
+	}
+	float a = roughness*roughness;
+	vec3 f0 = mix(vec3(0.04), albedo, metallic);
+	vec3 f = f0+(vec3(1.0)-f0)*pow(1.0-VdotH, 5.0);
+	vec3 specular = ggx_d(NdotH, a)*smith_g1(NdotV, a)*smith_g1(cNdotL, a)*f/(4.0*NdotV*cNdotL);
+	float ca = coat_roughness*coat_roughness;
+	float coat_f = 0.04+0.96*pow(1.0-VdotH, 5.0);
+	float coat_specular = coat*ggx_d(NdotH, ca)*smith_g1(NdotV, ca)*smith_g1(cNdotL, ca)*coat_f/(4.0*NdotV*cNdotL);
+	vec3 base = specular+(1.0-transmission)*diffuse;
+	return (below_coat*(below_fuzz*base+vec3(0.5*fuzz/PI))+vec3(coat_specular))*cNdotL;
+}
+
+// A direction in the cone of the sun
+vec3 sample_sun() {
+	float cos_max = cos(sun_angle);
+	float cos_theta = 1.0-rand()*(1.0-cos_max);
+	float sin_theta = sqrt(max(1.0-cos_theta*cos_theta, 0.0));
+	float phi = TAU*rand();
+	vec3 n = sun_direction;
+	vec3 t = normalize(abs(n.y) < 0.99 ? cross(vec3(0.0, 1.0, 0.0), n) : cross(vec3(1.0, 0.0, 0.0), n));
+	vec3 b = cross(n, t);
+	return normalize(t*cos(phi)*sin_theta+b*sin(phi)*sin_theta+n*cos_theta);
+}
+
 void main() {
 	vec2 pixel = gl_GlobalInvocationID.xy+vec2(0.5, 0.5+mm_chunk_y);
 	vec2 image_size = imageSize(OUTPUT_TEXTURE);
@@ -343,9 +384,21 @@ void main() {
 		float coat = clamp(coat_value*extra.r, 0.0, 1.0);
 		float coat_roughness = clamp(coat_roughness_value*extra.g, 0.02, 1.0);
 		float fuzz = clamp(sheen_value*extra.a, 0.0, 1.0);
+		float transmission = clamp(transmission_value*textureLod(transmission_tex, uv, 0.0).r, 0.0, 1.0);
 		radiance += throughput*emission_energy*srgb_to_linear(textureLod(emission_tex, uv, 0.0).rgb);
 		vec3 next_dir = dir;
 		vec3 weight;
+		// Direct light from the sun (it is not in the environment)
+		if (sun_energy > 0.0) {
+			vec3 l = sample_sun();
+			vec3 shadow_origin = position+geometric_normal*(dot(l, geometric_normal) > 0.0 ? 1.0 : -1.0)*0.0005*scene_scale;
+			int shadow_face;
+			vec2 shadow_bary;
+			intersects_bvh(shadow_origin, l, shadow_face, shadow_bary);
+			if (shadow_face < 0) {
+				radiance += throughput*sun_color*(PI*sun_energy)*evaluate_bsdf(n, v, l, albedo, metallic, roughness, coat, coat_roughness, fuzz, transmission);
+			}
+		}
 		float NdotV = max(dot(n, v), 0.0001);
 		float coat_fresnel = 0.04+0.96*pow(1.0-NdotV, 5.0);
 		float p_coat = coat*coat_fresnel;
@@ -366,6 +419,10 @@ void main() {
 					weight = ggx_bounce(next_dir, n, v, roughness*roughness, f0)/p_specular;
 				} else {
 					next_dir = sample_cosine(n);
+					if (rand() < transmission) {
+						// Thin walled transmission: through the surface
+						next_dir = -next_dir;
+					}
 					weight = albedo*(1.0-metallic)/(1.0-p_specular)*(1.0-base_fresnel);
 				}
 			}

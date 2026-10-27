@@ -18,12 +18,15 @@ cmake --build runtime/cpp/build --config Release
 ## mmr_render
 
 ```
-mmr_render <package.mmr> [-o <dir>] [--set name=value ...] [--exr] [--list] [--device n]
+mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--size n] [--exr] [--list] [--device n]
 ```
 
 renders the package's outputs (albedo, orm, emission, normal, height) to
 PNG (or EXR) files. Color values are written `r,g,b,a`. Animated materials
-have a `time` parameter, in seconds.
+have a `time` parameter, in seconds, and materials with random nodes a `seed`
+parameter (`--set seed=3` gives the same result as exporting with
+Material Maker's `--seed 3`). `--size` renders the outputs at another size
+(all passes are scaled, `Package::set_output_size()` in the library).
 
 ## Library
 

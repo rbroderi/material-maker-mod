@@ -27,6 +27,8 @@ bl_info = {
 
 PACKAGE_KEY = "mmr_package"
 PARAMETER_PREFIX = "mmr:"
+# Size of the rendered textures (0: the size they were exported with)
+SIZE_KEY = "mmr_size"
 # Output channels and how they are used
 COLOR_CHANNELS = {"albedo", "emission"}
 
@@ -75,6 +77,11 @@ def parameter_values(material, manifest):
     return rv
 
 
+def render_signature(material, manifest):
+    """What the textures depend on: parameter values and size"""
+    return parameter_values(material, manifest) + ["size=%d" % int(material.get(SIZE_KEY, 0))]
+
+
 def render_textures(context, material):
     """Renders the package's outputs with the material's parameter values, and
     returns { channel: file path }"""
@@ -87,6 +94,8 @@ def render_textures(context, material):
     command = [executable, package, "-o", out]
     for s in parameter_values(material, manifest):
         command += ["--set", s]
+    if int(material.get(SIZE_KEY, 0)) > 0:
+        command += ["--size", str(int(material[SIZE_KEY]))]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError("mmr_render failed: " + (result.stderr or result.stdout).strip())
@@ -109,7 +118,7 @@ def update_images(context, material):
     """Renders the textures again and reloads the material's images"""
     for channel, path in render_textures(context, material).items():
         load_image(path, channel)
-    material["mmr_rendered"] = parameter_values(material, read_manifest(bpy.path.abspath(material[PACKAGE_KEY])))
+    material["mmr_rendered"] = render_signature(material, read_manifest(bpy.path.abspath(material[PACKAGE_KEY])))
 
 
 def build_material(context, material, manifest):
@@ -187,7 +196,7 @@ def build_material(context, material, manifest):
         displacement.inputs["Scale"].default_value = 0.1 * settings["depth_scale"]
         links.new(height.outputs["Color"], displacement.inputs["Height"])
         links.new(displacement.outputs["Displacement"], output.inputs["Displacement"])
-    material["mmr_rendered"] = parameter_values(material, manifest)
+    material["mmr_rendered"] = render_signature(material, manifest)
 
 
 def add_parameters(material, manifest):
@@ -198,6 +207,10 @@ def add_parameters(material, manifest):
         if p.get("type") == "color":
             material[key] = [float(x) for x in default]
             material.id_properties_ui(key).update(subtype="COLOR", min=0.0, max=1.0, description=p.get("label", p["name"]))
+        elif p.get("type") == "seed":
+            # The seed of all random nodes (as Material Maker's --seed)
+            material[key] = int(default)
+            material.id_properties_ui(key).update(min=0, max=int(p.get("max", 1000)), description="Seed of the random nodes")
         else:
             material[key] = float(default)
             material.id_properties_ui(key).update(min=float(p.get("min", 0.0)), max=float(p.get("max", 1.0)),
@@ -222,6 +235,8 @@ class MMR_OT_import(bpy.types.Operator, ImportHelper):
             return {"CANCELLED"}
         material = bpy.data.materials.new(manifest.get("name") or os.path.splitext(os.path.basename(self.filepath))[0])
         material[PACKAGE_KEY] = self.filepath
+        material[SIZE_KEY] = 0
+        material.id_properties_ui(SIZE_KEY).update(min=0, max=16384, description="Size of the rendered textures (0: the exported size)")
         add_parameters(material, manifest)
         try:
             build_material(context, material, manifest)
@@ -314,6 +329,8 @@ class MMR_PT_material(bpy.types.Panel):
             row = box.row(align=True)
             for name in presets:
                 row.operator(MMR_OT_apply_preset.bl_idname, text=name).preset = name
+        if SIZE_KEY in material:
+            layout.prop(material, '["%s"]' % SIZE_KEY, text="Texture size (0: exported)")
         prefs = addon_preferences(context)
         row = layout.row()
         row.operator(MMR_OT_update.bl_idname, icon="FILE_REFRESH")
@@ -345,7 +362,7 @@ def live_update_timer():
                 continue
             try:
                 manifest = read_manifest(bpy.path.abspath(material[PACKAGE_KEY]))
-                if list(material.get("mmr_rendered", [])) != parameter_values(material, manifest):
+                if list(material.get("mmr_rendered", [])) != render_signature(material, manifest):
                     update_images(context, material)
             except (OSError, KeyError, ValueError, RuntimeError, zipfile.BadZipFile):
                 pass
