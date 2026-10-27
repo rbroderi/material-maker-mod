@@ -50,3 +50,9 @@ The **Advanced Buffer** node has the following parameters:
 * the *size mode*: *Absolute* uses the *texture resolution*, and *Relative to output* uses the
   size of the graph's material multiplied by 2 to the power of *size offset*, so the buffer
   follows the output resolution when it is changed (including the size of command line exports)
+
+Buffer nodes show their resolution and format (16F, 32F or 8 bits, grayscale or RGBA) under
+the node. The *texture resolution* is greyed out in *Relative to output* mode, and the
+*size offset* in *Absolute* mode. An orange warning is shown when an 8 bits Advanced Buffer
+feeds a node that computes normals or uses heights (directly, through reroutes or through
+groups), because 256 levels are usually not enough for them and steps become visible.
