@@ -52,7 +52,7 @@ func save_swatches() -> void:
 
 func load_swatches() -> void:
 	var picker : ColorPicker = get_picker()
-	var swatches : Array = mm_globals.get_config("color_swatches") if mm_globals.has_config("color_swatches") else []
+	var swatches : Array = mm_globals.get_config_or("color_swatches", [])
 	var current : Array = Array(picker.get_presets()).map(func(c : Color): return c.to_html())
 	if current == swatches:
 		return

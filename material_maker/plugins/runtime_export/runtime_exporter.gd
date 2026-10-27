@@ -1,5 +1,4 @@
 extends RefCounted
-class_name MMRuntimeExporter
 
 
 # Exports a material graph as a runtime package (.mmr): the compute shader
@@ -11,11 +10,11 @@ const FORMAT_VERSION : int = 1
 
 ## Material outputs that are exported (when one of their inputs is connected)
 const CHANNELS : Array[Dictionary] = [
-	{ name="albedo", output=0, inputs=[ "albedo_tex", "opacity_tex" ] },
-	{ name="orm", output=1, inputs=[ "ao_tex", "roughness_tex", "metallic_tex" ] },
-	{ name="emission", output=2, inputs=[ "emission_tex" ] },
-	{ name="normal", output=3, inputs=[ "normal_tex" ] },
-	{ name="height", output=8, inputs=[ "depth_tex" ] },
+	{ name="albedo", output=MMGenMaterial.OUTPUT_ALBEDO, inputs=[ "albedo_tex", "opacity_tex" ] },
+	{ name="orm", output=MMGenMaterial.OUTPUT_ORM, inputs=[ "ao_tex", "roughness_tex", "metallic_tex" ] },
+	{ name="emission", output=MMGenMaterial.OUTPUT_EMISSION, inputs=[ "emission_tex" ] },
+	{ name="normal", output=MMGenMaterial.OUTPUT_NORMAL, inputs=[ "normal_tex" ] },
+	{ name="height", output=MMGenMaterial.OUTPUT_HEIGHT, inputs=[ "depth_tex" ] },
 ]
 
 ## Material parameters stored in the manifest, for engines to build materials
@@ -31,23 +30,17 @@ var buffer_by_texture : Dictionary = {}
 var errors : PackedStringArray = PackedStringArray()
 
 
-## Exports graph to an .mmr file, returns the errors (warnings are printed)
 ## Exports a runtime package, whose outputs are size x size pixels (or size x
-## height when height is not 0)
-static func export_package(graph : MMGenGraph, path : String, size : int = 0, height : int = 0) -> PackedStringArray:
-	var exporter : MMRuntimeExporter = MMRuntimeExporter.new()
-	return await exporter.do_export(graph, path, size, height)
-
-func do_export(graph : MMGenGraph, path : String, size : int, height : int = 0) -> PackedStringArray:
-	var material : MMGenBase = null
-	for c in graph.get_children():
-		if c.has_method("get_export_profiles"):
-			material = c
+## height when height is not 0), returns the errors
+func do_export(graph : MMGenGraph, path : String, size : int = 0, height : int = 0) -> PackedStringArray:
+	var material : MMGenBase = MMCliTools.find_material_node(graph)
 	if material == null:
 		errors.append("the graph has no material node")
 		return errors
 	if size <= 0:
 		size = material.get_image_size()
+		if height <= 0:
+			height = material.get_image_height()
 	collect_buffers(graph)
 	var input_indexes : Dictionary = {}
 	var input_defs : Array = material.get_input_defs()
@@ -57,7 +50,7 @@ func do_export(graph : MMGenGraph, path : String, size : int, height : int = 0) 
 	for channel in CHANNELS:
 		if not channel.inputs.any(func(n): return input_indexes.has(n) and material.get_source(input_indexes[n]) != null):
 			continue
-		var compute_shader : MMComputeShader = await create_output_shader(material, channel.output)
+		var compute_shader : MMComputeShader = await material.create_output_compute_shader(channel.output)
 		if compute_shader == null:
 			errors.append("cannot compile the %s output" % channel.name)
 			continue
@@ -101,32 +94,8 @@ static func write_zip_file(zip : ZIPPacker, file_name : String, data : PackedByt
 ## Finds buffers in the graph, its subgraphs, and the automatic buffers of
 ## shader nodes (that are their children)
 func collect_buffers(generator : Node) -> void:
-	for c in generator.get_children():
-		if c is MMGenBuffer:
-			buffer_by_texture[c.texture] = c
-		collect_buffers(c)
-
-## Compiles an output of the material as render_output_to_texture does
-static func create_output_shader(material : MMGenBase, output_index : int) -> MMComputeShader:
-	var context : MMGenContext = MMGenContext.new()
-	var source : MMGenBase.ShaderCode = material.get_shader_code("uv", output_index, context)
-	if source.output_type == "f":
-		source.output_type = "rgba"
-	if not source.output_values.has("rgba"):
-		var preview_code : String = mm_io_types.types[source.output_type].preview
-		preview_code = preview_code.replace("uniform", "const")
-		preview_code = preview_code.replace("const sampler2D", "uniform sampler2D")
-		preview_code = preview_code.replace("preview_size", "64")
-		preview_code = preview_code.replace("$(code)", source.code)
-		preview_code = preview_code.replace("$(value)", source.output_values[source.output_type])
-		source.defs += preview_code
-		source.code = ""
-		source.output_values.rgba = "preview_2d(uv)"
-		source.output_type = "rgba"
-	var compute_shader : MMComputeShader = MMComputeShader.new()
-	if not await compute_shader.set_shader_from_shadercode(source, false):
-		return null
-	return compute_shader
+	for b in MMCliTools.collect_generators(generator, func(g): return g is MMGenBuffer):
+		buffer_by_texture[b.texture] = b
 
 ## Adds a pass (after the passes it depends on) and returns its name
 func add_pass(compute_shader : MMComputeShader, size : Vector2i) -> String:
@@ -170,8 +139,7 @@ func add_buffer_pass(buffer : MMGenBuffer) -> String:
 		if not compute_shader.compiled_sources.has("compute"):
 			# Not compiled (yet): use its current content
 			return ""
-		var size : int = 1 << buffer.get_buffer_size()
-		pass_by_texture[buffer.texture] = await add_pass(compute_shader, Vector2i(size, size))
+		pass_by_texture[buffer.texture] = await add_pass(compute_shader, buffer.get_buffer_dimensions())
 	return pass_by_texture[buffer.texture]
 
 ## Saves a texture that is not rendered by an exported pass (EXR for float
@@ -225,12 +193,9 @@ func get_runtime_parameters(graph : MMGenGraph) -> Dictionary:
 					continue
 				for target in resolve_parameter(node, lw.widget):
 					var uniform_name : String = "p_o%d_%s" % [ target[0].get_instance_id(), target[1] ]
-					var found : bool = false
-					for p in passes:
-						if p.parameters.has(uniform_name):
-							targets.append({ "pass": p.name, "parameter": uniform_name })
-							found = true
-					if not found:
+					var uniform_targets : Array = targets_for(uniform_name)
+					targets.append_array(uniform_targets)
+					if uniform_targets.is_empty():
 						missing.append("%s:%s" % [ target[0].name, target[1] ])
 			if not missing.is_empty() or targets.is_empty():
 				baked.append("%s: %s not a shader uniform" % [ description, ", ".join(missing) if not missing.is_empty() else "no target is" ])
@@ -275,10 +240,16 @@ func add_seed_targets(generator : Node, top : Node, targets : Array) -> void:
 			if node.is_seed_locked() or node.get_parent().get("transmits_seed") == null or not node.get_parent().transmits_seed:
 				break
 			node = node.get_parent()
-		for p in passes:
-			if p.parameters.has(uniform_name):
-				targets.append({ "pass": p.name, "parameter": uniform_name, "terms": terms })
+		targets.append_array(targets_for(uniform_name, { terms=terms }))
 		add_seed_targets(c, top, targets)
+
+## Parameter targets of a uniform: the passes that declare it
+func targets_for(uniform_name : String, extra : Dictionary = {}) -> Array:
+	var targets : Array = []
+	for p in passes:
+		if p.parameters.has(uniform_name):
+			targets.append({ "pass": p.name, "parameter": uniform_name }.merged(extra))
+	return targets
 
 ## Presets of the remote nodes, restricted to the runtime parameters
 func get_presets(graph : MMGenGraph, parameters : Array) -> Dictionary:

@@ -9,9 +9,14 @@ extension so double-clicking on them will directly open them.
 
 Material Maker can also process files without user interface, using one of the following
 modes. The window is minimized (rendering needs a GPU), unless **--show-window** is used.
-Godot's **--headless** option cannot be used: it replaces the renderer by a dummy one, so no
-GPU device can be created (Material Maker then stops with an error). On Linux servers without
-a display, use a virtual one (for example **xvfb-run**).
+
+Godot's **--headless** option replaces the renderer by a dummy one. Material Maker builds made
+with **material_maker/misc/headless.patch** (applied by the *Build Export Templates* GitHub
+workflow, whose templates the release builds use) still create GPU devices without a display,
+so **--headless** runs work on servers and in containers without a display server (with any
+Vulkan driver, including Mesa's software lavapipe). Other builds (and a stock Godot) run again
+without **--headless**, with a minimized window: on Linux systems without a display, this
+needs **xvfb-run** (from the *xvfb* package), that provides a virtual one.
 
  material_maker --export-material [options] <input_files>
  material_maker --render --node <node[:output]> [options] <input_files>
@@ -43,6 +48,8 @@ Modes
 * **--export-mmr** exports runtime packages (see :ref:`export-section`), named <input>.mmr
   (the material's size is used unless **--size** is given)
 * **--rpc** starts a JSON-RPC server to control Material Maker from scripts (see :ref:`scripting-section`)
+* **--plugin <command> [arguments]** runs a command added by a plugin (see :ref:`scripting-section`),
+  for example **--plugin axf_import material.axf output_dir** to import an AxF material
 
 Options
 -------
@@ -54,7 +61,8 @@ Options
   %n and %N the material name, %a and %A its author)
 * **--size <size>** is the size of generated images. For **--render**, **--export-material** and
   **--export-mmr**, **<width>x<height>** (for example 2048x1024) generates non-square outputs:
-  the graph is stretched to the image's shape, and buffers keep their (square) sizes
+  the graph is stretched to the image's shape, and buffers keep their sizes. Without a height,
+  exports use the Material node's aspect ratio
 * **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values)
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example
@@ -80,11 +88,17 @@ Options
   High Poly Bake node)
 * **--skew <image>** is a skew map for **--high**
 * **--high-texture <image>** is the texture of the **--high** mesh, for the **texture** map
+* **--udim** bakes each UDIM tile used by the input mesh's UVs (with **--high**), to files named
+  <mesh>_<map>.<tile>.png (for example model_normal_tangent.1002.png)
+* **--software-raytracing** bakes **--high** maps without hardware ray tracing, even when the GPU
+  supports it
 * **--rpc-port <port>** is the port of the JSON-RPC server (the default is 7680). When used without
   **--rpc**, Material Maker starts with its user interface and a server
 
 Examples
 --------
+
+ material_maker --bake --high sculpt.obj --udim --size 2048 -o maps model.obj
 
  material_maker --export-material --target "Godot/Godot 4 Standard" -o out materials/*.ptex
  material_maker --render --node Material:0 --set Hue=0.3 --variations 4 --size 1024 -o out bricks.ptex

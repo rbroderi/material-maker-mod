@@ -104,19 +104,22 @@ String MMOCIO::get_role(const String &role) const {
 	return color_space ? String::utf8(color_space->getName()) : String();
 }
 
-OCIO::ConstCPUProcessorRcPtr MMOCIO::get_processor(const std::string &key, const OCIO::ConstTransformRcPtr &transform) {
+OCIO::ConstCPUProcessorRcPtr MMOCIO::get_processor(const std::string &key, const std::function<OCIO::ConstTransformRcPtr()> &create_transform) {
 	if (!config) {
 		error = "no config";
 		return nullptr;
 	}
+	// The transform is only built when the processor is not cached
 	auto it = processors.find(key);
 	if (it != processors.end()) {
+		error = "";
 		return it->second;
 	}
 	try {
-		OCIO::ConstProcessorRcPtr processor = config->getProcessor(transform);
+		OCIO::ConstProcessorRcPtr processor = config->getProcessor(create_transform());
 		OCIO::ConstCPUProcessorRcPtr cpu = processor->getDefaultCPUProcessor();
 		processors[key] = cpu;
+		error = "";
 		return cpu;
 	} catch (const OCIO::Exception &e) {
 		error = String::utf8(e.what());
@@ -125,18 +128,27 @@ OCIO::ConstCPUProcessorRcPtr MMOCIO::get_processor(const std::string &key, const
 }
 
 OCIO::ConstCPUProcessorRcPtr MMOCIO::conversion_processor(const String &source, const String &destination) {
-	OCIO::ColorSpaceTransformRcPtr transform = OCIO::ColorSpaceTransform::Create();
-	transform->setSrc(to_std(source).c_str());
-	transform->setDst(to_std(destination).c_str());
-	return get_processor("cs:" + to_std(source) + ">" + to_std(destination), transform);
+	std::string src = to_std(source);
+	std::string dst = to_std(destination);
+	return get_processor("cs:" + src + ">" + dst, [&]() -> OCIO::ConstTransformRcPtr {
+		OCIO::ColorSpaceTransformRcPtr transform = OCIO::ColorSpaceTransform::Create();
+		transform->setSrc(src.c_str());
+		transform->setDst(dst.c_str());
+		return transform;
+	});
 }
 
 OCIO::ConstCPUProcessorRcPtr MMOCIO::display_view_processor(const String &source, const String &display, const String &view) {
-	OCIO::DisplayViewTransformRcPtr transform = OCIO::DisplayViewTransform::Create();
-	transform->setSrc(to_std(source).c_str());
-	transform->setDisplay(to_std(display).c_str());
-	transform->setView(to_std(view).c_str());
-	return get_processor("dv:" + to_std(source) + ">" + to_std(display) + "/" + to_std(view), transform);
+	std::string src = to_std(source);
+	std::string d = to_std(display);
+	std::string v = to_std(view);
+	return get_processor("dv:" + src + ">" + d + "/" + v, [&]() -> OCIO::ConstTransformRcPtr {
+		OCIO::DisplayViewTransformRcPtr transform = OCIO::DisplayViewTransform::Create();
+		transform->setSrc(src.c_str());
+		transform->setDisplay(d.c_str());
+		transform->setView(v.c_str());
+		return transform;
+	});
 }
 
 PackedFloat32Array MMOCIO::apply(OCIO::ConstCPUProcessorRcPtr processor, const PackedFloat32Array &rgba) {

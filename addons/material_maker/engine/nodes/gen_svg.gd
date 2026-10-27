@@ -138,15 +138,9 @@ func update_texture() -> void:
 # The file path is stored relative to the project, as for images
 
 func _serialize_data(data: Dictionary) -> Dictionary:
-	var path : String = data.parameters.get("file", "")
-	path = path.replace(mm_loader.current_project_path, "%PROJECT_PATH%")
-	path = path.replace(OS.get_user_data_dir(), "%USER_DATA_PATH%")
-	path = path.replace(MMPaths.get_resource_dir(), "%MATERIAL_MAKER_PATH%")
-	data.parameters.file = path
+	data.parameters.file = MMPaths.encode_path(data.parameters.get("file", ""))
 	return data
 
 func _deserialize(data : Dictionary) -> void:
 	if data.has("parameters") and data.parameters.has("file"):
-		data.parameters.file = data.parameters.file.replace("%PROJECT_PATH%", mm_loader.current_project_path)
-		data.parameters.file = data.parameters.file.replace("%USER_DATA_PATH%", OS.get_user_data_dir())
-		data.parameters.file = data.parameters.file.replace("%MATERIAL_MAKER_PATH%", MMPaths.get_resource_dir())
+		data.parameters.file = MMPaths.decode_path(data.parameters.file)

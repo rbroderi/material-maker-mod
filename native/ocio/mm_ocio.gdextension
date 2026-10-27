@@ -8,8 +8,14 @@ reloadable = false
 
 windows.x86_64 = "res://addons/material_maker/ocio/bin/mm_ocio.windows.x86_64.dll"
 linux.x86_64 = "res://addons/material_maker/ocio/bin/mm_ocio.linux.x86_64.so"
-macos = "res://addons/material_maker/ocio/bin/mm_ocio.macos.x86_64.dylib"
+linux.arm64 = "res://addons/material_maker/ocio/bin/mm_ocio.linux.arm64.so"
+macos.x86_64 = "res://addons/material_maker/ocio/bin/mm_ocio.macos.x86_64.dylib"
+macos.arm64 = "res://addons/material_maker/ocio/bin/mm_ocio.macos.arm64.dylib"
 
 [dependencies]
 
 windows.x86_64 = { "res://addons/material_maker/ocio/bin/OpenColorIO_2_6.dll": "" }
+linux.x86_64 = { "res://addons/material_maker/ocio/bin/libOpenColorIO.so.2.6": "" }
+linux.arm64 = { "res://addons/material_maker/ocio/bin/libOpenColorIO.so.2.6": "" }
+macos.x86_64 = { "res://addons/material_maker/ocio/bin/libOpenColorIO.2.6.dylib": "" }
+macos.arm64 = { "res://addons/material_maker/ocio/bin/libOpenColorIO.2.6.dylib": "" }

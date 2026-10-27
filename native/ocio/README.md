@@ -18,11 +18,20 @@ since Material Maker works with sRGB encoded colors).
 ## Building
 
 Needs git, CMake 3.24+, Python 3 and a C++17 compiler (on Windows, Visual Studio
-Build Tools with the C++ workload):
+Build Tools with the C++ workload; on Linux, GCC or Clang; on macOS, Xcode's
+command line tools):
 
 ```
 python native/ocio/build.py --generator "Visual Studio 18 2026"
+python3 native/ocio/build.py            # Linux and macOS
 ```
+
+The extension is named after the platform and architecture
+(`mm_ocio.windows.x86_64.dll`, `mm_ocio.linux.x86_64.so`,
+`mm_ocio.macos.arm64.dylib`...). On Linux and macOS, OpenColorIO's library is
+copied next to it and found through an `$ORIGIN`/`@loader_path` rpath. Building
+for macOS needs a Mac (Apple's SDK). The `native-builds.yml` GitHub workflow
+builds the extension for Linux, Windows and macOS.
 
 It downloads OpenColorIO and godot-cpp to `native/ocio/build`, builds them,
 and copies the extension, OpenColorIO's library and `mm_ocio.gdextension` to

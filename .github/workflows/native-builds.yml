@@ -1,0 +1,92 @@
+name: "Native builds (runtime and OpenColorIO)"
+
+# Builds the C++ runtime (mmr_render) and the OpenColorIO GDExtension for
+# Windows, Linux and macOS. On Linux, mmr_render renders a test package with
+# Mesa's software Vulkan driver (lavapipe). macOS builds can't be produced on
+# other platforms without Apple's SDK, so they use macOS runners.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'runtime/cpp/**'
+      - 'native/ocio/**'
+      - '.github/workflows/native-builds.yml'
+  pull_request:
+    paths:
+      - 'runtime/cpp/**'
+      - 'native/ocio/**'
+      - '.github/workflows/native-builds.yml'
+
+jobs:
+  runtime:
+    name: C++ runtime (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, windows-2022, macos-14 ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S runtime/cpp -B runtime/cpp/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build runtime/cpp/build --config Release --parallel
+
+      - name: Install a software Vulkan driver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers libvulkan1
+
+      - name: Render the test package
+        if: runner.os == 'Linux'
+        run: python3 runtime/cpp/tests/check_render.py runtime/cpp/build/mmr_render
+
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ -f runtime/cpp/build/Release/mmr_render.exe ]; then
+            cp runtime/cpp/build/Release/mmr_render.exe dist/
+          else
+            cp runtime/cpp/build/mmr_render dist/
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: mmr_render-${{ runner.os }}-${{ runner.arch }}
+          path: dist
+
+  ocio:
+    name: OpenColorIO extension (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, windows-2022, macos-14 ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Cache OpenColorIO and godot-cpp
+        uses: actions/cache@v4
+        with:
+          path: |
+            native/ocio/build/ocio-src
+            native/ocio/build/ocio-install
+            native/ocio/build/godot-cpp
+          key: ${{ runner.os }}-${{ runner.arch }}-ocio-${{ hashFiles('native/ocio/build.py') }}
+
+      - name: Build
+        run: python native/ocio/build.py --jobs 4
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: mm_ocio-${{ runner.os }}-${{ runner.arch }}
+          path: addons/material_maker/ocio

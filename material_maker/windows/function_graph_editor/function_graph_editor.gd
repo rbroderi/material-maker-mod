@@ -1,4 +1,4 @@
-extends Window
+extends MMToolWindow
 class_name MMFunctionGraphEditor
 
 
@@ -53,17 +53,7 @@ var ok_button : Button
 
 
 func _init() -> void:
-	title = "Function graph"
-	size = Vector2i(1200, 720)
-	min_size = Vector2i(800, 400)
-	close_requested.connect(queue_free)
-	var margin : MarginContainer = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in [ "left", "right", "top", "bottom" ]:
-		margin.add_theme_constant_override("margin_"+side, 6)
-	add_child(margin)
-	var vbox : VBoxContainer = VBoxContainer.new()
-	margin.add_child(vbox)
+	var vbox : VBoxContainer = create_layout("Function graph", Vector2i(1200, 720), Vector2i(800, 400))
 	# Toolbar
 	var toolbar : HBoxContainer = HBoxContainer.new()
 	vbox.add_child(toolbar)
@@ -120,13 +110,6 @@ func _init() -> void:
 	history_timer.wait_time = 0.5
 	history_timer.timeout.connect(record_state)
 	add_child(history_timer)
-
-static func add_button(parent : Control, text : String, callable : Callable) -> Button:
-	var button : Button = Button.new()
-	button.text = text
-	button.pressed.connect(callable)
-	parent.add_child(button)
-	return button
 
 ## Starts editing a function graph
 func edit(g : Dictionary, m : String, window_title : String = "", parameters : Array = []) -> void:

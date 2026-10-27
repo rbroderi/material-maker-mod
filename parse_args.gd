@@ -59,10 +59,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			from_website = true
 		if gen != null:
 			add_child(gen)
-			if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
-				show_error("ERROR: %s: no preset '%s'" % [ f.get_file(), options.preset ])
-			for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
-				show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+			apply_graph_options(gen, f, options)
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
@@ -106,16 +103,45 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
-const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--export-volume", "--bake", "--list-parameters", "--export-mmr", "--rpc", "--help" ]
+# Plugins add other modes (see MMPlugins.API.add_cli_mode), e.g. --export-volume
+# and --export-mmr
+const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--rpc", "--plugin", "--help" ]
+
+## Options that set a value: option -> { key, type (TYPE_BOOL for flags),
+## minimum } (plugin modes add theirs, see MMPlugins.API.add_cli_mode)
+const VALUE_OPTIONS : Dictionary = {
+	# -t is also Godot's --always-on-top, so it only works after "--"
+	"-t": { key="target", type=TYPE_STRING }, "--target": { key="target", type=TYPE_STRING },
+	"-o": { key="output_dir", type=TYPE_STRING }, "--output-dir": { key="output_dir", type=TYPE_STRING },
+	"--output-file": { key="output_file", type=TYPE_STRING },
+	"--seed": { key="seed", type=TYPE_INT },
+	"--variations": { key="variations", type=TYPE_INT, minimum=1 },
+	"--format": { key="format", type=TYPE_STRING },
+	"--node": { key="node", type=TYPE_STRING },
+	"--preset": { key="preset", type=TYPE_STRING },
+	"--high": { key="high", type=TYPE_STRING },
+	"--cage": { key="cage", type=TYPE_STRING },
+	"--skew": { key="skew", type=TYPE_STRING },
+	"--high-texture": { key="high_texture", type=TYPE_STRING },
+	"--match-names": { key="match_names", type=TYPE_BOOL },
+	"--udim": { key="udim", type=TYPE_BOOL },
+	"--software-raytracing": { key="software_raytracing", type=TYPE_BOOL },
+	"--front": { key="front", type=TYPE_FLOAT },
+	"--rear": { key="rear", type=TYPE_FLOAT },
+	"--samples": { key="samples", type=TYPE_INT, minimum=1 },
+	"--frames": { key="frames", type=TYPE_INT, minimum=1 },
+	"--duration": { key="duration", type=TYPE_FLOAT },
+	"--columns": { key="columns", type=TYPE_INT },
+	"--rpc-port": { key="rpc_port", type=TYPE_INT },
+}
 
 const HELP : String = """Material Maker command line
 
   material_maker --export-material [options] <files>   export materials for an engine
   material_maker --render --node <node[:output]> [options] <files>   render a node output
-  material_maker --export-volume --node <node[:output]> [options] <files>   export a 3D texture or SDF as a volume
   material_maker --bake [--maps <map,...>] [--high <mesh>] [options] <meshes>   bake mesh maps
   material_maker --list-parameters <files>   list the parameters that can be set
-  material_maker --export-mmr [options] <files>   export runtime packages (.mmr)
+  material_maker --plugin <command> [arguments]   run a command of a plugin
   material_maker --rpc [--rpc-port <port>]   run a JSON-RPC server without user interface
   material_maker --rpc-port <port>   start the user interface with a JSON-RPC server
   material_maker -- --help   show this help
@@ -125,16 +151,13 @@ Options:
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels, or <width>x<height> for non-square outputs of --render,
-                             --export-material and --export-mmr (buffers stay square)
+                             --export-material and plugin modes (buffers stay square)
   --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
-  --format <png|exr>         image format of --render, or volume format of --export-volume (vdb, dds or ktx2)
-  --voxels <n>               voxels in each direction of --export-volume (default: 128)
-  --extent <size>            size of the box sampled by --export-volume (default: 1, the box is centered)
-  --texel-format <format>    texel format of --export-volume to dds or ktx2 (rgba16f, rgba32f, rgba8, r16f, r32f)
+  --format <format>          image format of --render (png or exr), or the format of plugin modes
   --color-space <space>      OCIO color space of exported color maps (albedo, emission), e.g. ACEScg
   --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
   --duration <seconds>       duration of the animation of --frames (default: 1)
@@ -151,7 +174,11 @@ Options:
                              with the same name (ignoring _low/_high suffixes)
   --skew <image>             skew map for --high: white bends rays towards the face normal
   --high-texture <image>     texture of the high poly mesh, for the "texture" map of --high
-  --show-window              do not minimize the window (rendering needs a window, not --headless)
+  --udim                     bake each UDIM tile of the mesh's UVs to <mesh>_<map>.<tile>.png
+  --software-raytracing      bake --high maps with the software ray caster (by default, hardware
+                             ray tracing is used when the GPU supports it)
+  --show-window              do not minimize the window (with --headless, builds without headless.patch
+                             run again with a hidden window, using xvfb-run when there is no display)
   --rpc-port <port>          port of the JSON-RPC server (localhost only, default 7680)
 """
 
@@ -164,6 +191,8 @@ func _ready():
 		if m in args:
 			mode = m
 			break
+	if mode == "":
+		mode = MMPlugins.find_cli_mode(args)
 	if mode == "":
 		var no_logo : bool = ( args.find("--no-splash") != -1 )
 		var scene : PackedScene
@@ -178,21 +207,26 @@ func _ready():
 		get_tree().change_scene_to_packed(scene)
 		return
 	if mode == "--help":
-		print(HELP)
+		print(get_help())
 		get_tree().quit()
 		return
-	# Rendering needs a window: Godot's headless mode replaces the renderer by
-	# a dummy one, so no RenderingDevice can be created. The window (1x1 and
-	# transparent, see project.godot) is minimized instead: Godot does not
-	# allow hiding its main window.
-	if DisplayServer.get_name() == "headless" and mode != "--list-parameters":
-		printerr("ERROR: Material Maker needs a GPU, which Godot does not provide with --headless.")
-		printerr("Run without --headless: the window is minimized in command line modes (on Linux")
-		printerr("servers without a display, use a virtual one, for example xvfb-run).")
-		get_tree().quit(1)
-		return
-	if not "--show-window" in args:
+	# Godot's headless mode replaces the renderer by a dummy one. Godot builds
+	# with Material Maker's headless patch (material_maker/misc/headless.patch)
+	# still create local rendering devices (from a Vulkan context without
+	# surface); with stock Godot, rendering needs a window, that is minimized
+	# (1x1 and transparent, see project.godot: Godot does not allow hiding
+	# its main window), so Material Maker runs again without --headless.
+	var headless : bool = DisplayServer.get_name() == "headless"
+	if headless and mode != "--list-parameters":
+		var rd : RenderingDevice = RenderingServer.create_local_rendering_device()
+		if rd == null:
+			get_tree().quit(run_with_hidden_window())
+			return
+		rd.free()
+	if not headless and not "--show-window" in args:
 		get_window().mode = Window.MODE_MINIMIZED
+	# Plugins add nodes, export targets, RPC methods and commands
+	MMPlugins.load_plugins()
 	var dir : DirAccess = DirAccess.open(".")
 	print("Current dir: ", dir.get_current_dir())
 	var options : Dictionary = {
@@ -204,21 +238,22 @@ func _ready():
 	while i < args.size():
 		var arg : String = args[i]
 		var value : String = args[i+1] if i+1 < args.size() else ""
+		var option : Dictionary = VALUE_OPTIONS.get(arg, MMPlugins.cli_options.get(arg, {}))
+		if not option.is_empty():
+			if option.type == TYPE_BOOL:
+				options[option.key] = true
+			else:
+				var converted = type_convert(value, option.type)
+				options[option.key] = max(option.minimum, converted) if option.has("minimum") else converted
+				i += 1
+			i += 1
+			continue
 		match arg:
-			# -t is also Godot's --always-on-top, so it only works after "--"
-			"-t", "--target":
-				options.target = value
-				i += 1
-			"-o", "--output-dir":
-				options.output_dir = value
-				i += 1
-			"--output-file":
-				options.output_file = value
-				i += 1
 			"--size":
 				# A size, or width x height (e.g. 2048x1024) for non-square outputs
 				var dimensions : PackedStringArray = value.to_lower().split("x")
 				options.size = int(dimensions[0])
+				options.size_given = true
 				output_height = int(dimensions[1]) if dimensions.size() == 2 else 0
 				if options.size <= 0 or dimensions.size() > 2 or (dimensions.size() == 2 and output_height <= 0):
 					show_error("ERROR: incorrect size "+value)
@@ -228,66 +263,16 @@ func _ready():
 			"--set":
 				options.set.append(value)
 				i += 1
-			"--seed":
-				options.seed = int(value)
-				i += 1
-			"--variations":
-				options.variations = max(1, int(value))
-				i += 1
-			"--format":
-				options.format = value
-				i += 1
-			"--node":
-				options.node = value
-				i += 1
-			"--preset":
-				options.preset = value
-				i += 1
-			"--high", "--cage", "--skew":
-				options[arg.substr(2)] = value
-				i += 1
-			"--high-texture":
-				options.high_texture = value
-				i += 1
-			"--match-names":
-				options.match_names = true
-			"--front", "--rear":
-				options[arg.substr(2)] = float(value)
-				i += 1
-			"--samples":
-				options.samples = max(1, int(value))
-				i += 1
-			"--frames":
-				options.frames = max(1, int(value))
-				i += 1
-			"--voxels":
-				options.resolution = int(value)
-				i += 1
-			"--extent":
-				options.extent = float(value)
-				i += 1
-			"--texel-format":
-				options.texel_format = value
-				i += 1
 			"--color-space":
 				MMColorManagement.export_space_override = value
-				i += 1
-			"--duration":
-				options.duration = float(value)
-				i += 1
-			"--columns":
-				options.columns = int(value)
 				i += 1
 			"--maps":
 				options.maps = Array(value.split(",", false))
 				i += 1
 			"--show-window":
 				pass
-			"--rpc-port":
-				options.rpc_port = int(value)
-				i += 1
 			_:
-				if not arg in CLI_MODES:
+				if not arg in CLI_MODES and not MMPlugins.cli_modes.has(arg):
 					files.push_back(arg)
 		i += 1
 	if ! dir.dir_exists(options.output_dir):
@@ -299,20 +284,111 @@ func _ready():
 			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, options.size, options)
 		"--render":
 			await render_files(expand_files(files), options)
-		"--export-volume":
-			await export_volume_files(expand_files(files), options)
 		"--bake":
 			await bake_files(files, options)
 		"--list-parameters":
 			await list_parameters(expand_files(files))
-		"--export-mmr":
-			await export_mmr_files(expand_files(files), options)
 		"--rpc":
 			if start_rpc_server(options.get("rpc_port", MMRpcServer.DEFAULT_PORT)) != OK:
 				get_tree().quit(1)
 			elif not files.is_empty():
 				await get_tree().process_frame
 				await rpc_server.api_load({ path=files[0] })
+		"--plugin":
+			# A command of a plugin, with the following arguments
+			if files.is_empty() or not MMPlugins.commands.has(files[0]):
+				show_error("ERROR: unknown plugin command %s (commands: %s)" % [ files[0] if not files.is_empty() else "", ", ".join(MMPlugins.commands.keys()) ])
+				get_tree().quit(1)
+			else:
+				var exit_code = await MMPlugins.commands[files[0]].call(PackedStringArray(files.slice(1)))
+				get_tree().quit(exit_code if exit_code is int else 0)
+		_:
+			# A mode of a plugin, that quits (e.g. with process_graph_files)
+			# or returns an exit code
+			if MMPlugins.cli_modes.has(mode):
+				var exit_code = await MMPlugins.cli_modes[mode].callable.call(self, files, options)
+				if exit_code is int:
+					get_tree().quit(exit_code)
+			else:
+				show_error("ERROR: the plugin of %s could not be loaded" % mode)
+				get_tree().quit(1)
+
+## The help, with the modes and options of plugins
+func get_help() -> String:
+	MMPlugins.load_plugins()
+	if MMPlugins.cli_modes.is_empty():
+		return HELP
+	var lines : PackedStringArray = PackedStringArray([ "Modes of plugins:", "" ])
+	for m in MMPlugins.cli_modes.keys():
+		lines.append("  "+MMPlugins.cli_modes[m].usage)
+	lines.append("")
+	for o in MMPlugins.cli_options.keys():
+		lines.append("  %-26s %s" % [ o+" <value>" if MMPlugins.cli_options[o].type != TYPE_BOOL else o, MMPlugins.cli_options[o].help ])
+	return HELP+"\n"+"\n".join(lines)
+
+const PIPE_CHUNK : int = 4096
+
+## Runs Material Maker again without --headless (its window is minimized in
+## command line modes), under xvfb-run on Linux systems without a display,
+## relays its output and returns its exit code
+func run_with_hidden_window() -> int:
+	var args : PackedStringArray = OS.get_cmdline_args()
+	var i : int = 0
+	while i < args.size():
+		if args[i] == "--headless":
+			args.remove_at(i)
+		elif args[i] == "--display-driver" and i+1 < args.size() and args[i+1] == "headless":
+			args.remove_at(i)
+			args.remove_at(i)
+		else:
+			i += 1
+	if not OS.get_cmdline_user_args().is_empty():
+		args.append("--")
+		args.append_array(OS.get_cmdline_user_args())
+	var command : String = OS.get_executable_path()
+	var no_display : bool = OS.get_name() in [ "Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD" ] and OS.get_environment("DISPLAY") == "" and OS.get_environment("WAYLAND_DISPLAY") == ""
+	if no_display:
+		if OS.execute("sh", [ "-c", "command -v xvfb-run" ]) != 0:
+			printerr("ERROR: Material Maker needs a GPU, which this Godot build does not provide with --headless,")
+			printerr("and there is no display for a hidden window: install xvfb-run, or use a Material Maker")
+			printerr("build with headless rendering (see material_maker/misc/headless.patch).")
+			return 1
+		args = PackedStringArray([ "-a", command ]) + args
+		command = "xvfb-run"
+	print("This Godot build cannot render with --headless, running with a hidden window instead")
+	var process : Dictionary = OS.execute_with_pipe(command, args)
+	if process.is_empty():
+		printerr("ERROR: cannot run ", command)
+		return 1
+	var stderr_thread : Thread = Thread.new()
+	stderr_thread.start(relay_pipe.bind(process.stderr, true))
+	relay_pipe(process.stdio, false)
+	stderr_thread.wait_to_finish()
+	while OS.is_process_running(process.pid):
+		OS.delay_msec(10)
+	return OS.get_process_exit_code(process.pid)
+
+## Prints the lines read from a pipe until it is closed
+static func relay_pipe(pipe : FileAccess, error : bool) -> void:
+	var pending : PackedByteArray = PackedByteArray()
+	while true:
+		var data : PackedByteArray = pipe.get_buffer(PIPE_CHUNK)
+		if data.is_empty():
+			break
+		pending.append_array(data)
+		var end : int = pending.rfind(10)
+		if end != -1:
+			for line in pending.slice(0, end).get_string_from_utf8().split("\n"):
+				if error:
+					printerr(line.trim_suffix("\r"))
+				else:
+					print(line.trim_suffix("\r"))
+			pending = pending.slice(end+1)
+	if not pending.is_empty():
+		if error:
+			printerr(pending.get_string_from_utf8())
+		else:
+			print(pending.get_string_from_utf8())
 
 var rpc_server : MMRpcServer = null
 
@@ -364,12 +440,32 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 		show_error("ERROR: cannot load %s" % f)
 		return null
 	add_child(gen)
-	# Presets are applied before parameters set on the command line
+	apply_graph_options(gen, f, options)
+	return gen
+
+## Applies --preset, then --set values (presets are applied first)
+func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
 	if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
 		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(MMCliTools.get_preset_names(gen)) ])
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
 		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
-	return gen
+
+## Loads each graph and calls variation (suffix, gen, f, options) for each of
+## its variations, then quits. mode is the option named in the error message
+## when --node is required (empty when it is not).
+func process_graph_files(files : Array, options : Dictionary, variation : Callable, mode : String = "") -> void:
+	if mode != "" and options.node == "":
+		show_error("ERROR: %s requires --node <node[:output]>" % mode)
+		get_tree().quit(1)
+		return
+	for f : String in files:
+		var gen : MMGenBase = await load_graph(f, options)
+		if gen == null:
+			continue
+		await for_each_variation(gen, options, variation.bind(gen, f, options))
+		gen.queue_free()
+	print("Done")
+	get_tree().quit()
 
 ## Calls callable once per variation, after changing the seeds, with the
 ## suffix of the variation's files
@@ -385,8 +481,7 @@ func for_each_variation(gen : MMGenBase, options : Dictionary, callable : Callab
 
 func render_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
 	await MMCliTools.wait_for_renders(get_tree())
-	var node_name : String = options.node.replace("/", "_").replace(":", "_")
-	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), node_name, suffix, options.format ])
+	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), MMCliTools.spec_to_file_part(options.node), suffix, options.format ])
 	var error : String
 	if options.get("frames", 1) > 1:
 		error = await MMCliTools.render_flipbook(gen, options.node, options.size, options.frames, options.get("duration", 1.0), options.get("columns", 0), file_name)
@@ -398,48 +493,7 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 		print("Rendered %s" % file_name)
 
 func render_files(files : Array, options : Dictionary) -> void:
-	if options.node == "":
-		show_error("ERROR: --render requires --node <node[:output]>")
-		get_tree().quit(1)
-		return
-	for f : String in files:
-		var gen : MMGenBase = await load_graph(f, options)
-		if gen == null:
-			continue
-		await for_each_variation(gen, options, render_variation.bind(gen, f, options))
-		gen.queue_free()
-	print("Done")
-	get_tree().quit()
-
-func export_volume_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
-	await MMCliTools.wait_for_renders(get_tree())
-	var node_path : String = options.node.get_slice(":", 0)
-	var output : int = options.node.get_slice(":", 1).to_int() if options.node.contains(":") else 0
-	var generator = gen.get_node_or_null(NodePath(node_path))
-	if not generator is MMGenBase:
-		show_error("ERROR: %s: node '%s' not found" % [ f.get_file(), node_path ])
-		return
-	var format : String = options.format if options.format in MMVolumeExport.FORMATS else "vdb"
-	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), options.node.replace("/", "_").replace(":", "_"), suffix, format ])
-	var error : String = await MMVolumeExport.export_volume(generator, output, file_name, options.get("resolution", 128), options.get("extent", 1.0), options.get("texel_format", ""))
-	if error != "":
-		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
-	else:
-		print("Exported %s" % file_name)
-
-func export_volume_files(files : Array, options : Dictionary) -> void:
-	if options.node == "":
-		show_error("ERROR: --export-volume requires --node <node[:output]>")
-		get_tree().quit(1)
-		return
-	for f : String in files:
-		var gen : MMGenBase = await load_graph(f, options)
-		if gen == null:
-			continue
-		await for_each_variation(gen, options, export_volume_variation.bind(gen, f, options))
-		gen.queue_free()
-	print("Done")
-	get_tree().quit()
+	await process_graph_files(files, options, render_variation, "--render")
 
 func bake_files(files : Array[String], options : Dictionary) -> void:
 	if options.has("high") and options.maps == MMCliTools.DEFAULT_BAKE_MAPS:
@@ -448,25 +502,6 @@ func bake_files(files : Array[String], options : Dictionary) -> void:
 		var prefix : String = options.output_dir.path_join(f.get_file().get_basename())
 		for e in await MMCliTools.bake(f, options.maps, options.size, prefix, options):
 			show_error("ERROR: %s: %s" % [ f.get_file(), e ])
-	print("Done")
-	get_tree().quit()
-
-func export_mmr_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
-	await MMCliTools.wait_for_renders(get_tree())
-	var file_name : String = options.output_dir.path_join(f.get_file().get_basename()+suffix+".mmr")
-	# The material's size is used unless --size is given
-	var size : int = options.size if "--size" in OS.get_cmdline_args()+OS.get_cmdline_user_args() else 0
-	for e in await MMRuntimeExporter.export_package(gen, file_name, size, output_height):
-		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
-	print("Exported %s" % file_name)
-
-func export_mmr_files(files : Array, options : Dictionary) -> void:
-	for f : String in files:
-		var gen : MMGenBase = await load_graph(f, options)
-		if gen == null:
-			continue
-		await for_each_variation(gen, options, export_mmr_variation.bind(gen, f, options))
-		gen.queue_free()
 	print("Done")
 	get_tree().quit()
 

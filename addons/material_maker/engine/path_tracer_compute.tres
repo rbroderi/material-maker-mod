@@ -299,8 +299,9 @@ vec3 evaluate_bsdf(vec3 n, vec3 v, vec3 l, vec3 albedo, float metallic, float ro
 	float base_fresnel = 0.04+0.96*fresnel;
 	vec3 diffuse = albedo*(1.0-metallic)*(1.0-base_fresnel)/PI;
 	if (NdotL <= 0.0) {
-		// Thin walled transmission, light from behind
-		return below_coat*below_fuzz*transmission*diffuse*cNdotL;
+		// Thin walled transmission, light from behind (light refracted by
+		// solids is not sampled directly)
+		return thin_walled != 0 ? below_coat*below_fuzz*transmission*diffuse*cNdotL : vec3(0.0);
 	}
 	float a = roughness*roughness;
 	vec3 f0 = mix(vec3(0.04), albedo, metallic);
@@ -311,6 +312,68 @@ vec3 evaluate_bsdf(vec3 n, vec3 v, vec3 l, vec3 albedo, float metallic, float ro
 	float coat_specular = coat*ggx_d(NdotH, ca)*smith_g1(NdotV, ca)*smith_g1(cNdotL, ca)*coat_f/(4.0*NdotV*cNdotL);
 	vec3 base = specular+(1.0-transmission)*diffuse;
 	return (below_coat*(below_fuzz*base+vec3(0.5*fuzz/PI))+vec3(coat_specular))*cNdotL;
+}
+
+// Fresnel reflectance of a dielectric interface (eta = n_from/n_to), or 1.0
+// for total internal reflection
+float fresnel_dielectric(float cos_i, float eta) {
+	float sin2_t = eta*eta*max(1.0-cos_i*cos_i, 0.0);
+	if (sin2_t >= 1.0) {
+		return 1.0;
+	}
+	float cos_t = sqrt(1.0-sin2_t);
+	float rs = (eta*cos_i-cos_t)/(eta*cos_i+cos_t);
+	float rp = (cos_i-eta*cos_t)/(cos_i+eta*cos_t);
+	return 0.5*(rs*rs+rp*rp);
+}
+
+// Rough dielectric (GGX microfacets): reflects or refracts the ray (chosen by
+// Fresnel), returns the weight (Walter et al. 2007, for half vectors sampled
+// from D(h)cos)
+vec3 dielectric_bounce(inout vec3 dir, vec3 n, vec3 v, float a, float eta) {
+	vec3 h = sample_ggx(n, a);
+	float VdotH = dot(v, h);
+	if (VdotH <= 0.0) {
+		return vec3(0.0);
+	}
+	float f = fresnel_dielectric(VdotH, eta);
+	vec3 l;
+	if (rand() < f) {
+		l = reflect(-v, h);
+		if (dot(n, l) <= 0.0) {
+			return vec3(0.0);
+		}
+	} else {
+		l = refract(-v, h, eta);
+		if (dot(n, l) >= 0.0 || dot(l, l) == 0.0) {
+			return vec3(0.0);
+		}
+	}
+	float NdotV = max(dot(n, v), 0.0001);
+	float NdotH = max(dot(n, h), 0.0001);
+	dir = l;
+	return vec3(smith_g1(NdotV, a)*smith_g1(abs(dot(n, l)), a)*VdotH/(NdotH*NdotV));
+}
+
+// Single scattering albedo that gives a multiple scattering albedo (van de
+// Hulst's inversion, as in Pixar's PxrSurface)
+vec3 single_scattering_albedo(vec3 albedo) {
+	vec3 a = clamp(albedo, vec3(0.0), vec3(0.999));
+	vec3 s = 4.09712+4.20863*a-sqrt(9.59217+41.6808*a+17.7126*a*a);
+	return vec3(1.0)-s*s;
+}
+
+vec3 sample_sphere() {
+	float z = 1.0-2.0*rand();
+	float r = sqrt(max(1.0-z*z, 0.0));
+	float phi = TAU*rand();
+	return vec3(r*cos(phi), r*sin(phi), z);
+}
+
+// The interpolated normal of a face
+vec3 face_normal(int face, vec2 bary) {
+	float w0 = 1.0-bary.x-bary.y;
+	return normalize(w0*get_attribute(9*face).xyz+bary.x*get_attribute(9*face+3).xyz+bary.y*get_attribute(9*face+6).xyz);
 }
 
 // A direction in the cone of the sun
@@ -385,6 +448,7 @@ void main() {
 		float coat_roughness = clamp(coat_roughness_value*extra.g, 0.02, 1.0);
 		float fuzz = clamp(sheen_value*extra.a, 0.0, 1.0);
 		float transmission = clamp(transmission_value*textureLod(transmission_tex, uv, 0.0).r, 0.0, 1.0);
+		float subsurface = clamp(sss_value*textureLod(sss_tex, uv, 0.0).r, 0.0, 1.0);
 		radiance += throughput*emission_energy*srgb_to_linear(textureLod(emission_tex, uv, 0.0).rgb);
 		vec3 next_dir = dir;
 		vec3 weight;
@@ -414,16 +478,66 @@ void main() {
 			} else {
 				vec3 f0 = mix(vec3(0.04), albedo, metallic);
 				float base_fresnel = 0.04+0.96*pow(1.0-NdotV, 5.0);
-				float p_specular = mix(base_fresnel, 1.0, metallic);
-				if (rand() < p_specular) {
-					weight = ggx_bounce(next_dir, n, v, roughness*roughness, f0)/p_specular;
-				} else {
-					next_dir = sample_cosine(n);
-					if (rand() < transmission) {
-						// Thin walled transmission: through the surface
-						next_dir = -next_dir;
+				if (thin_walled == 0 && rand() < transmission*(1.0-metallic)) {
+					// Refraction in a solid dielectric (IOR 1.5), tinted by the
+					// albedo when the ray goes through the surface
+					weight = dielectric_bounce(next_dir, n, v, roughness*roughness, front ? 1.0/1.5 : 1.5);
+					if (dot(next_dir, geometric_normal) < 0.0) {
+						weight *= sqrt(albedo);
 					}
-					weight = albedo*(1.0-metallic)/(1.0-p_specular)*(1.0-base_fresnel);
+				} else {
+					float p_specular = mix(base_fresnel, 1.0, metallic);
+					if (rand() < p_specular) {
+						weight = ggx_bounce(next_dir, n, v, roughness*roughness, f0)/p_specular;
+					} else if (rand() < subsurface && front) {
+						// Subsurface scattering: a random walk in the volume,
+						// from below the surface to where the path comes out
+						weight = (1.0-metallic)/(1.0-p_specular)*(1.0-base_fresnel)*vec3(1.0);
+						vec3 scattering = single_scattering_albedo(albedo);
+						float mean_free_path = sss_radius*scene_scale;
+						vec3 p = position-geometric_normal*0.0005*scene_scale;
+						vec3 d = -sample_cosine(geometric_normal);
+						bool exited = false;
+						for (int step = 0; step < 64; ++step) {
+							float distance = -log(max(1.0-rand(), 0.000001))*mean_free_path;
+							int walk_face;
+							vec2 walk_bary;
+							float walk_t = intersects_bvh(p, d, walk_face, walk_bary);
+							if (walk_face >= 0 && walk_t < distance) {
+								// Out of the volume, diffusely
+								vec3 out_normal = face_normal(walk_face, walk_bary);
+								if (dot(out_normal, d) < 0.0) {
+									out_normal = -out_normal;
+								}
+								position = p+walk_t*d;
+								geometric_normal = out_normal;
+								next_dir = sample_cosine(out_normal);
+								exited = true;
+								break;
+							}
+							if (walk_face < 0) {
+								// Open meshes: the walk leaves the object
+								next_dir = d;
+								position = p;
+								geometric_normal = d;
+								exited = true;
+								break;
+							}
+							p += distance*d;
+							weight *= scattering;
+							d = sample_sphere();
+						}
+						if (!exited) {
+							weight = vec3(0.0);
+						}
+					} else {
+						next_dir = sample_cosine(n);
+						if (thin_walled != 0 && rand() < transmission) {
+							// Thin walled transmission: through the surface
+							next_dir = -next_dir;
+						}
+						weight = albedo*(1.0-metallic)/(1.0-p_specular)*(1.0-base_fresnel);
+					}
 				}
 			}
 		}

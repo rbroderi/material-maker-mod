@@ -96,6 +96,9 @@ public:
 	std::map<std::string, Image> textures;
 	/// The "material" object of the manifest (Material node values), as JSON
 	std::string material_json;
+
+private:
+	bool load_manifest(const std::string &path, std::string &error);
 };
 
 class Renderer {

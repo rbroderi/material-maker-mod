@@ -563,7 +563,9 @@ func render(object: Object, output_index : int, size : int, preview : bool = fal
 	renderer = await renderer.render_shader(object, shader, size, output_type != "rgba")
 	return renderer
 
-func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
+## A compute shader that renders an output as an RGBA image (outputs of other
+## types are converted as in the 2D preview), or null if it does not compile
+func create_output_compute_shader(output_index : int) -> MMComputeShader:
 	var context : MMGenContext = MMGenContext.new()
 	var source : ShaderCode = get_shader_code("uv", output_index, context)
 	if source.output_type == "f":
@@ -580,10 +582,15 @@ func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
 		source.output_values.rgba = "preview_2d(uv)"
 		source.output_type = "rgba"
 	var compute_shader : MMComputeShader = MMComputeShader.new()
-	var shader_status : bool = await compute_shader.set_shader_from_shadercode(source, false)
+	if not await compute_shader.set_shader_from_shadercode(source, false):
+		return null
+	return compute_shader
+
+func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
+	var compute_shader : MMComputeShader = await create_output_compute_shader(output_index)
 	var texture : MMTexture = MMTexture.new()
-	if shader_status:
-		var status = await compute_shader.render_ext([texture], size)
+	if compute_shader != null:
+		await compute_shader.render_ext([texture], size)
 	return texture
 
 func render_output(output_index : int, size : Vector2i) -> Image:

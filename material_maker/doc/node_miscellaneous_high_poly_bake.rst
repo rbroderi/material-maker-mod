@@ -58,6 +58,12 @@ The **High Poly Bake** node has the following parameters:
   rays go along the flat face normal of the current mesh instead of its (smooth) vertex normals,
   which fixes details that are skewed near hard edges
 * **High poly texture** is the texture of the high poly mesh, for the **Transferred texture** map
+* **UDIM tile** is the UDIM tile (1001 to 1100) that is baked when the current mesh's UVs span
+  several tiles: only the faces in this tile are baked, with UVs relative to the tile
+
+When the GPU supports hardware ray tracing (Vulkan ray tracing pipelines), rays are cast by
+the GPU's ray tracing hardware, which is much faster for big high poly meshes. Otherwise a
+bounding volume hierarchy is built and traversed in a compute shader. Both give the same maps.
 
 Baking is also available from the command line (see the **--high** option of **--bake**).
 

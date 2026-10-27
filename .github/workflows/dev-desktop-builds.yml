@@ -61,6 +61,11 @@ jobs:
           mkdir -v -p ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_SUB}
           mv ./templates/* ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_SUB}
           mkdir -v -p build/${EXPORT_NAME}_${MM_RELEASE}_windows build/${EXPORT_NAME}_${MM_RELEASE}_linux
+      - name: Patched export templates 🔧
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash ./.github/workflows/install-patched-templates.sh ~/.local/share/godot/export_templates/${GODOT_VERSION}.${GODOT_SUB} linux windows
       - name: Generate Documentation
         if: ${{ github.event.inputs.gen_doc == 'true' }}
         uses: ammaraskar/sphinx-action@master
@@ -78,6 +83,8 @@ jobs:
           cp -R ./material_maker/environments ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
           cp -R ./material_maker/examples ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
           cp -R ./material_maker/library ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
+          cp -R ./material_maker/plugins ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
+          cp -R ./python ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
           cp -R ./material_maker/meshes ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
           cp -R ./material_maker/misc/export ./build/${EXPORT_NAME}_${MM_RELEASE}_windows
           cp -R ./material_maker/doc/_build/html ./build/${EXPORT_NAME}_${MM_RELEASE}_windows/doc || :
@@ -85,9 +92,21 @@ jobs:
           cp -R ./material_maker/environments ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
           cp -R ./material_maker/examples ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
           cp -R ./material_maker/library ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
+          cp -R ./material_maker/plugins ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
+          cp -R ./python ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
           cp -R ./material_maker/meshes ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
           cp -R ./material_maker/misc/export ./build/${EXPORT_NAME}_${MM_RELEASE}_linux
           cp -R ./material_maker/doc/_build/html ./build/${EXPORT_NAME}_${MM_RELEASE}_linux/doc || :
+      - name: Headless smoke test 🧪
+        run: |
+          # Software Vulkan (lavapipe), and Xvfb for the hidden window of
+          # builds made with the official templates
+          sudo apt-get update
+          sudo apt-get install -y mesa-vulkan-drivers xvfb
+          mkdir -p /tmp/smoke
+          timeout 600 ./build/${EXPORT_NAME}_${MM_RELEASE}_linux/$EXPORT_NAME.x86_64 --headless -- --export-material ./material_maker/examples/beehive.ptex -o /tmp/smoke --size 256
+          ls -la /tmp/smoke
+          test -s /tmp/smoke/beehive_albedo.png
       - name: Create archives 📁
         run: |
           cd build
@@ -174,6 +193,11 @@ jobs:
           unzip -a Godot_v${GODOT_VERSION}-${GODOT_SUB}_export_templates.tpz
           mkdir -v -p "/Users/runner/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.${GODOT_SUB}"
           mv ./templates/* "/Users/runner/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.${GODOT_SUB}"
+      - name: Patched export templates 🔧
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          bash ./.github/workflows/install-patched-templates.sh "/Users/runner/Library/Application Support/Godot/export_templates/${GODOT_VERSION}.${GODOT_SUB}" macos
       - name: Mac Build 🔧
         run: |
           chown runner Godot.app/Contents/MacOS/Godot
@@ -197,6 +221,8 @@ jobs:
           cp -R ./material_maker/environments "./build/mac/Material Maker.app/Contents/MacOS"
           cp -R ./material_maker/examples "./build/mac/Material Maker.app/Contents/MacOS"
           cp -R ./material_maker/library "./build/mac/Material Maker.app/Contents/MacOS"
+          cp -R ./material_maker/plugins "./build/mac/Material Maker.app/Contents/MacOS"
+          cp -R ./python "./build/mac/Material Maker.app/Contents/MacOS"
           cp -R ./material_maker/meshes "./build/mac/Material Maker.app/Contents/MacOS"
           cp -R ./material_maker/misc/export "./build/mac/Material Maker.app/Contents/MacOS"
           cp -R ./doc "./build/mac/Material Maker.app/Contents/MacOS/doc" || :

@@ -132,6 +132,17 @@ bool Package::set_output_size(uint32_t size, std::string &error) {
 }
 
 bool Package::load(const std::string &path, std::string &error) {
+	*this = Package();
+	// A manifest with unexpected types throws in nlohmann::json
+	try {
+		return load_manifest(path, error);
+	} catch (const nlohmann::json::exception &e) {
+		error = std::string("invalid manifest: ") + e.what();
+		return false;
+	}
+}
+
+bool Package::load_manifest(const std::string &path, std::string &error) {
 	ZipReader zip(path);
 	if (!zip.is_open()) {
 		error = "cannot open " + path;

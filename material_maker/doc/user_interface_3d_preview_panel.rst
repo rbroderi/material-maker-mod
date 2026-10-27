@@ -57,8 +57,11 @@ The *Export* menu can also render the preview:
   samples. PNG files are tone mapped, EXR files contain linear values. With **Transparent
   background**, the background is transparent instead of showing the environment.
   The brightest visible directional light (the sun) is sampled directly (with soft shadows
-  of its angular size), in addition to the environment. The transmission channel is rendered
-  as thin walled transmission. When the Material node has a depth scale, the object is
+  of its angular size), in addition to the environment. Transmissive objects are rendered
+  as glass-like solids that refract light (with an index of refraction of 1.5, tinted by the
+  albedo), or as thin walled transmission when **Thin walled** is checked. The subsurface
+  channel scatters light inside the object (a random walk whose distance depends on the
+  subsurface radius). When the Material node has a depth scale, the object is
   subdivided and displaced by its depth map (as by the Tesselated Material node). Generated
   preview models are rendered with their untesselated version.
 

@@ -73,6 +73,33 @@ std::string vk_error(const char *what, VkResult result) {
 	return std::string(what) + " failed (VkResult " + std::to_string((int)result) + ")";
 }
 
+/// Sets the error message if a Vulkan call failed
+bool vk_ok(VkResult result, const char *what, std::string &error) {
+	if (result != VK_SUCCESS) {
+		error = vk_error(what, result);
+		return false;
+	}
+	return true;
+}
+
+/// Unlocked seeds are offset by the golden ratio times the seed (modulo 1),
+/// as Material Maker's --seed does
+constexpr double SEED_OFFSET = 0.6180339887;
+
+/// Writes a parameter value as its uniform type (as encode_value in the
+/// Godot runtime: floats and vectors as floats, ints and bools as int32)
+void encode_value(uint8_t *destination, const std::string &type, const std::vector<float> &value) {
+	if (type == "int" || type == "bool") {
+		int32_t i = value.empty() ? 0 : (int32_t)value[0];
+		memcpy(destination, &i, 4);
+		return;
+	}
+	size_t count = type == "float" ? 1 : type == "vec2" ? 2 : type == "vec3" ? 3 : 4;
+	for (size_t i = 0; i < count && i < value.size(); i++) {
+		memcpy(destination + 4 * i, &value[i], 4);
+	}
+}
+
 } // namespace
 
 struct Renderer::Impl {
@@ -199,9 +226,7 @@ struct Renderer::Impl {
 		info.size = std::max<VkDeviceSize>(size, 16);
 		info.usage = usage;
 		info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-		VkResult result = vkCreateBuffer(device, &info, nullptr, &buffer.buffer);
-		if (result != VK_SUCCESS) {
-			error = vk_error("vkCreateBuffer", result);
+		if (!vk_ok(vkCreateBuffer(device, &info, nullptr, &buffer.buffer), "vkCreateBuffer", error)) {
 			return false;
 		}
 		VkMemoryRequirements requirements;
@@ -210,15 +235,15 @@ struct Renderer::Impl {
 		allocate.allocationSize = requirements.size;
 		if (!find_memory_type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, allocate.memoryTypeIndex)) {
 			error = "no host visible memory";
+			release_buffer(buffer);
 			return false;
 		}
-		result = vkAllocateMemory(device, &allocate, nullptr, &buffer.memory);
-		if (result != VK_SUCCESS) {
-			error = vk_error("vkAllocateMemory", result);
+		if (!vk_ok(vkAllocateMemory(device, &allocate, nullptr, &buffer.memory), "vkAllocateMemory", error)
+				|| !vk_ok(vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0), "vkBindBufferMemory", error)
+				|| !vk_ok(vkMapMemory(device, buffer.memory, 0, VK_WHOLE_SIZE, 0, &buffer.mapped), "vkMapMemory", error)) {
+			release_buffer(buffer);
 			return false;
 		}
-		vkBindBufferMemory(device, buffer.buffer, buffer.memory, 0);
-		vkMapMemory(device, buffer.memory, 0, VK_WHOLE_SIZE, 0, &buffer.mapped);
 		buffer.size = info.size;
 		memset(buffer.mapped, 0, (size_t)buffer.size);
 		return true;
@@ -236,9 +261,7 @@ struct Renderer::Impl {
 		info.usage = usage;
 		info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 		info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-		VkResult result = vkCreateImage(device, &info, nullptr, &image.image);
-		if (result != VK_SUCCESS) {
-			error = vk_error("vkCreateImage", result);
+		if (!vk_ok(vkCreateImage(device, &info, nullptr, &image.image), "vkCreateImage", error)) {
 			return false;
 		}
 		VkMemoryRequirements requirements;
@@ -247,22 +270,21 @@ struct Renderer::Impl {
 		allocate.allocationSize = requirements.size;
 		if (!find_memory_type(requirements.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, allocate.memoryTypeIndex)) {
 			error = "no device local memory";
+			release_image(image);
 			return false;
 		}
-		result = vkAllocateMemory(device, &allocate, nullptr, &image.memory);
-		if (result != VK_SUCCESS) {
-			error = vk_error("vkAllocateMemory", result);
+		if (!vk_ok(vkAllocateMemory(device, &allocate, nullptr, &image.memory), "vkAllocateMemory", error)
+				|| !vk_ok(vkBindImageMemory(device, image.image, image.memory, 0), "vkBindImageMemory", error)) {
+			release_image(image);
 			return false;
 		}
-		vkBindImageMemory(device, image.image, image.memory, 0);
 		VkImageViewCreateInfo view{ VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
 		view.image = image.image;
 		view.viewType = VK_IMAGE_VIEW_TYPE_2D;
 		view.format = format;
 		view.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
-		result = vkCreateImageView(device, &view, nullptr, &image.view);
-		if (result != VK_SUCCESS) {
-			error = vk_error("vkCreateImageView", result);
+		if (!vk_ok(vkCreateImageView(device, &view, nullptr, &image.view), "vkCreateImageView", error)) {
+			release_image(image);
 			return false;
 		}
 		image.width = width;
@@ -292,7 +314,9 @@ struct Renderer::Impl {
 		allocate.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 		allocate.commandBufferCount = 1;
 		VkCommandBuffer cmd;
-		vkAllocateCommandBuffers(device, &allocate, &cmd);
+		if (!vk_ok(vkAllocateCommandBuffers(device, &allocate, &cmd), "vkAllocateCommandBuffers", error)) {
+			return false;
+		}
 		VkCommandBufferBeginInfo begin{ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
 		begin.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 		vkBeginCommandBuffer(cmd, &begin);
@@ -391,7 +415,9 @@ struct Renderer::Impl {
 		VkCommandPoolCreateInfo pool_info{ VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO };
 		pool_info.queueFamilyIndex = queue_family;
 		pool_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-		vkCreateCommandPool(device, &pool_info, nullptr, &command_pool);
+		if (!vk_ok(vkCreateCommandPool(device, &pool_info, nullptr, &command_pool), "vkCreateCommandPool", error)) {
+			return false;
+		}
 		VkSamplerCreateInfo sampler_info{ VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO };
 		sampler_info.magFilter = VK_FILTER_LINEAR;
 		sampler_info.minFilter = VK_FILTER_LINEAR;
@@ -400,10 +426,11 @@ struct Renderer::Impl {
 		sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_REPEAT;
 		sampler_info.maxLod = 0.0f;
-		vkCreateSampler(device, &sampler_info, nullptr, &sampler);
+		if (!vk_ok(vkCreateSampler(device, &sampler_info, nullptr, &sampler), "vkCreateSampler", error)) {
+			return false;
+		}
 		VkFenceCreateInfo fence_info{ VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
-		vkCreateFence(device, &fence_info, nullptr, &fence);
-		return true;
+		return vk_ok(vkCreateFence(device, &fence_info, nullptr, &fence), "vkCreateFence", error);
 	}
 
 	bool upload_texture(const std::string &name, const Image &image, std::string &error) {
@@ -411,6 +438,8 @@ struct Renderer::Impl {
 		if (!create_image(image.width, image.height, VK_FORMAT_R32G32B32A32_SFLOAT, VK_IMAGE_USAGE_SAMPLED_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT, gpu, error)) {
 			return false;
 		}
+		// Stored right away, so it's released with the package on failure
+		textures[name] = gpu;
 		GpuBuffer staging;
 		VkDeviceSize size = (VkDeviceSize)image.width * image.height * 16;
 		if (!create_buffer(size, VK_BUFFER_USAGE_TRANSFER_SRC_BIT, staging, error)) {
@@ -426,11 +455,17 @@ struct Renderer::Impl {
 			image_barrier(cmd, gpu, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT, VK_ACCESS_SHADER_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT);
 		}, error);
 		release_buffer(staging);
-		textures[name] = gpu;
+		textures[name] = gpu;  // with its new layout
 		return ok;
 	}
 
+	/// Creates a pass: its images and buffers, its pipeline and its descriptor sets
 	bool create_pass(PassState &state, std::string &error) {
+		return create_pass_resources(state, error) && create_pass_pipeline(state, error) && create_pass_descriptor_sets(state, error);
+	}
+
+	/// The output image, the parameter buffer and the row chunk buffers of a pass
+	bool create_pass_resources(PassState &state, std::string &error) {
 		const Pass &pass = *state.pass;
 		if (!get_format(pass.format, state.format)) {
 			error = "pass " + pass.name + ": unknown format " + pass.format;
@@ -448,13 +483,19 @@ struct Renderer::Impl {
 		for (uint32_t y = 0; y < pass.height; y += chunk_height) {
 			GpuBuffer chunk;
 			if (!create_buffer(4, VK_BUFFER_USAGE_STORAGE_BUFFER_BIT, chunk, error)) {
-				return false;
+				return false;  // create_buffer released it
 			}
 			int32_t first_row = (int32_t)y;
 			memcpy(chunk.mapped, &first_row, 4);
 			state.chunks.push_back(chunk);
 			state.chunk_rows.push_back(std::min(chunk_height, pass.height - y));
 		}
+		return true;
+	}
+
+	/// The shader module, the descriptor set layouts and the pipeline of a pass
+	bool create_pass_pipeline(PassState &state, std::string &error) {
+		const Pass &pass = *state.pass;
 		VkShaderModuleCreateInfo module_info{ VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO };
 		module_info.codeSize = pass.spirv.size() * 4;
 		module_info.pCode = pass.spirv.data();
@@ -474,12 +515,16 @@ struct Renderer::Impl {
 			VkDescriptorSetLayoutCreateInfo layout_info{ VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
 			layout_info.bindingCount = (uint32_t)bindings[s].size();
 			layout_info.pBindings = bindings[s].data();
-			vkCreateDescriptorSetLayout(device, &layout_info, nullptr, &state.set_layouts[s]);
+			if (!vk_ok(vkCreateDescriptorSetLayout(device, &layout_info, nullptr, &state.set_layouts[s]), "vkCreateDescriptorSetLayout", error)) {
+				return false;
+			}
 		}
 		VkPipelineLayoutCreateInfo pipeline_layout_info{ VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
 		pipeline_layout_info.setLayoutCount = 4;
 		pipeline_layout_info.pSetLayouts = state.set_layouts;
-		vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &state.pipeline_layout);
+		if (!vk_ok(vkCreatePipelineLayout(device, &pipeline_layout_info, nullptr, &state.pipeline_layout), "vkCreatePipelineLayout", error)) {
+			return false;
+		}
 		VkComputePipelineCreateInfo pipeline_info{ VK_STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO };
 		pipeline_info.stage = { VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO };
 		pipeline_info.stage.stage = VK_SHADER_STAGE_COMPUTE_BIT;
@@ -491,7 +536,12 @@ struct Renderer::Impl {
 			error = "pass " + pass.name + ": " + vk_error("vkCreateComputePipelines", result);
 			return false;
 		}
-		// Descriptor sets
+		return true;
+	}
+
+	/// The descriptor sets of a pass (output, parameters, inputs and one per row chunk)
+	bool create_pass_descriptor_sets(PassState &state, std::string &error) {
+		const Pass &pass = *state.pass;
 		uint32_t chunk_count = (uint32_t)state.chunks.size();
 		std::vector<VkDescriptorPoolSize> sizes = {
 			{ VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, 1 },
@@ -504,7 +554,9 @@ struct Renderer::Impl {
 		pool_info.maxSets = 3 + chunk_count;
 		pool_info.poolSizeCount = (uint32_t)sizes.size();
 		pool_info.pPoolSizes = sizes.data();
-		vkCreateDescriptorPool(device, &pool_info, nullptr, &state.pool);
+		if (!vk_ok(vkCreateDescriptorPool(device, &pool_info, nullptr, &state.pool), "vkCreateDescriptorPool", error)) {
+			return false;
+		}
 		std::vector<VkDescriptorSetLayout> layouts = { state.set_layouts[0], state.set_layouts[1], state.set_layouts[2] };
 		for (uint32_t c = 0; c < chunk_count; c++) {
 			layouts.push_back(state.set_layouts[3]);
@@ -514,9 +566,7 @@ struct Renderer::Impl {
 		set_info.descriptorPool = state.pool;
 		set_info.descriptorSetCount = (uint32_t)layouts.size();
 		set_info.pSetLayouts = layouts.data();
-		result = vkAllocateDescriptorSets(device, &set_info, sets.data());
-		if (result != VK_SUCCESS) {
-			error = vk_error("vkAllocateDescriptorSets", result);
+		if (!vk_ok(vkAllocateDescriptorSets(device, &set_info, sets.data()), "vkAllocateDescriptorSets", error)) {
 			return false;
 		}
 		for (int s = 0; s < 3; s++) {
@@ -545,36 +595,25 @@ struct Renderer::Impl {
 			}
 		}
 		std::vector<VkWriteDescriptorSet> writes;
-		VkWriteDescriptorSet w{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-		w.descriptorCount = 1;
-		w.dstSet = state.sets[0];
-		w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
-		w.pImageInfo = &output_info;
-		writes.push_back(w);
-		w = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-		w.descriptorCount = 1;
-		w.dstSet = state.sets[1];
-		w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-		w.pBufferInfo = &parameters_info;
-		writes.push_back(w);
-		for (uint32_t i = 0; i < input_infos.size(); i++) {
-			w = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
+		auto add_write = [&](VkDescriptorSet set, uint32_t binding, VkDescriptorType type, const VkDescriptorImageInfo *image_info, const VkDescriptorBufferInfo *buffer_info) {
+			VkWriteDescriptorSet w{ VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
 			w.descriptorCount = 1;
-			w.dstSet = state.sets[2];
-			w.dstBinding = i;
-			w.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-			w.pImageInfo = &input_infos[i];
+			w.dstSet = set;
+			w.dstBinding = binding;
+			w.descriptorType = type;
+			w.pImageInfo = image_info;
+			w.pBufferInfo = buffer_info;
 			writes.push_back(w);
+		};
+		add_write(state.sets[0], 0, VK_DESCRIPTOR_TYPE_STORAGE_IMAGE, &output_info, nullptr);
+		add_write(state.sets[1], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &parameters_info);
+		for (uint32_t i = 0; i < input_infos.size(); i++) {
+			add_write(state.sets[2], i, VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, &input_infos[i], nullptr);
 		}
 		std::vector<VkDescriptorBufferInfo> chunk_infos(chunk_count);
 		for (uint32_t c = 0; c < chunk_count; c++) {
 			chunk_infos[c] = { state.chunks[c].buffer, 0, VK_WHOLE_SIZE };
-			w = { VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET };
-			w.descriptorCount = 1;
-			w.dstSet = state.chunk_sets[c];
-			w.descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
-			w.pBufferInfo = &chunk_infos[c];
-			writes.push_back(w);
+			add_write(state.chunk_sets[c], 0, VK_DESCRIPTOR_TYPE_STORAGE_BUFFER, nullptr, &chunk_infos[c]);
 		}
 		vkUpdateDescriptorSets(device, (uint32_t)writes.size(), writes.data(), 0, nullptr);
 		return true;
@@ -640,23 +679,16 @@ struct Renderer::Impl {
 			if (layout == state.pass->parameters.end()) {
 				continue;
 			}
-			size_t count = layout->second.type == "float" ? 1 : layout->second.type == "vec2" ? 2 : layout->second.type == "vec3" ? 3 : 4;
 			uint8_t *destination = (uint8_t *)state.parameters.mapped + layout->second.offset;
 			if (parameter->type == "seed") {
-				// As Material Maker's --seed: unlocked seeds are offset by the
-				// golden ratio times the seed, modulo 1
 				double seed = value.empty() ? 0.0 : value[0];
 				double sum = 0.0;
 				for (const SeedTerm &term : target.seed_terms) {
-					sum += term.locked ? term.value : std::fmod(term.value + 0.6180339887 * seed, 1.0);
+					sum += term.locked ? term.value : std::fmod(term.value + SEED_OFFSET * seed, 1.0);
 				}
-				float uniform = float(sum);
-				memcpy(destination, &uniform, 4);
-				mark_dirty(it->second);
-				continue;
-			}
-			for (size_t i = 0; i < count && i < value.size(); i++) {
-				memcpy(destination + 4 * i, &value[i], 4);
+				encode_value(destination, layout->second.type, { float(sum) });
+			} else {
+				encode_value(destination, layout->second.type, value);
 			}
 			mark_dirty(it->second);
 		}

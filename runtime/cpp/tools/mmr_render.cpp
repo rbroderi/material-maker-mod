@@ -97,6 +97,8 @@ int main(int argc, char **argv) {
 		for (const auto &[preset_name, preset_values] : package.presets) {
 			printf("  preset %s (%zu values)\n", preset_name.c_str(), preset_values.size());
 		}
+		// Listing does not render
+		return 0;
 	}
 	// Presets are applied before --set values
 	if (!preset.empty()) {

@@ -7,6 +7,7 @@ const SETTING_GENERATE_MAP_RESOLUTION := "3D_generate_map_resolution"
 const SETTING_RENDER_SIZE := "3D_render_size"
 const SETTING_RENDER_SAMPLES := "3D_render_samples"
 const SETTING_RENDER_TRANSPARENT := "3D_render_transparent"
+const SETTING_RENDER_THIN_WALLED := "3D_render_thin_walled"
 const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 
 @onready var preview3D := owner
@@ -20,6 +21,7 @@ const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 var render_size : SpinBox
 var render_samples : SpinBox
 var render_transparent : CheckBox
+var render_thin_walled : CheckBox
 var render_button : Button
 var turntable_frames : SpinBox
 var turntable_button : Button
@@ -35,10 +37,20 @@ func add_spin_box(parent : Control, label : String, minimum : float, maximum : f
 	var spin_box : SpinBox = SpinBox.new()
 	spin_box.min_value = minimum
 	spin_box.max_value = maximum
-	spin_box.value = mm_globals.get_config(setting) if mm_globals.has_config(setting) else default
+	spin_box.value = mm_globals.get_config_or(setting, default)
 	spin_box.value_changed.connect(func(v): mm_globals.set_config(setting, v))
 	parent.add_child(spin_box)
 	return spin_box
+
+## A check box saved in a setting
+func add_check_box(parent : Control, text : String, tooltip : String, setting : String) -> CheckBox:
+	var check_box : CheckBox = CheckBox.new()
+	check_box.text = text
+	check_box.tooltip_text = tooltip
+	check_box.button_pressed = mm_globals.get_config_or(setting, false)
+	check_box.toggled.connect(func(v): mm_globals.set_config(setting, v))
+	parent.add_child(check_box)
+	return check_box
 
 ## Path traced renders and turntables of the preview
 func add_render_options() -> void:
@@ -52,11 +64,8 @@ func add_render_options() -> void:
 	box.add_child(grid)
 	render_size = add_spin_box(grid, "Size", 64, 8192, SETTING_RENDER_SIZE, 1024)
 	render_samples = add_spin_box(grid, "Samples", 1, 65536, SETTING_RENDER_SAMPLES, 256)
-	render_transparent = CheckBox.new()
-	render_transparent.text = "Transparent background"
-	render_transparent.button_pressed = mm_globals.get_config(SETTING_RENDER_TRANSPARENT) if mm_globals.has_config(SETTING_RENDER_TRANSPARENT) else false
-	render_transparent.toggled.connect(func(v): mm_globals.set_config(SETTING_RENDER_TRANSPARENT, v))
-	box.add_child(render_transparent)
+	render_transparent = add_check_box(box, "Transparent background", "", SETTING_RENDER_TRANSPARENT)
+	render_thin_walled = add_check_box(box, "Thin walled", "Transmissive surfaces are thin sheets instead of refractive solids", SETTING_RENDER_THIN_WALLED)
 	render_button = Button.new()
 	render_button.text = "Path traced render..."
 	render_button.tooltip_text = "Renders the object from the current view with a path tracer (PNG or linear EXR)"
@@ -94,7 +103,7 @@ func _on_render_button_pressed() -> void:
 	var size_value : int = int(render_size.value)
 	render_button.disabled = true
 	var error : String = await preview3D.render_path_traced(file_name, Vector2i(size_value, size_value), int(render_samples.value), render_transparent.button_pressed,
-		func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ])
+		func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ], render_thin_walled.button_pressed)
 	render_button.text = "Path traced render..."
 	render_button.disabled = false
 	if error != "":

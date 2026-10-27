@@ -354,14 +354,8 @@ func add_ocio_view() -> void:
 	label.text = "View transform (OCIO)"
 	box.add_child(label)
 	box.move_child(label, 0)
-	var ocio_view : OptionButton = OptionButton.new()
-	ocio_view.add_item("None")
-	var current : String = mm_globals.get_config(SETTING_PREVIEW_OCIO_VIEW) if mm_globals.has_config(SETTING_PREVIEW_OCIO_VIEW) else ""
-	for v in MMColorManagement.get_views():
-		ocio_view.add_item(v)
-		if v == current:
-			ocio_view.select(ocio_view.item_count-1)
-	ocio_view.item_selected.connect(func(i : int): set_ocio_view("" if i == 0 else ocio_view.get_item_text(i)))
+	var current : String = mm_globals.get_config_or(SETTING_PREVIEW_OCIO_VIEW, "")
+	var ocio_view : OptionButton = MMColorManagement.create_view_picker(current, set_ocio_view)
 	box.add_child(ocio_view)
 	box.move_child(ocio_view, 1)
 	if current != "":

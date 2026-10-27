@@ -220,6 +220,21 @@ func set_texture(new_texture : ImageTexture) -> void:
 		rd.free_rid(rid)
 	rid = RID()
 
+## A texture of an image
+static func from_image(image : Image) -> MMTexture:
+	var rv : MMTexture = MMTexture.new()
+	rv.set_texture(ImageTexture.create_from_image(image))
+	return rv
+
+## Floats (4 per texel) in an RGBA float image, in rows of 4096 texels (for
+## mesh attributes read by shaders)
+static func pack_texels(values : PackedFloat32Array) -> Image:
+	var texel_count : int = max(1, values.size()/4)
+	var width : int = min(texel_count, 4096)
+	var height : int = (texel_count+width-1)/width
+	values.resize(width*height*4)
+	return Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, values.to_byte_array())
+
 func get_width() -> int:
 	return texture_size.x
 

@@ -15,6 +15,7 @@ class_name MMHighPolyBaker
 #   details near hard edges
 # - high_texture: the texture of the high poly mesh, sampled at the hit point
 #   for the "texture" map
+# - hardware: use hardware ray tracing when the GPU supports it (the default)
 
 
 const MAPS : Array[String] = [ "normal_tangent", "normal_object", "height", "color", "material_id", "position", "texture" ]
@@ -29,6 +30,8 @@ class HighPolyData:
 static var high_poly_data : Dictionary = {}
 static var baked_maps : Dictionary = {}
 static var busy : bool = false
+## Whether the last bake used hardware ray tracing (see MMHighPolyBakerRT)
+static var last_bake_used_hardware : bool = false
 
 
 ## Merges all triangle surfaces of a mesh into a single indexed surface, and
@@ -79,13 +82,7 @@ static func prepare_high_poly(mesh : Mesh) -> Dictionary:
 	merged_arrays[Mesh.ARRAY_VERTEX] = vertices
 	merged_arrays[Mesh.ARRAY_INDEX] = indices
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, merged_arrays)
-	# Texels are stored in rows of 4096
-	var texel_count : int = max(1, attributes.size()/4)
-	var width : int = min(texel_count, 4096)
-	var height : int = (texel_count+width-1)/width
-	attributes.resize(width*height*4)
-	var image : Image = Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, attributes.to_byte_array())
-	return { mesh=merged, attributes=image, face_count=indices.size()/3, surface_names=surface_names }
+	return { mesh=merged, attributes=MMTexture.pack_texels(attributes), face_count=indices.size()/3, surface_names=surface_names }
 
 static func get_high_poly_data(mesh : Mesh) -> HighPolyData:
 	if not high_poly_data.has(mesh):
@@ -93,8 +90,7 @@ static func get_high_poly_data(mesh : Mesh) -> HighPolyData:
 		var data : HighPolyData = HighPolyData.new()
 		data.bvh = MMTexture.new()
 		data.bvh.set_texture(MMBvhGenerator.generate(prepared.mesh))
-		data.attributes = MMTexture.new()
-		data.attributes.set_texture(ImageTexture.create_from_image(prepared.attributes))
+		data.attributes = MMTexture.from_image(prepared.attributes)
 		data.face_count = prepared.face_count
 		data.surface_names = prepared.surface_names
 		high_poly_data[mesh] = data
@@ -179,6 +175,50 @@ static func match_surfaces(low_mesh : Mesh, high_names : PackedStringArray) -> P
 		rv.append(high_parts.find(low_name) if low_name != "" else -1)
 	return rv
 
+## UDIM tiles used by the UV layout of a mesh (1001 is the [0, 1] square).
+## Godot's V axis points down (V = 1-v of the mesh files), so tile rows are
+## counted from the top.
+static func udim_tiles(mesh : Mesh) -> PackedInt32Array:
+	var tiles : Dictionary = {}
+	for s in mesh.get_surface_count():
+		var uvs = mesh.surface_get_arrays(s)[Mesh.ARRAY_TEX_UV]
+		var indices = mesh.surface_get_arrays(s)[Mesh.ARRAY_INDEX]
+		if uvs == null:
+			continue
+		if indices == null:
+			indices = range(uvs.size())
+		# The tile of a triangle is the tile of its center (vertices can be on
+		# tile borders)
+		for f in indices.size()/3:
+			var center : Vector2 = (uvs[indices[3*f]]+uvs[indices[3*f+1]]+uvs[indices[3*f+2]])/3.0
+			tiles[udim_tile(center)] = true
+	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
+	rv.sort()
+	return rv
+
+static func udim_tile(uv : Vector2) -> int:
+	return 1001+int(floor(uv.x))+10*int(floor(1.0-uv.y))
+
+## A copy of a mesh whose UVs are shifted so a UDIM tile is the [0, 1] square
+## (triangles of other tiles are outside of it)
+static func udim_tile_mesh(mesh : Mesh, tile : int) -> Mesh:
+	var offset : Vector2 = Vector2((tile-1001)%10, -((tile-1001)/10))
+	if offset == Vector2():
+		return mesh
+	var rv : ArrayMesh = ArrayMesh.new()
+	for s in mesh.get_surface_count():
+		var arrays : Array = mesh.surface_get_arrays(s)
+		if arrays[Mesh.ARRAY_TEX_UV] != null:
+			var uvs : PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			for i in uvs.size():
+				uvs[i] -= offset
+			arrays[Mesh.ARRAY_TEX_UV] = uvs
+		rv.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+		rv.surface_set_name(s, mesh.surface_get_name(s) if mesh is ArrayMesh else "")
+	if mesh.has_meta("file_path"):
+		rv.set_meta("file_path", mesh.get_meta("file_path"))
+	return rv
+
 ## Jitter offsets (in pixels) of anti-aliasing passes: a rotated grid for
 ## up to 4 samples, then a Halton sequence
 static func get_jitter(sample : int) -> Vector2:
@@ -233,7 +273,7 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 		var texture : MMTexture = MMTexture.new()
 		var start_time : int = Time.get_ticks_msec()
 		await mm_renderer.thread_run(generate, [ low, high_mesh, map, size, front, rear, samples, seams, texture, cage_mesh, options, vertex_matches ])
-		print("Baked %s from high poly mesh in %d ms" % [ map, Time.get_ticks_msec()-start_time ])
+		print_verbose("Baked %s from high poly mesh in %d ms" % [ map, Time.get_ticks_msec()-start_time ])
 		baked_maps[key] = texture
 		busy = false
 	return baked_maps[key]
@@ -252,7 +292,10 @@ static func get_cage_vertices(low : Mesh, cage_mesh : Mesh) -> PackedVector3Arra
 ## each low poly vertex, the high poly surface its rays can hit (-1 for any,
 ## and empty for no restriction)
 static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, front : float, rear : float, samples : int, seams : MMTexture, texture : MMTexture, cage_mesh : Mesh = null, options : Dictionary = {}, vertex_matches : PackedFloat32Array = PackedFloat32Array()) -> void:
-	var data : HighPolyData = get_high_poly_data(high_mesh)
+	# The software BVH (built in GDScript, slow for large meshes) is not needed
+	# with hardware ray tracing
+	var hardware : bool = options.get("hardware", true) and MMHighPolyBakerRT.is_available()
+	var data : HighPolyData = null if hardware else get_high_poly_data(high_mesh)
 	var low : Mesh = with_tangents(low_mesh)
 	if vertex_matches.is_empty():
 		vertex_matches.resize(low.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size())
@@ -270,8 +313,7 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 	pipeline.extra_buffers.append((cage_vertices if not cage_vertices.is_empty() else low.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]).to_byte_array())
 	pipeline.extra_buffers.append(vertex_matches.to_byte_array())
 	pipeline.add_parameter_or_texture("use_cage", "int", 0 if cage_vertices.is_empty() else 1)
-	var dummy : MMTexture = MMTexture.new()
-	dummy.set_texture(ImageTexture.create_from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8)))
+	var dummy : MMTexture = MMTexture.from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8))
 	var skew_map : MMTexture = dummy
 	if options.get("skew_map") is Texture2D:
 		skew_map = MMTexture.new()
@@ -283,8 +325,8 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 		high_texture = MMTexture.new()
 		high_texture.set_texture(options.high_texture)
 	pipeline.add_parameter_or_texture("high_texture", "sampler2D", high_texture)
-	pipeline.add_parameter_or_texture("bvh_data", "sampler2D", data.bvh)
-	pipeline.add_parameter_or_texture("attribute_data", "sampler2D", data.attributes)
+	pipeline.add_parameter_or_texture("bvh_data", "sampler2D", data.bvh if data != null else dummy)
+	pipeline.add_parameter_or_texture("attribute_data", "sampler2D", data.attributes if data != null else dummy)
 	pipeline.add_parameter_or_texture("prev_iteration_tex", "sampler2D", texture)
 	pipeline.add_parameter_or_texture("front_dist", "float", front*diagonal)
 	pipeline.add_parameter_or_texture("rear_dist", "float", rear*diagonal)
@@ -293,17 +335,29 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 	pipeline.add_parameter_or_texture("mode", "int", MAPS.find(map))
 	pipeline.add_parameter_or_texture("iteration", "int", 1)
 	pipeline.add_parameter_or_texture("jitter", "vec2", Vector2(0, 0))
+	pipeline.add_parameter_or_texture("gbuffer", "int", 0)
 	var vertex_shader : String = load("res://addons/material_maker/map_generator/highpoly_vertex.tres").text
-	var fragment_shader : String = load("res://addons/material_maker/map_generator/highpoly_fragment.tres").text
-	if not await pipeline.set_shader(vertex_shader, fragment_shader):
-		push_error("Cannot compile high poly baking shader")
-		return
-	for i in max(1, samples):
-		pipeline.set_parameter("iteration", i+1)
-		pipeline.set_parameter("prev_iteration_tex", texture)
-		# Jitter is in normalized device coordinates (2 units for the texture's width)
-		pipeline.set_parameter("jitter", get_jitter(i)*2.0/size)
-		pipeline.in_thread_render(Vector2i(size, size), 3, texture)
+	last_bake_used_hardware = false
+	if hardware:
+		# Hardware ray tracing: the rasterization pass only writes the rays
+		var rays_shader : String = load("res://addons/material_maker/map_generator/highpoly_rays_fragment.tres").text
+		if await pipeline.set_shader(vertex_shader, rays_shader):
+			last_bake_used_hardware = await MMHighPolyBakerRT.generate(pipeline, high_mesh, MAPS.find(map), size, front*diagonal, rear*diagonal, aabb, samples, high_texture, texture)
+	if not last_bake_used_hardware:
+		if data == null:
+			data = get_high_poly_data(high_mesh)
+			pipeline.set_parameter("bvh_data", data.bvh)
+			pipeline.set_parameter("attribute_data", data.attributes)
+		var fragment_shader : String = load("res://addons/material_maker/map_generator/highpoly_fragment.tres").text
+		if not await pipeline.set_shader(vertex_shader, fragment_shader):
+			push_error("Cannot compile high poly baking shader")
+			return
+		for i in max(1, samples):
+			pipeline.set_parameter("iteration", i+1)
+			pipeline.set_parameter("prev_iteration_tex", texture)
+			# Jitter is in normalized device coordinates (2 units for the texture's width)
+			pipeline.set_parameter("jitter", get_jitter(i)*2.0/size)
+			pipeline.in_thread_render(Vector2i(size, size), 3, texture)
 	# Extend the map past UV seams
 	var dilate_pipeline : MMComputeShader = MMComputeShader.new()
 	dilate_pipeline.clear()

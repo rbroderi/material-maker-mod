@@ -157,6 +157,16 @@ func create_library(path : String, library_name : String) -> void:
 	save_library_list()
 	mm_globals.set_tip_text("Library \"%s\" created at \"%s\"" % [library_name, path], 5, 1)
 
+## Adds a library of a plugin (read only, not saved in the library list)
+func add_plugin_library(path : String) -> void:
+	if has_library(path):
+		return
+	var library = LIBRARY.new()
+	if library.load_library(path, true):
+		add_child(library)
+		library.generate_node_sections(node_sections)
+		emit_signal("libraries_changed")
+
 func load_library(path : String, data : String = "") -> void:
 	if has_library(path):
 		return
@@ -311,7 +321,7 @@ func init_usage() -> void:
 ## Library items created most recently, most recent first
 const RECENT_ITEMS_COUNT : int = 8
 func get_recent_items() -> Array:
-	return mm_globals.get_config("recent_library_items") if mm_globals.has_config("recent_library_items") else []
+	return mm_globals.get_config_or("recent_library_items", [])
 
 func item_created(item : String) -> void:
 	var recent_items : Array = get_recent_items().duplicate()

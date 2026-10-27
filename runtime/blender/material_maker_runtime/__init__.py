@@ -29,6 +29,10 @@ PACKAGE_KEY = "mmr_package"
 PARAMETER_PREFIX = "mmr:"
 # Size of the rendered textures (0: the size they were exported with)
 SIZE_KEY = "mmr_size"
+# What the current textures were rendered with (see render_signature)
+RENDERED_KEY = "mmr_rendered"
+# Errors of reading a package's manifest
+MANIFEST_ERRORS = (OSError, KeyError, ValueError, zipfile.BadZipFile)
 # Output channels and how they are used
 COLOR_CHANNELS = {"albedo", "emission"}
 
@@ -54,9 +58,22 @@ def find_mmr_render(context):
     return shutil.which("mmr_render")
 
 
+# Manifests of packages by path, with the file time and size they were read at
+# (the panel and the live update timer read them often)
+_manifests = {}
+
+
 def read_manifest(path):
-    with zipfile.ZipFile(path) as z:
-        return json.loads(z.read("manifest.json"))
+    """The manifest of a package (cached until the file changes, not to be
+    modified)"""
+    stat = os.stat(path)
+    key = (stat.st_mtime_ns, stat.st_size)
+    cached = _manifests.get(path)
+    if cached is None or cached[0] != key:
+        with zipfile.ZipFile(path) as z:
+            cached = (key, json.loads(z.read("manifest.json")))
+        _manifests[path] = cached
+    return cached[1]
 
 
 def cache_directory(material):
@@ -79,14 +96,18 @@ def parameter_values(material, manifest):
 
 def render_signature(material, manifest):
     """What the textures depend on: parameter values and size"""
-    return parameter_values(material, manifest) + ["size=%d" % int(material.get(SIZE_KEY, 0))]
+    return parameter_values(material, manifest) + ["size=%d" % texture_size(material)]
 
 
-def render_textures(context, material):
+def texture_size(material):
+    """Size of the rendered textures, 0 for the size of the package"""
+    return int(material.get(SIZE_KEY, 0))
+
+
+def render_textures(context, material, manifest):
     """Renders the package's outputs with the material's parameter values, and
     returns { channel: file path }"""
     package = bpy.path.abspath(material[PACKAGE_KEY])
-    manifest = read_manifest(package)
     executable = find_mmr_render(context)
     if executable is None:
         raise RuntimeError("mmr_render was not found: set its path in the add-on preferences")
@@ -94,8 +115,8 @@ def render_textures(context, material):
     command = [executable, package, "-o", out]
     for s in parameter_values(material, manifest):
         command += ["--set", s]
-    if int(material.get(SIZE_KEY, 0)) > 0:
-        command += ["--size", str(int(material[SIZE_KEY]))]
+    if texture_size(material) > 0:
+        command += ["--size", str(texture_size(material))]
     result = subprocess.run(command, capture_output=True, text=True)
     if result.returncode != 0:
         raise RuntimeError("mmr_render failed: " + (result.stderr or result.stdout).strip())
@@ -116,15 +137,16 @@ def load_image(path, channel):
 
 def update_images(context, material):
     """Renders the textures again and reloads the material's images"""
-    for channel, path in render_textures(context, material).items():
+    manifest = read_manifest(bpy.path.abspath(material[PACKAGE_KEY]))
+    for channel, path in render_textures(context, material, manifest).items():
         load_image(path, channel)
-    material["mmr_rendered"] = render_signature(material, read_manifest(bpy.path.abspath(material[PACKAGE_KEY])))
+    material[RENDERED_KEY] = render_signature(material, manifest)
 
 
 def build_material(context, material, manifest):
     """A Principled BSDF using the package's outputs, with the Material node's
     settings (as Material Maker's Godot runtime)"""
-    files = render_textures(context, material)
+    files = render_textures(context, material, manifest)
     settings = manifest.get("material", {})
     if hasattr(material, "use_nodes") and not material.use_nodes:
         material.use_nodes = True
@@ -196,7 +218,7 @@ def build_material(context, material, manifest):
         displacement.inputs["Scale"].default_value = 0.1 * settings["depth_scale"]
         links.new(height.outputs["Color"], displacement.inputs["Height"])
         links.new(displacement.outputs["Displacement"], output.inputs["Displacement"])
-    material["mmr_rendered"] = render_signature(material, manifest)
+    material[RENDERED_KEY] = render_signature(material, manifest)
 
 
 def add_parameters(material, manifest):
@@ -230,7 +252,7 @@ class MMR_OT_import(bpy.types.Operator, ImportHelper):
     def execute(self, context):
         try:
             manifest = read_manifest(self.filepath)
-        except (OSError, KeyError, ValueError, zipfile.BadZipFile) as e:
+        except MANIFEST_ERRORS as e:
             self.report({"ERROR"}, "Not a Material Maker package: %s" % e)
             return {"CANCELLED"}
         material = bpy.data.materials.new(manifest.get("name") or os.path.splitext(os.path.basename(self.filepath))[0])
@@ -315,7 +337,7 @@ class MMR_PT_material(bpy.types.Panel):
         layout.label(text=os.path.basename(material[PACKAGE_KEY]), icon="PACKAGE")
         try:
             manifest = read_manifest(bpy.path.abspath(material[PACKAGE_KEY]))
-        except (OSError, KeyError, ValueError, zipfile.BadZipFile):
+        except MANIFEST_ERRORS:
             layout.label(text="The package cannot be read", icon="ERROR")
             return
         for p in manifest.get("parameters", []):
@@ -362,9 +384,9 @@ def live_update_timer():
                 continue
             try:
                 manifest = read_manifest(bpy.path.abspath(material[PACKAGE_KEY]))
-                if list(material.get("mmr_rendered", [])) != render_signature(material, manifest):
+                if list(material.get(RENDERED_KEY, [])) != render_signature(material, manifest):
                     update_images(context, material)
-            except (OSError, KeyError, ValueError, RuntimeError, zipfile.BadZipFile):
+            except MANIFEST_ERRORS + (RuntimeError,):
                 pass
     return 0.5
 

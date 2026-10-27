@@ -211,10 +211,7 @@ func add_layer_from_material(path : String) -> bool:
 	if generator == null:
 		return false
 	add_child(generator)
-	var material : MMGenBase = null
-	for c in generator.get_children():
-		if c.has_method("get_export_profiles"):
-			material = c
+	var material : MMGenBase = MMCliTools.find_material_node(generator)
 	var ok : bool = material != null
 	if ok:
 		await MMCliTools.wait_for_renders(get_tree())

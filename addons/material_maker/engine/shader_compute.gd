@@ -20,8 +20,9 @@ func is_greyscale(index : int = 0) -> bool:
 func get_texture_type(index : int = 0) -> int:
 	return compute_shader.output_textures[index].type
 
-func render(texture : MMTexture, size : int) -> bool:
-	return await compute_shader.render(texture, Vector2i(size, size))
+## Renders a size x size texture (or size x height when height is not 0)
+func render(texture : MMTexture, size : int, height : int = 0) -> bool:
+	return await compute_shader.render(texture, Vector2i(size, height if height > 0 else size))
 
 func get_render_time() -> int:
 	return compute_shader.render_time

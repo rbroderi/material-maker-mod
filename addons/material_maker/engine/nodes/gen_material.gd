@@ -7,9 +7,23 @@ var buffer_name_prefix : String
 
 var export_last_target : String = ""
 
+## Outputs of the standard Material node (material.mmg) used by exports, the
+## path tracer and runtime packages
+const OUTPUT_ALBEDO : int = 0
+const OUTPUT_ORM : int = 1
+const OUTPUT_EMISSION : int = 2
+const OUTPUT_NORMAL : int = 3
+const OUTPUT_DEPTH : int = 4
+const OUTPUT_SSS : int = 5
+const OUTPUT_HEIGHT : int = 8
+const OUTPUT_EXTRA : int = 14
+const OUTPUT_TRANSMISSION : int = 19
+## Inputs of the standard Material node, in port order
+const STANDARD_INPUTS : Array[String] = [ "albedo_tex", "metallic_tex", "roughness_tex", "emission_tex", "normal_tex", "ao_tex", "depth_tex", "opacity_tex", "sss_tex", "coat_tex", "coat_roughness_tex", "anisotropy_tex", "sheen_tex", "transmission_tex" ]
+
 ## Outputs that are colors (albedo, emission), converted to the export color
 ## space when OCIO is used
-const COLOR_OUTPUTS : Array[int] = [ 0, 2 ]
+const COLOR_OUTPUTS : Array[int] = [ OUTPUT_ALBEDO, OUTPUT_EMISSION ]
 var export_paths : Dictionary = {}
 var uids = {}
 
@@ -69,6 +83,11 @@ func get_preprocessed_output_def(output_index : int):
 		return export_output_def
 	return super.get_preprocessed_output_def(output_index)
 
+
+## Height of exported images: the size with the material's aspect ratio
+func get_image_height() -> int:
+	var size : int = get_image_size()
+	return MMGenBuffer.aspect_height(size, int(get_parameter("aspect"))) if parameters.has("aspect") else size
 
 func get_image_size() -> int:
 	var rv : int
@@ -189,7 +208,9 @@ func update_material(m, sequential : bool = false) -> void:
 		for t in preview_textures.keys():
 			m.set_shader_parameter(t, await preview_textures[t].texture.get_texture())
 		for t in preview_texture_dependencies.keys():
-			m.set_shader_parameter(t, preview_texture_dependencies[t])
+			# Textures of inputs (such as Image nodes) are MMTextures
+			var texture = preview_texture_dependencies[t]
+			m.set_shader_parameter(t, await texture.get_texture() if texture is MMTexture else texture)
 		for p in preview_parameters.keys():
 			m.set_shader_parameter(p, preview_parameters[p])
 			if preview_parameters[p] is MMTexture:
@@ -728,6 +749,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 	var generated_dependencies = get_generated_texture_dependencies(export_profile, export_context)
 	if generated_dependencies == null:
 		await do_export_material(prefix, profile, size, command_line, height)
+		await MMPlugins.call_export_hooks(self, prefix, profile)
 		return
 	var saved_dependencies : Dictionary[String, MMTexture] = preview_texture_dependencies
 	preview_texture_dependencies = {}
@@ -738,11 +760,14 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 	# Generating code replaced the preview's textures
 	if not command_line:
 		update()
+	await MMPlugins.call_export_hooks(self, prefix, profile)
 
 func do_export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
+		if height == 0:
+			height = get_image_height()
 	export_last_target = profile
 	export_paths[profile] = prefix
 	var export_context : Dictionary = get_connections_and_parameters_context()

@@ -60,12 +60,36 @@ static func get_views() -> PackedStringArray:
 				views.append("%s / %s" % [ display, view ])
 	return views
 
+## An OptionButton of the display/view transforms ("None" first), with
+## current selected, that calls on_selected with the selected view ("" for
+## None)
+static func create_view_picker(current : String, on_selected : Callable) -> OptionButton:
+	var picker : OptionButton = OptionButton.new()
+	picker.add_item("None")
+	for v in get_views():
+		picker.add_item(v)
+	select_view(picker, current)
+	picker.item_selected.connect(func(i : int): on_selected.call("" if i == 0 else picker.get_item_text(i)))
+	return picker
+
+## Selects a view in a view picker ("None" if it is not listed)
+static func select_view(picker : OptionButton, view : String) -> void:
+	picker.selected = 0
+	for i in picker.item_count:
+		if i > 0 and picker.get_item_text(i) == view:
+			picker.selected = i
+
 ## Converts an image from a color space to the working space
 static func convert_image(image : Image, source : String) -> Image:
+	return convert_between(image, source, get_working_space())
+
+## Converts an image between two color spaces (the image is returned unchanged
+## without OCIO or on error)
+static func convert_between(image : Image, source : String, destination : String) -> Image:
 	var o = get_ocio()
-	if o == null or image == null:
+	if o == null or image == null or source == "" or destination == "":
 		return image
-	var converted : Image = o.convert_image(image, source, get_working_space())
+	var converted : Image = o.convert_image(image, source, destination)
 	if converted == null:
 		push_error("OCIO: %s" % o.get_error())
 		return image
@@ -80,18 +104,11 @@ static func get_export_space() -> String:
 		return ""
 	if export_space_override != "":
 		return export_space_override
-	return mm_globals.get_config("ocio_export_space") if mm_globals.has_config("ocio_export_space") else ""
+	return mm_globals.get_config_or("ocio_export_space", "")
 
 ## Converts an image from the working space to a color space
 static func convert_image_to(image : Image, destination : String) -> Image:
-	var o = get_ocio()
-	if o == null or image == null or destination == "":
-		return image
-	var converted : Image = o.convert_image(image, get_working_space(), destination)
-	if converted == null:
-		push_error("OCIO: %s" % o.get_error())
-		return image
-	return converted
+	return convert_between(image, get_working_space(), destination)
 
 ## The color space of Godot's 3D rendering (linear Rec.709) in the config
 static func get_scene_linear_space() -> String:

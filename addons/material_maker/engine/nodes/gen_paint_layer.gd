@@ -150,11 +150,8 @@ func load_layers(data_layers : Array, path : String) -> Array:
 			layer.alphas[c] = float(l.get(c+"_alpha", 1.0))
 		for c in [ "albedo", "mr", "emission", "normal", "do", "mask" ]:
 			if l.has(c):
-				var image : Image = Image.load_from_file(path.path_join(l[c]))
-				if image != null and not image.is_empty():
-					image.convert(Image.FORMAT_RGBAH)
-					var texture : MMTexture = MMTexture.new()
-					texture.set_texture(ImageTexture.create_from_image(image))
+				var texture : MMTexture = channel_texture(Image.load_from_file(path.path_join(l[c])))
+				if texture != null:
 					layer.textures[c] = texture
 		layer_names.append(layer.name)
 		layer.layers = load_layers(l.get("layers", []), path)
@@ -172,15 +169,27 @@ func read_open_layers(layers : Array) -> Array:
 		for c in l.get_channels():
 			var source : Texture2D = l.get(c)
 			if source != null:
-				var image : Image = source.get_image()
-				if image != null and not image.is_empty():
-					image.convert(Image.FORMAT_RGBAH)
-					var texture : MMTexture = MMTexture.new()
-					texture.set_texture(ImageTexture.create_from_image(image))
+				var texture : MMTexture = channel_texture(source.get_image())
+				if texture != null:
 					layer.textures[c] = texture
 		layer_names.append(layer.name)
 		layer.layers = read_open_layers(l.layers)
 		rv.append(layer)
+	return rv
+
+## The texture of a channel's image (null if there is no image)
+static func channel_texture(image : Image) -> MMTexture:
+	if image == null or image.is_empty():
+		return null
+	image.convert(Image.FORMAT_RGBAH)
+	return MMTexture.from_image(image)
+
+## The masks of a layer (its visible mask layers) added to masks
+static func get_layer_masks(layer : Dictionary, masks : Array = []) -> Array:
+	var rv : Array = masks.duplicate()
+	for cl in layer.layers:
+		if not cl.hidden and cl.type == LAYER_MASK and cl.textures.has("mask"):
+			rv.push_back(cl.textures.mask)
 	return rv
 
 ## The layers that are drawn, with the masks that apply to each, in drawing
@@ -190,10 +199,7 @@ func get_visible_layers(list : Array, layers_array : Array, masks : Array = []) 
 		var l : Dictionary = layers_array[i]
 		if l.hidden or l.type == LAYER_MASK:
 			continue
-		var m : Array = masks.duplicate()
-		for cl in l.layers:
-			if not cl.hidden and cl.type == LAYER_MASK and cl.textures.has("mask"):
-				m.push_back(cl.textures.mask)
+		var m : Array = get_layer_masks(l, masks)
 		get_visible_layers(list, l.layers, m)
 		list.push_back({ layer=l, masks=m })
 
@@ -260,11 +266,7 @@ func build_function(genname : String, channel : String, rv : ShaderCode) -> Stri
 		if not layer.is_empty():
 			if layer.type == LAYER_MASK:
 				source = { texture="mask", value="vec3(t.r)", alpha="1.0" }
-			var masks : Array = []
-			for cl in layer.layers:
-				if not cl.hidden and cl.type == LAYER_MASK and cl.textures.has("mask"):
-					masks.push_back(cl.textures.mask)
-			drawn.push_back({ layer=layer, masks=masks })
+			drawn.push_back({ layer=layer, masks=get_layer_masks(layer) })
 	var lines : PackedStringArray = PackedStringArray([ "vec4 %s_paint(vec2 uv) {" % genname, "\tvec4 c = %s;" % start, "\tvec4 t;", "\tfloat a;" ])
 	var sample_uv : String = "fract(uv)"
 	for i in drawn.size():
@@ -294,13 +296,9 @@ func build_function(genname : String, channel : String, rv : ShaderCode) -> Stri
 # The project path is stored relative to the project, as for images
 
 func _serialize_data(data: Dictionary) -> Dictionary:
-	var path : String = data.parameters.get("project", "")
-	path = path.replace(mm_loader.current_project_path, "%PROJECT_PATH%")
-	path = path.replace(OS.get_user_data_dir(), "%USER_DATA_PATH%")
-	data.parameters.project = path
+	data.parameters.project = MMPaths.encode_path(data.parameters.get("project", ""))
 	return data
 
 func _deserialize(data : Dictionary) -> void:
 	if data.has("parameters") and data.parameters.has("project"):
-		data.parameters.project = data.parameters.project.replace("%PROJECT_PATH%", mm_loader.current_project_path)
-		data.parameters.project = data.parameters.project.replace("%USER_DATA_PATH%", OS.get_user_data_dir())
+		data.parameters.project = MMPaths.decode_path(data.parameters.project)

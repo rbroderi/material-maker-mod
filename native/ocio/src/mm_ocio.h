@@ -10,6 +10,7 @@
 
 #include <OpenColorIO/OpenColorIO.h>
 
+#include <functional>
 #include <map>
 #include <string>
 
@@ -48,12 +49,14 @@ protected:
 	static void _bind_methods();
 
 private:
-	OCIO::ConstCPUProcessorRcPtr get_processor(const std::string &key, const OCIO::ConstTransformRcPtr &transform);
+	/// The cached processor of a key, or the processor of the transform
+	/// create_transform() returns (cached)
+	OCIO::ConstCPUProcessorRcPtr get_processor(const std::string &key, const std::function<OCIO::ConstTransformRcPtr()> &create_transform);
 	OCIO::ConstCPUProcessorRcPtr conversion_processor(const godot::String &source, const godot::String &destination);
 	OCIO::ConstCPUProcessorRcPtr display_view_processor(const godot::String &source, const godot::String &display, const godot::String &view);
 	godot::PackedFloat32Array apply(OCIO::ConstCPUProcessorRcPtr processor, const godot::PackedFloat32Array &rgba);
 
 	OCIO::ConstConfigRcPtr config;
 	std::map<std::string, OCIO::ConstCPUProcessorRcPtr> processors;
-	mutable godot::String error;
+	godot::String error;
 };

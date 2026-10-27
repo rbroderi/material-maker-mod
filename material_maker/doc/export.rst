@@ -158,6 +158,30 @@ account), and the nodes that select, convert or scale them (constant, multiply, 
 extract, swizzle, separate, normalmap) are followed. Procedural MaterialX nodes are not
 translated: the inputs they drive are listed in the console and left unconnected.
 
+AxF import
+^^^^^^^^^^
+
+X-Rite AxF materials (.axf) are converted to Material Maker graphs by the **AxF import** plugin
+(enabled by default: **Plugins/Import AxF material...**), or with the converter it uses,
+**python/axf2ptex.py**, which needs Python 3 with numpy and h5py (*pip install numpy h5py*;
+the plugin runs *python*, or the **MATERIAL_MAKER_PYTHON** environment variable):
+
+ python python/axf2ptex.py -o imported material.axf
+ material_maker --plugin axf_import material.axf imported
+
+A graph (<name>.ptex) and its textures (<name>_textures) are written for each material:
+
+* **SVBRDF** materials (a Lambert diffuse and a Ward, Cook-Torrance, Blinn-Phong or GGX lobe,
+  possibly anisotropic, with Fresnel or a clear coat) become a Static PBR Material with albedo,
+  metallic, roughness, normal and anisotropy maps. The measured specular color is converted to
+  the metallic workflow, the anisotropy is imported along U (its direction map is ignored), and
+  non-square textures are cropped to a square (**--fit stretch** stretches them).
+* **Car paints** (CarPaint2) become a **Car Paint Material** node that renders the measured
+  model, plus a static PBR approximation (<name>_pbr.ptex) for other export targets.
+* **BTFs** (DPVF) are decoded and fitted to an SVBRDF (normals and diffuse color from photometric
+  stereo, then a GGX specular lobe per texel). Parallax, self-shadowing and interreflections
+  are lost, and fabrics' sheen may be imported as a slightly metallic gray specular reflection.
+
 USD
 ---
 

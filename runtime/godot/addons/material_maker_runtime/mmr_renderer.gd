@@ -6,6 +6,10 @@ class_name MMRRenderer
 # re-renders the passes affected by parameter changes.
 
 
+## Unlocked seeds are offset by the golden ratio times the seed (modulo 1),
+## as Material Maker's --seed does
+const SEED_OFFSET : float = 0.6180339887
+
 const FORMATS : Dictionary = {
 	r16f={ data=RenderingDevice.DATA_FORMAT_R16_SFLOAT, image=Image.FORMAT_RH },
 	rgba16f={ data=RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, image=Image.FORMAT_RGBAH },
@@ -25,6 +29,9 @@ var shaders : Dictionary = {}
 var output_textures : Dictionary = {}
 var input_textures : Dictionary = {}
 var parameter_data : Dictionary = {}
+## GPU state of each pass, created once: { pipeline, parameters (buffer),
+## sets (0 to 2), chunks ({ buffer, set, y, rows }) }
+var pass_states : Dictionary = {}
 ## Passes that must be rendered
 var dirty : Dictionary = {}
 var error_message : String = ""
@@ -49,14 +56,30 @@ func _init(new_package : MMRPackage) -> void:
 		dirty[p.name] = true
 	for file_name in package.images.keys():
 		input_textures[file_name] = create_input_texture(package.images[file_name])
+	for p in package.manifest.passes:
+		pass_states[p.name] = create_pass_state(p)
 
 func is_valid() -> bool:
 	return error_message == ""
 
+## The local rendering device is freed with the renderer
+func _notification(what : int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		free_resources()
+
 func free_resources() -> void:
 	if rd == null:
 		return
-	for rid in shaders.values()+output_textures.values()+input_textures.values()+[ sampler ]:
+	# Uniform sets are freed before the buffers, pipelines and textures they use
+	var sets : Array = []
+	var others : Array = []
+	for state in pass_states.values():
+		sets.append_array(state.sets)
+		others.append_array([ state.pipeline, state.parameters ])
+		for c in state.chunks:
+			sets.append(c.set)
+			others.append(c.buffer)
+	for rid in sets+others+shaders.values()+output_textures.values()+input_textures.values()+[ sampler ]:
 		if rid.is_valid():
 			rd.free_rid(rid)
 	rd.free()
@@ -98,13 +121,13 @@ func set_parameter(parameter_name : String, value) -> bool:
 		return false
 	for target in parameter.targets:
 		var p : Dictionary = package.get_pass(target["pass"])
-		var layout : Dictionary = p.parameters[target.parameter]
+		var layout = p.get("parameters", {}).get(target.parameter)
+		if layout == null:
+			continue
 		if parameter.type == "seed":
-			# As Material Maker's --seed: unlocked seeds are offset by the
-			# golden ratio times the seed, modulo 1
 			var sum : float = 0.0
 			for term in target.terms:
-				sum += float(term[0]) if term[1] else fmod(float(term[0])+0.6180339887*float(value), 1.0)
+				sum += float(term[0]) if term[1] else fmod(float(term[0])+SEED_OFFSET*float(value), 1.0)
 			encode_value(parameter_data[p.name], int(layout.offset), layout.type, sum)
 		else:
 			encode_value(parameter_data[p.name], int(layout.offset), layout.type, value)
@@ -117,7 +140,7 @@ func mark_dirty(pass_name : String) -> void:
 	dirty[pass_name] = true
 	# Passes that use this one must be rendered again
 	for p in package.manifest.passes:
-		if p.inputs.any(func(i): return i.get("pass") == pass_name):
+		if p.inputs.any(func(i): return i.get("pass", "") == pass_name):
 			mark_dirty(p.name)
 
 static func encode_value(buffer : PackedByteArray, offset : int, type : String, value) -> void:
@@ -132,72 +155,66 @@ static func encode_value(buffer : PackedByteArray, offset : int, type : String, 
 			for i in int(type.right(1)):
 				buffer.encode_float(offset+4*i, float(value[i]))
 
+## The pipeline, buffers and uniform sets of a pass
+func create_pass_state(p : Dictionary) -> Dictionary:
+	var shader : RID = shaders[p.name]
+	var state : Dictionary = { pipeline=rd.compute_pipeline_create(shader), parameters=RID(), sets=[ RID(), RID(), RID() ], chunks=[] }
+	var image_uniform : RDUniform = RDUniform.new()
+	image_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+	image_uniform.binding = 0
+	image_uniform.add_id(output_textures[p.name])
+	state.sets[0] = rd.uniform_set_create([ image_uniform ], shader, 0)
+	if not p.parameters.is_empty():
+		state.parameters = rd.storage_buffer_create(parameter_data[p.name].size(), parameter_data[p.name])
+		state.sets[1] = create_buffer_set(shader, 1, state.parameters)
+	if not p.inputs.is_empty():
+		var sampler_uniforms : Array[RDUniform] = []
+		for i in p.inputs.size():
+			var input : Dictionary = p.inputs[i]
+			var uniform : RDUniform = RDUniform.new()
+			uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+			uniform.binding = i
+			uniform.add_id(sampler)
+			uniform.add_id(output_textures[input["pass"]] if input.get("pass", "") != "" else input_textures[input.texture])
+			sampler_uniforms.append(uniform)
+		state.sets[2] = rd.uniform_set_create(sampler_uniforms, shader, 2)
+	# Rows are rendered in chunks, the first row of each chunk is in set 3
+	var width : int = int(p.size[0])
+	var height : int = int(p.size[1])
+	var chunk_height : int = clamp(MAX_PIXELS_PER_DISPATCH/width, 1, height)
+	var y : int = 0
+	while y < height:
+		var chunk : PackedByteArray = PackedByteArray()
+		chunk.resize(4)
+		chunk.encode_s32(0, y)
+		var buffer : RID = rd.storage_buffer_create(4, chunk)
+		state.chunks.append({ buffer=buffer, set=create_buffer_set(shader, 3, buffer), y=y, rows=min(chunk_height, height-y) })
+		y += chunk_height
+	return state
+
 ## Renders all the passes that need it. Returns false on error.
 func render() -> bool:
 	if not is_valid():
 		return false
-	# Uniform sets are freed before the buffers and pipelines they use
-	var created_sets : Array[RID] = []
-	var created : Array[RID] = []
 	for p in package.manifest.passes:
 		if not dirty.has(p.name):
 			continue
-		var shader : RID = shaders[p.name]
-		var pipeline : RID = rd.compute_pipeline_create(shader)
-		created.append(pipeline)
-		var image_uniform : RDUniform = RDUniform.new()
-		image_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-		image_uniform.binding = 0
-		image_uniform.add_id(output_textures[p.name])
-		var set_0 : RID = rd.uniform_set_create([ image_uniform ], shader, 0)
-		created_sets.append(set_0)
-		var set_1 : RID = RID()
-		if not p.parameters.is_empty():
-			var buffer : RID = rd.storage_buffer_create(parameter_data[p.name].size(), parameter_data[p.name])
-			created.append(buffer)
-			set_1 = create_buffer_set(shader, 1, buffer)
-			created_sets.append(set_1)
-		var set_2 : RID = RID()
-		if not p.inputs.is_empty():
-			var sampler_uniforms : Array[RDUniform] = []
-			for i in p.inputs.size():
-				var input : Dictionary = p.inputs[i]
-				var uniform : RDUniform = RDUniform.new()
-				uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
-				uniform.binding = i
-				uniform.add_id(sampler)
-				uniform.add_id(output_textures[input["pass"]] if input.has("pass") else input_textures[input.texture])
-				sampler_uniforms.append(uniform)
-			set_2 = rd.uniform_set_create(sampler_uniforms, shader, 2)
-			created_sets.append(set_2)
-		var width : int = int(p.size[0])
-		var height : int = int(p.size[1])
+		var state : Dictionary = pass_states[p.name]
+		if state.parameters.is_valid():
+			rd.buffer_update(state.parameters, 0, parameter_data[p.name].size(), parameter_data[p.name])
 		var local_size : int = int(p.local_size)
-		var chunk_height : int = clamp(MAX_PIXELS_PER_DISPATCH/width, 1, height)
-		var y : int = 0
-		while y < height:
-			var chunk : PackedByteArray = PackedByteArray()
-			chunk.resize(4)
-			chunk.encode_s32(0, y)
-			var chunk_buffer : RID = rd.storage_buffer_create(4, chunk)
-			var set_3 : RID = create_buffer_set(shader, 3, chunk_buffer)
-			created.append(chunk_buffer)
-			created_sets.append(set_3)
+		var groups_x : int = (int(p.size[0])+local_size-1)/local_size
+		for chunk in state.chunks:
 			var compute_list : int = rd.compute_list_begin()
-			rd.compute_list_bind_compute_pipeline(compute_list, pipeline)
-			rd.compute_list_bind_uniform_set(compute_list, set_0, 0)
-			if set_1.is_valid():
-				rd.compute_list_bind_uniform_set(compute_list, set_1, 1)
-			if set_2.is_valid():
-				rd.compute_list_bind_uniform_set(compute_list, set_2, 2)
-			rd.compute_list_bind_uniform_set(compute_list, set_3, 3)
-			rd.compute_list_dispatch(compute_list, (width+local_size-1)/local_size, min(chunk_height, height-y), 1)
+			rd.compute_list_bind_compute_pipeline(compute_list, state.pipeline)
+			for set_index in 3:
+				if state.sets[set_index].is_valid():
+					rd.compute_list_bind_uniform_set(compute_list, state.sets[set_index], set_index)
+			rd.compute_list_bind_uniform_set(compute_list, chunk.set, 3)
+			rd.compute_list_dispatch(compute_list, groups_x, chunk.rows, 1)
 			rd.compute_list_end()
-			y += chunk_height
 	rd.submit()
 	rd.sync()
-	for rid in created_sets+created:
-		rd.free_rid(rid)
 	dirty.clear()
 	return true
 

@@ -1,4 +1,4 @@
-extends Window
+extends MMToolWindow
 class_name MMLibraryInstancesWindow
 
 
@@ -16,38 +16,18 @@ var summary : Label
 
 
 func _init() -> void:
-	title = "Library instances"
-	size = Vector2i(800, 450)
-	min_size = Vector2i(600, 300)
-	close_requested.connect(queue_free)
-	var margin : MarginContainer = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in [ "left", "right", "top", "bottom" ]:
-		margin.add_theme_constant_override("margin_"+side, 6)
-	add_child(margin)
-	var vbox : VBoxContainer = VBoxContainer.new()
-	margin.add_child(vbox)
+	var vbox : VBoxContainer = create_layout("Library instances", Vector2i(800, 450), Vector2i(600, 300))
 	summary = Label.new()
 	vbox.add_child(summary)
-	tree = Tree.new()
-	tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tree.columns = 3
-	tree.column_titles_visible = true
-	tree.set_column_title(0, "Node")
-	tree.set_column_title(1, "Library item")
-	tree.set_column_title(2, "Status")
-	tree.hide_root = true
-	tree.select_mode = Tree.SELECT_ROW
+	tree = create_tree([ "Node", "Library item", "Status" ])
 	vbox.add_child(tree)
 	var buttons : HBoxContainer = HBoxContainer.new()
 	vbox.add_child(buttons)
-	MMDependenciesWindow.add_button(buttons, "Show changes", show_selected_changes)
-	MMDependenciesWindow.add_button(buttons, "Update selected", update_selected)
-	MMDependenciesWindow.add_button(buttons, "Update all outdated", update_all_outdated)
-	var spacer : Control = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	buttons.add_child(spacer)
-	MMDependenciesWindow.add_button(buttons, "Close", queue_free)
+	add_button(buttons, "Show changes", show_selected_changes)
+	add_button(buttons, "Update selected", update_selected)
+	add_button(buttons, "Update all outdated", update_all_outdated)
+	add_spacer(buttons)
+	add_button(buttons, "Close", queue_free)
 
 func show_graph(ge, lm) -> void:
 	graph_edit = ge
@@ -56,8 +36,7 @@ func show_graph(ge, lm) -> void:
 	popup_centered()
 
 func refresh() -> void:
-	instances = []
-	MMLibraryInstances.collect_instances(graph_edit.top_generator, instances)
+	instances = MMLibraryInstances.collect_instances(graph_edit.top_generator)
 	tree.clear()
 	var root : TreeItem = tree.create_item()
 	var outdated : int = 0
@@ -152,8 +131,8 @@ func render_preview(data : Dictionary) -> Texture2D:
 	var texture : Texture2D = null
 	var generator = graph.get_node_or_null(NodePath(data.name))
 	if generator is MMGenBase and not generator.get_output_defs().is_empty():
-		var rendered : MMTexture = await generator.render_output_to_texture(0, Vector2i(256, 256))
-		var image : Image = (await rendered.get_texture()).get_image()
+		# (after the automatic buffers the node needs)
+		var image : Image = await MMCliTools.render_output_image(generator, 0, Vector2i(256, 256))
 		if image != null:
 			texture = ImageTexture.create_from_image(image)
 	graph.queue_free()

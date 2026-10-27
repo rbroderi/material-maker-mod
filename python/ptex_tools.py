@@ -98,9 +98,9 @@ def diff_graphs(old, new, path="", positions=False):
     old_connections = {connection_key(c) for c in old.get("connections", [])}
     new_connections = {connection_key(c) for c in new.get("connections", [])}
     for c in sorted(old_connections - new_connections, key=str):
-        lines.append("- connection %s%s:%s -> %s%s:%s" % (path, c[0], c[1], path, c[2], c[3]))
+        lines.append(format_connection("-", path, c))
     for c in sorted(new_connections - old_connections, key=str):
-        lines.append("+ connection %s%s:%s -> %s%s:%s" % (path, c[0], c[1], path, c[2], c[3]))
+        lines.append(format_connection("+", path, c))
     return lines
 
 
@@ -170,6 +170,11 @@ class Merger:
 
 SCHEMA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ptex.schema.json")
 JSON_TYPES = {"object": dict, "array": list, "string": str, "boolean": bool, "null": type(None)}
+
+
+def format_connection(sign, path, c):
+    """A connection key (from, from_port, to, to_port) as a diff line"""
+    return "%s connection %s%s:%s -> %s%s:%s" % (sign, path, c[0], c[1], path, c[2], c[3])
 
 
 def load_lenient(path):
@@ -261,39 +266,60 @@ def validate(value, schema=None):
     return SchemaValidator(schema).errors(value, schema) + graph_errors(value)
 
 
+def command_validate(argv):
+    schema = load(SCHEMA_PATH)
+    invalid = 0
+    for path in argv:
+        errors = validate(load_lenient(path), schema)
+        print("%s: %s" % (path, "valid" if not errors else "%d error(s)" % len(errors)))
+        for e in errors[:20]:
+            print("  " + e)
+        invalid += 1 if errors else 0
+    return 1 if invalid else 0
+
+
+def command_normalize(argv):
+    sys.stdout.write(dumps(load_lenient(argv[0])))
+    return 0
+
+
+def command_diff(argv):
+    lines = diff_graphs(load_lenient(argv[0]), load_lenient(argv[1]), positions="--positions" in argv)
+    print("\n".join(lines) if lines else "no differences")
+    return 0
+
+
+def command_merge(argv):
+    merger = Merger()
+    merged = merger.merge_value(load_lenient(argv[0]), load_lenient(argv[1]), load_lenient(argv[2]), "")
+    o = argv.index("-o") if "-o" in argv else -1
+    output = argv[o + 1] if 0 <= o < len(argv) - 1 else None
+    text = json.dumps(merged, indent="\t", ensure_ascii=False)
+    if output:
+        with open(output, "w", encoding="utf-8") as f:
+            f.write(text)
+    else:
+        sys.stdout.write(text + "\n")
+    for c in merger.conflicts:
+        print("conflict: " + c, file=sys.stderr)
+    return 1 if merger.conflicts else 0
+
+
+# Commands: (function, minimum number of arguments)
+COMMANDS = {
+    "validate": (command_validate, 1),
+    "normalize": (command_normalize, 1),
+    "diff": (command_diff, 2),
+    "merge": (command_merge, 3),
+}
+
+
 def main(argv):
-    if len(argv) >= 2 and argv[0] == "validate":
-        schema = load(SCHEMA_PATH)
-        invalid = 0
-        for path in argv[1:]:
-            errors = validate(load_lenient(path), schema)
-            print("%s: %s" % (path, "valid" if not errors else "%d error(s)" % len(errors)))
-            for e in errors[:20]:
-                print("  " + e)
-            invalid += 1 if errors else 0
-        return 1 if invalid else 0
-    if len(argv) >= 2 and argv[0] == "normalize":
-        sys.stdout.write(dumps(load(argv[1])))
-        return 0
-    if len(argv) >= 3 and argv[0] == "diff":
-        lines = diff_graphs(load(argv[1]), load(argv[2]), positions="--positions" in argv)
-        print("\n".join(lines) if lines else "no differences")
-        return 0
-    if len(argv) >= 4 and argv[0] == "merge":
-        merger = Merger()
-        merged = merger.merge_value(load(argv[1]), load(argv[2]), load(argv[3]), "")
-        output = argv[argv.index("-o") + 1] if "-o" in argv else None
-        text = json.dumps(merged, indent="\t", ensure_ascii=False)
-        if output:
-            with open(output, "w", encoding="utf-8") as f:
-                f.write(text)
-        else:
-            sys.stdout.write(text + "\n")
-        for c in merger.conflicts:
-            print("conflict: " + c, file=sys.stderr)
-        return 1 if merger.conflicts else 0
-    print(__doc__)
-    return 2
+    command = COMMANDS.get(argv[0]) if argv else None
+    if command is None or len(argv) - 1 < command[1]:
+        print(__doc__)
+        return 2
+    return command[0](argv[1:])
 
 
 if __name__ == "__main__":

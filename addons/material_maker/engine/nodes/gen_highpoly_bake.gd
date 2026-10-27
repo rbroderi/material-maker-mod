@@ -96,44 +96,55 @@ func get_parameter_defs() -> Array:
 			longdesc="Optional grayscale image (in the current mesh's UV space): white bends rays towards the face normal, to fix skewed details near hard edges" },
 		{ name="high_texture", type="file", label="High poly texture", filters=[ "*.png,*.jpg,*.exr,*.tga,*.webp;Image file" ], default="",
 			longdesc="Texture of the high poly mesh (in its UV space), for the Transferred texture map" },
+		{ name="udim", type="float", label="UDIM tile", min=1001, max=1100, step=1, default=1001,
+			longdesc="The UDIM tile of the current mesh's UV layout that is baked (1001 is the [0, 1] square)" },
 	]
 
 func get_map_definition() -> Dictionary:
 	return BAKE_MAPS[get_parameter("map")]
 
+## A value cached in loaded_meshes[slot], loaded again when its key changes
+func cached(slot : String, key : String, loader : Callable):
+	if not loaded_meshes.has(slot) or loaded_meshes[slot].key != key:
+		loaded_meshes[slot] = { key=key, value=loader.call() }
+	return loaded_meshes[slot].value
+
+## A cache key that changes when the file changes
+static func file_key(path : String) -> String:
+	return "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
+
 func get_mesh_parameter(parameter_name : String) -> Mesh:
 	var path : String = get_parameter(parameter_name)
 	if path == "" or not FileAccess.file_exists(path):
 		return null
-	# Reload the mesh when the file changes
-	var key : String = "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
 	var parts : bool = get_parameter("match_by_name")
-	key += ":parts" if parts else ""
-	if not loaded_meshes.has(parameter_name) or loaded_meshes[parameter_name].key != key:
-		# High poly materials are separate surfaces, for material ID maps (or
-		# objects when matching parts by name)
-		loaded_meshes[parameter_name] = { key=key, mesh=MMMeshLoader.load_mesh(path, parameter_name == "high_mesh", parts) }
-	return loaded_meshes[parameter_name].mesh
+	# High poly materials are separate surfaces, for material ID maps (or
+	# objects when matching parts by name)
+	return cached(parameter_name, file_key(path)+(":parts" if parts else ""),
+		func(): return MMMeshLoader.load_mesh(path, parameter_name == "high_mesh", parts))
 
 func get_image_parameter(parameter_name : String) -> Texture2D:
 	var path : String = get_parameter(parameter_name)
 	if path == "" or not FileAccess.file_exists(path):
 		return null
-	var key : String = "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
-	if not loaded_meshes.has(parameter_name) or loaded_meshes[parameter_name].key != key:
+	return cached(parameter_name, file_key(path), func():
 		var image : Image = Image.load_from_file(path)
-		loaded_meshes[parameter_name] = { key=key, mesh=ImageTexture.create_from_image(image) if image != null else null }
-	return loaded_meshes[parameter_name].mesh
+		return ImageTexture.create_from_image(image) if image != null else null)
+
+## The current mesh, with the UVs of the baked UDIM tile in [0, 1] (cached, so
+## bakes of the same tile are not done again)
+func get_tile_mesh() -> Mesh:
+	var low : Mesh = get_low_mesh()
+	var tile : int = int(get_parameter("udim"))
+	return cached("tile_mesh", "tile:%d:%d" % [ low.get_instance_id(), tile ], func(): return MMHighPolyBaker.udim_tile_mesh(low, tile))
 
 ## The current mesh, with its parts as separate surfaces when matching by name
 func get_low_mesh() -> Mesh:
 	if not get_parameter("match_by_name") or not current_mesh.has_meta("file_path"):
 		return current_mesh
 	var path : String = current_mesh.get_meta("file_path")
-	var key : String = "%s:%d:parts" % [ path, FileAccess.get_modified_time(path) ]
-	if not loaded_meshes.has("low_mesh") or loaded_meshes.low_mesh.key != key:
-		loaded_meshes.low_mesh = { key=key, mesh=MMMeshLoader.load_mesh(path, false, true) }
-	return loaded_meshes.low_mesh.mesh if loaded_meshes.low_mesh.mesh != null else current_mesh
+	var mesh : Mesh = cached("low_mesh", file_key(path)+":parts", func(): return MMMeshLoader.load_mesh(path, false, true))
+	return mesh if mesh != null else current_mesh
 
 func generate_map() -> MMTexture:
 	var high : Mesh = get_mesh_parameter("high_mesh")
@@ -144,7 +155,7 @@ func generate_map() -> MMTexture:
 		var texture : Texture2D = get_image_parameter(p)
 		if texture != null:
 			options[p] = texture
-	return await MMHighPolyBaker.bake(get_low_mesh(), high, get_map_definition().map, 1 << int(get_parameter("size")),
+	return await MMHighPolyBaker.bake(get_tile_mesh(), high, get_map_definition().map, 1 << int(get_parameter("size")),
 		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"), options)
 
 func set_parameter(n : String, v) -> void:
@@ -168,11 +179,7 @@ const MESH_PARAMETERS : Array[String] = [ "high_mesh", "cage_mesh", "skew_map", 
 func _serialize_data(data: Dictionary) -> Dictionary:
 	for p in MESH_PARAMETERS:
 		if data.parameters.has(p):
-			var path : String = data.parameters[p]
-			path = path.replace(mm_loader.current_project_path, "%PROJECT_PATH%")
-			path = path.replace(OS.get_user_data_dir(), "%USER_DATA_PATH%")
-			path = path.replace(MMPaths.get_resource_dir(), "%MATERIAL_MAKER_PATH%")
-			data.parameters[p] = path
+			data.parameters[p] = MMPaths.encode_path(data.parameters[p])
 	return data
 
 func _deserialize(data : Dictionary) -> void:
@@ -180,8 +187,4 @@ func _deserialize(data : Dictionary) -> void:
 		return
 	for p in MESH_PARAMETERS:
 		if data.parameters.has(p):
-			var path : String = data.parameters[p]
-			path = path.replace("%PROJECT_PATH%", mm_loader.current_project_path)
-			path = path.replace("%USER_DATA_PATH%", OS.get_user_data_dir())
-			path = path.replace("%MATERIAL_MAKER_PATH%", MMPaths.get_resource_dir())
-			data.parameters[p] = path
+			data.parameters[p] = MMPaths.decode_path(data.parameters[p])

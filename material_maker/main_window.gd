@@ -121,6 +121,7 @@ const MENU : Array[Dictionary] = [
 	{ menu="Tools/Set painting environment", submenu="paint_environment", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/-" },
 	{ menu="Tools/Environment editor", command="environment_editor", not_in_ports=["HTML5"] },
+	{ menu="Tools/Plugins...", command="show_plugins", not_in_ports=["HTML5"] },
 	#{ menu="Tools/Generate screenshots for the library nodes", command="generate_screenshots", mode="material" },
 
 	{ menu="Help/User manual", command="show_doc", shortcut="F1" },
@@ -192,6 +193,11 @@ func _ready() -> void:
 	# Set window title
 	get_window().set_title(ProjectSettings.get_setting("application/config/name")+" v"+ProjectSettings.get_setting("application/config/actual_release"))
 
+	# Plugins add nodes, libraries, export targets and menu items
+	MMPlugins.load_plugins()
+	for l in MMPlugins.get_libraries():
+		node_library_manager.add_plugin_library(l)
+
 	layout.load_panels()
 	library = get_panel("Library")
 	preview_2d = [ get_panel("Preview2D"), get_panel("Preview2D (2)") ]
@@ -209,7 +215,7 @@ func _ready() -> void:
 
 	var args : PackedStringArray = OS.get_cmdline_args()
 	for a in args:
-		if a.get_extension().to_lower() in [ "ptex", "mmpp" ]:
+		if a.get_extension().to_lower() in [ "ptex", "mmpp" ] or a.get_extension().to_lower() in MMPlugins.import_formats:
 			do_load_project(get_file_absolute_path(a))
 		elif a.get_extension().to_lower() in [ "obj", "glb", "gltf", "fbx" ]:
 			var mesh_filename : String = get_file_absolute_path(a)
@@ -278,10 +284,42 @@ func do_update_menus() -> void:
 	else:
 		menu_bar_class = mm_globals.menu_manager.MenuBarGodot
 	var menu_bar = menu_bar_class.new($VBoxContainer/TopBar/Menu)
-	mm_globals.menu_manager.create_menus(MENU, self, menu_bar)
+	mm_globals.menu_manager.create_menus(get_menu_definition(), self, menu_bar)
 	menu_update_requested = false
 
+## The main menu, with the items of plugins (in the Plugins menu, or after an
+## item of another menu)
+func get_menu_definition() -> Array[Dictionary]:
+	var menu : Array[Dictionary] = MENU.duplicate()
+	for i in MMPlugins.menu_items.size():
+		var item : Dictionary = MMPlugins.menu_items[i]
+		var entry : Dictionary = { menu=item.menu+"/"+item.label, command="run_plugin_menu_item", command_parameter=i }
+		# After the given item, or at the end of the menu
+		var position : int = -1
+		var after_position : int = -1
+		for j in menu.size():
+			if menu[j].menu.begins_with(item.menu+"/"):
+				position = j+1
+			if item.after != "" and menu[j].menu == item.menu+"/"+item.after:
+				after_position = j+1
+		if after_position != -1:
+			position = after_position
+		if position == -1:
+			menu.append(entry)
+		else:
+			menu.insert(position, entry)
+	return menu
+
+func run_plugin_menu_item(index : int) -> void:
+	MMPlugins.menu_items[index].callable.call()
+
+func show_plugins() -> void:
+	var dialog = load("res://material_maker/windows/plugins/plugins_dialog.gd").new()
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(560, 400))
+
 func _exit_tree() -> void:
+	MMPlugins.unload_plugins()
 	# Save the window position and size to remember it when restarting the application
 	mm_globals.config.set_value("window", "screen", get_window().current_screen)
 	mm_globals.config.set_value("window", "maximized", (get_window().mode == Window.MODE_MAXIMIZED) || ((get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN) or (get_window().mode == Window.MODE_FULLSCREEN)))
@@ -396,12 +434,13 @@ func create_menu_load_recent(menu) -> void:
 
 func create_menu_new_material_template(menu : MMMenuManager.MenuBase) -> void:
 	menu.clear()
-	for i in MMCliTools.ENGINE_TEMPLATES.size():
-		menu.add_item(MMCliTools.ENGINE_TEMPLATES[i].name, i)
+	var templates : Array[Dictionary] = MMCliTools.get_engine_templates()
+	for i in templates.size():
+		menu.add_item(templates[i].name, i)
 	menu.connect_id_pressed(self._on_NewMaterialTemplate_id_pressed)
 
 func _on_NewMaterialTemplate_id_pressed(id : int) -> void:
-	new_material(MMCliTools.ENGINE_TEMPLATES[id].name)
+	new_material(MMCliTools.get_engine_templates()[id].name)
 
 func _on_LoadRecent_id_pressed(id) -> void:
 	match id:
@@ -808,7 +847,8 @@ func load_project() -> void:
 		dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
 		dialog.add_filter("*.ptex;Procedural Textures File")
 		dialog.add_filter("*.mmpp;Model Painting File")
-		dialog.add_filter("*.mtlx;MaterialX material (imported)")
+		for extension in MMPlugins.import_formats.keys():
+			dialog.add_filter("*.%s;%s (imported)" % [ extension, MMPlugins.import_formats[extension].description ])
 		dialog.current_dir = mm_globals.config.get_value("path", "project", mm_globals.get_home_directory())
 		var files = await dialog.select_files()
 		if files.size() > 0:
@@ -839,11 +879,16 @@ func do_load_projects(filenames) -> void:
 func do_load_project(file_name : String) -> bool:
 	var status : bool = false
 	match file_name.get_extension():
-		"ptex", "mtlx":
+		"ptex":
 			status = await do_load_material(file_name, false)
 			hierarchy.update_from_graph_edit(get_current_graph_edit())
 		"mmpp":
 			status = do_load_painting(file_name)
+		_:
+			# Formats imported by plugins
+			if not MMPlugins.get_import_format(file_name).is_empty():
+				status = await do_load_material(file_name, false)
+				hierarchy.update_from_graph_edit(get_current_graph_edit())
 	if ! FileAccess.file_exists(file_name):
 		status = false
 	if status:
@@ -1425,29 +1470,37 @@ func generate_screenshots():
 	result += await library.generate_material_screenshots(graph)
 	print(result)
 
-func show_library_instances():
+const BYTES_PER_MB : float = 1048576.0
+## Buffers listed in the render time summary
+const MAX_LISTED_BUFFERS : int = 20
+
+## The current graph editor, if it has a graph (tool windows need one)
+func get_current_graph_edit_with_graph() -> MMGraphEdit:
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit == null or graph_edit.top_generator == null:
+	return graph_edit if graph_edit != null and graph_edit.top_generator != null else null
+
+func show_library_instances():
+	var graph_edit : MMGraphEdit = get_current_graph_edit_with_graph()
+	if graph_edit == null:
 		return
 	var dialog = load("res://material_maker/windows/library_instances/library_instances.gd").new()
 	add_dialog(dialog)
 	dialog.show_graph(graph_edit, node_library_manager)
 
 func show_dependencies():
-	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit == null or graph_edit.top_generator == null:
+	var graph_edit : MMGraphEdit = get_current_graph_edit_with_graph()
+	if graph_edit == null:
 		return
 	var dialog = load("res://material_maker/windows/dependencies/dependencies.gd").new()
 	add_dialog(dialog)
 	dialog.show_graph(graph_edit)
 
 func show_buffer_render_times():
-	var graph_edit : MMGraphEdit = get_current_graph_edit()
-	if graph_edit == null or graph_edit.top_generator == null:
+	var graph_edit : MMGraphEdit = get_current_graph_edit_with_graph()
+	if graph_edit == null:
 		return
 	# Buffers, and other generators that report a rendering time (mesh maps)
-	var buffers : Array = []
-	collect_timed_generators(graph_edit.top_generator, buffers)
+	var buffers : Array = MMCliTools.collect_generators(graph_edit.top_generator, func(g): return g in g.get_buffers() or g.rendering_time > 0)
 	buffers.sort_custom(func(a, b): return a.rendering_time > b.rendering_time)
 	var total_time : int = 0
 	var total_memory : int = 0
@@ -1456,7 +1509,7 @@ func show_buffer_render_times():
 		total_time += b.rendering_time
 		var memory : int = get_generator_gpu_memory(b)
 		total_memory += memory
-		if lines.size() < 20:
+		if lines.size() < MAX_LISTED_BUFFERS:
 			# Prefix the buffer name with the groups (and, for automatic
 			# buffers, the node) that contain it
 			var path : PackedStringArray = PackedStringArray([ str(b.name) ])
@@ -1464,23 +1517,16 @@ func show_buffer_render_times():
 			while parent is MMGenBase and parent != graph_edit.top_generator:
 				path.insert(0, parent.get_type_name())
 				parent = parent.get_parent()
-			lines.push_back("%6d ms  %7.1f MB   %s" % [ b.rendering_time, memory/1048576.0, "/".join(path) ])
+			lines.push_back("%6d ms  %7.1f MB   %s" % [ b.rendering_time, memory/BYTES_PER_MB, "/".join(path) ])
 	if buffers.is_empty():
 		accept_dialog("This graph has no buffers.")
 		return
-	var text : String = tr("%d buffer(s), %d ms in total (last render of each), %.1f MB") % [ buffers.size(), total_time, total_memory/1048576.0 ]
+	var text : String = tr("%d buffer(s), %d ms in total (last render of each), %.1f MB") % [ buffers.size(), total_time, total_memory/BYTES_PER_MB ]
 	var gpu_memory : Dictionary = MMTexture.get_gpu_memory_usage()
 	var budget : float = float(mm_globals.get_config("gpu_memory_budget"))
-	text += "\n" + tr("GPU memory: %d MB in %d texture(s), budget: %s") % [ gpu_memory.bytes/1048576, gpu_memory.count, (tr("%d MB") % budget) if budget > 0.0 else tr("unlimited") ]
+	text += "\n" + tr("GPU memory: %d MB in %d texture(s), budget: %s") % [ int(gpu_memory.bytes/BYTES_PER_MB), gpu_memory.count, (tr("%d MB") % budget) if budget > 0.0 else tr("unlimited") ]
 	text += "\n\n" + "\n".join(lines)
 	accept_dialog(text)
-
-func collect_timed_generators(generator : Node, timed : Array) -> void:
-	for c in generator.get_children():
-		if c is MMGenBase:
-			if c in c.get_buffers() or c.rendering_time > 0:
-				timed.append(c)
-			collect_timed_generators(c, timed)
 
 ## Returns the rendering device memory used by a generator's texture
 func get_generator_gpu_memory(generator : MMGenBase) -> int:
@@ -1572,7 +1618,11 @@ func on_files_dropped(files : PackedStringArray) -> void:
 		if file == null:
 			continue
 		f = file.get_path_absolute()
-		match f.get_extension().to_lower():
+		var extension : String = f.get_extension().to_lower()
+		if extension in MMPlugins.import_formats:
+			extension = "ptex"
+		match extension:
+			# Materials, and formats imported by plugins
 			"ptex":
 				var status : bool = await do_load_material(f)
 				if status:

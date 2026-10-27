@@ -1,10 +1,22 @@
 name: Build Export Templates (Single Job)
 
+# Builds Godot's export templates with Material Maker's patches (mm.patch,
+# and headless.patch for rendering with --headless), and publishes them in the
+# godot-templates-<version> release, that the Material Maker builds use
+# (dev-desktop-builds.yml). The release notes contain the hash of the patches,
+# so builds can tell when the templates are out of date.
+
 on:
   workflow_dispatch:
+  push:
+    branches: [master]
+    paths:
+      - material_maker/misc/mm.patch
+      - material_maker/misc/headless.patch
+      - .github/workflows/godot-templates-build.yml
 
 env:
-    GODOT_VERSION: 4.5.1
+    GODOT_VERSION: 4.7.2
     GODOT_SUB: stable
     GODOT_DOWNLOAD_DIR: https://github.com/godotengine/godot-builds/releases/download/${GODOT_VERSION}-${GODOT_SUB}
     SCONSFLAGS: verbose=yes warnings=all use_lto=yes
@@ -24,6 +36,8 @@ jobs:
           git clone --depth 1 --branch ${GODOT_VERSION}-${GODOT_SUB} https://github.com/godotengine/godot.git godot
           cd godot
           patch -p1 < ../material-maker/material_maker/misc/mm.patch
+          # Local rendering devices without a display, for --headless runs
+          patch -p1 < ../material-maker/material_maker/misc/headless.patch
 
       - name: Install dependencies
         run: |
@@ -66,16 +80,18 @@ jobs:
           scons platform=windows target=template_release arch=x86_64 tools=no production=yes
           cd ..
 
+      # File names of Godot's export templates directory
       - name: Package Linux build
         run: |
           mkdir -p templates_linux
-          cp godot/bin/*linuxbsd* templates_linux/
+          cp godot/bin/godot.linuxbsd.template_release.x86_64 templates_linux/linux_release.x86_64
           (cd templates_linux && zip -9 -r ../export_templates_linux.zip .)
 
       - name: Package Windows build
         run: |
           mkdir -p templates_windows
-          cp godot/bin/*windows* templates_windows/
+          cp godot/bin/godot.windows.template_release.x86_64.exe templates_windows/windows_release_x86_64.exe
+          cp godot/bin/godot.windows.template_release.x86_64.console.exe templates_windows/windows_release_x86_64_console.exe
           (cd templates_windows && zip -9 -r ../export_templates_windows.zip .)
 
       - name: Upload Linux artifact
@@ -103,6 +119,8 @@ jobs:
           git clone --depth 1 --branch ${GODOT_VERSION}-${GODOT_SUB} https://github.com/godotengine/godot.git godot
           cd godot
           patch -p1 < ../material-maker/material_maker/misc/mm.patch
+          # Local rendering devices without a display, for --headless runs
+          patch -p1 < ../material-maker/material_maker/misc/headless.patch
 
       - name: Install dependencies
         run: |
@@ -124,10 +142,39 @@ jobs:
           cd godot
           scons platform=macos arch=x86_64 target=template_release tools=no production=yes
           scons platform=macos arch=arm64 target=template_release tools=no production=yes generate_bundle=yes
-          cp ./bin/godot_macos.zip ../export_templates_macos.zip
+          mkdir -p ../templates_macos
+          cp ./bin/godot_macos.zip ../templates_macos/macos.zip
+          (cd ../templates_macos && zip -9 -r ../export_templates_macos.zip .)
 
       - name: Upload MacOS artifact
         uses: actions/upload-artifact@v4
         with:
           name: macos-templates
           path: export_templates_macos.zip
+  publish_templates:
+    needs: [build_templates, build_templates_macos]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout current repo
+        uses: actions/checkout@v4
+      - name: Download templates
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=godot-templates-${GODOT_VERSION}
+          # The same hash is computed by dev-desktop-builds.yml
+          PATCH_HASH=$(cat material_maker/misc/mm.patch material_maker/misc/headless.patch | sha256sum | cut -c1-16)
+          NOTES="Godot ${GODOT_VERSION}-${GODOT_SUB} export templates with Material Maker's patches. patches: ${PATCH_HASH}"
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --title "Godot ${GODOT_VERSION} templates (patched)" --notes "Uploading..." --prerelease --target "$GITHUB_SHA"
+          fi
+          gh release upload "$TAG" artifacts/export_templates_*.zip --clobber
+          # The hash only once all templates are uploaded
+          gh release edit "$TAG" --notes "$NOTES"

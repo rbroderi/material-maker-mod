@@ -10,10 +10,14 @@ class_name MMPathTracer
 
 const MAP_SIZE : int = 1024
 ## Material outputs: albedo, ORM, emission, normal (OpenGL), coat/coat
-## roughness/anisotropy/sheen and transmission
-const MAPS : Dictionary = { albedo_tex=0, orm_tex=1, emission_tex=2, normal_tex=3, extra_tex=14, transmission_tex=19 }
+## roughness/anisotropy/sheen, transmission and subsurface scattering
+const MAPS : Dictionary = { albedo_tex=MMGenMaterial.OUTPUT_ALBEDO, orm_tex=MMGenMaterial.OUTPUT_ORM, emission_tex=MMGenMaterial.OUTPUT_EMISSION,
+	normal_tex=MMGenMaterial.OUTPUT_NORMAL, extra_tex=MMGenMaterial.OUTPUT_EXTRA, transmission_tex=MMGenMaterial.OUTPUT_TRANSMISSION,
+	sss_tex=MMGenMaterial.OUTPUT_SSS }
+## Mean free path of subsurface scattering, relative to the size of the scene
+const SSS_RADIUS : float = 0.03
 ## Material output of the depth, used for displacement
-const DEPTH_OUTPUT : int = 4
+const DEPTH_OUTPUT : int = MMGenMaterial.OUTPUT_DEPTH
 ## Displaced meshes are subdivided up to about this number of triangles (the
 ## BVH is built in GDScript)
 const DISPLACEMENT_TRIANGLES : int = 60000
@@ -84,11 +88,7 @@ static func prepare_mesh(mesh : Mesh, transform : Transform3D, depth : Image = n
 	merged_arrays[Mesh.ARRAY_VERTEX] = vertices
 	merged_arrays[Mesh.ARRAY_INDEX] = indices
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, merged_arrays)
-	var texel_count : int = max(1, attributes.size()/4)
-	var width : int = min(texel_count, 4096)
-	var height : int = (texel_count+width-1)/width
-	attributes.resize(width*height*4)
-	return { mesh=merged, attributes=Image.create_from_data(width, height, false, Image.FORMAT_RGBAF, attributes.to_byte_array()), aabb=merged.get_aabb() }
+	return { mesh=merged, attributes=MMTexture.pack_texels(attributes), aabb=merged.get_aabb() }
 
 ## Subdivides triangles (attributes are 12 floats per face vertex: normal, u,
 ## tangent, sign, v, unused) and moves vertices inside along their normal by the
@@ -166,15 +166,12 @@ static func strip_to_triangles(strip_indices, vertex_count : int) -> PackedInt32
 			rv.append_array([ b, a, c ])
 	return rv
 
-static func make_texture(image : Image) -> MMTexture:
-	var texture : MMTexture = MMTexture.new()
-	texture.set_texture(ImageTexture.create_from_image(image))
-	return texture
-
 ## Prepares a render of a mesh instance with a Material node's maps, seen from
 ## a camera, lit by an environment. Generated preview meshes are replaced by
 ## their (much lighter) fallback meshes, and their UV scale is used.
-func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = true) -> bool:
+## Transmission is refraction in solids (IOR 1.5), or light passing through
+## thin walls.
+func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = true, thin_walled : bool = false) -> bool:
 	image_size = size
 	sample_count = 0
 	var mesh : Mesh = object.mesh
@@ -213,14 +210,14 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 	if env_image.is_compressed():
 		env_image.decompress()
 	env_image.convert(Image.FORMAT_RGBAH)
-	var environment_texture : MMTexture = make_texture(env_image)
-	dummy = make_texture(Image.create(1, 1, false, Image.FORMAT_RGBAH))
+	var environment_texture : MMTexture = MMTexture.from_image(env_image)
+	dummy = MMTexture.from_image(Image.create(1, 1, false, Image.FORMAT_RGBAH))
 	var basis : Basis = camera.global_transform.basis.orthonormalized()
 	var sun : Dictionary = find_sun(object)
 	var albedo_color = MMType.deserialize_value(material.get_parameter("albedo_color"))
 	compute = MMComputeShader.new()
 	compute.clear()
-	for t in [ [ "bvh_data", bvh ], [ "attribute_data", make_texture(prepared.attributes) ], [ "env_texture", environment_texture ], [ "accumulation", dummy ] ]:
+	for t in [ [ "bvh_data", bvh ], [ "attribute_data", MMTexture.from_image(prepared.attributes) ], [ "env_texture", environment_texture ], [ "accumulation", dummy ] ]:
 		compute.add_parameter_or_texture(t[0], "sampler2D", t[1])
 	for m in maps.keys():
 		compute.add_parameter_or_texture(m, "sampler2D", maps[m])
@@ -234,6 +231,7 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 		[ "emission_energy", "float", float(material.get_parameter("emission_energy")) ], [ "normal_strength", "float", float(material.get_parameter("normal")) ],
 		[ "coat_value", "float", float(material.get_parameter("coat")) ], [ "coat_roughness_value", "float", float(material.get_parameter("coat_roughness")) ],
 		[ "sheen_value", "float", float(material.get_parameter("sheen")) ], [ "transmission_value", "float", float(material.get_parameter("transmission")) ],
+		[ "sss_value", "float", float(material.get_parameter("sss")) ], [ "sss_radius", "float", SSS_RADIUS ], [ "thin_walled", "int", 1 if thin_walled else 0 ],
 		[ "sun_direction", "vec3", sun.direction ], [ "sun_color", "vec3", sun.color ], [ "sun_energy", "float", sun.energy ], [ "sun_angle", "float", sun.angle ],
 		[ "uv_scale", "vec2", uv_scale ], [ "scene_scale", "float", max(prepared.aabb.size.length(), 0.001) ], [ "firefly_clamp", "float", 20.0 ] ]
 	for v in values:

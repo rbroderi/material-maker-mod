@@ -1,5 +1,4 @@
 extends RefCounted
-class_name MMVolumeExport
 
 
 # Exports 3D textures (TEX3D outputs) and 3D signed distance fields (SDF3D
@@ -12,8 +11,15 @@ class_name MMVolumeExport
 
 const VOLUME_TYPES : Array[String] = [ "tex3d", "tex3d_gs", "sdf3d", "sdf3dc" ]
 const FORMATS : Array[String] = [ "vdb", "dds", "ktx2" ]
-## Texel formats of DDS and KTX2 files
-const TEXEL_FORMATS : Array[String] = [ "rgba16f", "rgba32f", "rgba8", "r16f", "r32f" ]
+## Texel formats of DDS and KTX2 files: Godot image format, texel size,
+## component size (bytes), DXGI format (DDS) and Vulkan format (KTX2)
+const TEXEL_FORMATS : Dictionary = {
+	rgba16f={ image=Image.FORMAT_RGBAH, size=8, type_size=2, dxgi=10, vulkan=97 },
+	rgba32f={ image=Image.FORMAT_RGBAF, size=16, type_size=4, dxgi=2, vulkan=109 },
+	rgba8={ image=Image.FORMAT_RGBA8, size=4, type_size=1, dxgi=28, vulkan=37 },
+	r16f={ image=Image.FORMAT_RH, size=2, type_size=2, dxgi=54, vulkan=76 },
+	r32f={ image=Image.FORMAT_RF, size=4, type_size=4, dxgi=41, vulkan=100 },
+}
 
 
 ## A sampled volume: z slices in an atlas of columns x columns tiles
@@ -124,7 +130,7 @@ static func default_texel_format(volume : Volume) -> String:
 
 ## Texel data of all slices (x fastest, then y, then z) in a texel format
 static func get_texel_data(volume : Volume, texel_format : String) -> PackedByteArray:
-	var image_format : int = { rgba16f=Image.FORMAT_RGBAH, rgba32f=Image.FORMAT_RGBAF, rgba8=Image.FORMAT_RGBA8, r16f=Image.FORMAT_RH, r32f=Image.FORMAT_RF }[texel_format]
+	var image_format : int = TEXEL_FORMATS[texel_format].image
 	var data : PackedByteArray = PackedByteArray()
 	for z in volume.resolution:
 		var slice : Image = volume.get_slice(z)
@@ -133,10 +139,9 @@ static func get_texel_data(volume : Volume, texel_format : String) -> PackedByte
 	return data
 
 static func texel_size(texel_format : String) -> int:
-	return { rgba16f=8, rgba32f=16, rgba8=4, r16f=2, r32f=4 }[texel_format]
+	return TEXEL_FORMATS[texel_format].size
 
 static func write_dds(file_name : String, volume : Volume, texel_format : String) -> Error:
-	const DXGI_FORMATS : Dictionary = { rgba16f=10, rgba32f=2, rgba8=28, r16f=54, r32f=41 }
 	var size : int = volume.resolution
 	var header : StreamPeerBuffer = StreamPeerBuffer.new()
 	header.put_data("DDS ".to_ascii_buffer())
@@ -163,7 +168,7 @@ static func write_dds(file_name : String, volume : Volume, texel_format : String
 	header.put_u32(0)
 	header.put_u32(0)
 	# DX10 header: format, TEXTURE3D dimension, flags, array size, flags 2
-	header.put_u32(DXGI_FORMATS[texel_format])
+	header.put_u32(TEXEL_FORMATS[texel_format].dxgi)
 	header.put_u32(4)
 	header.put_u32(0)
 	header.put_u32(1)
@@ -176,12 +181,10 @@ static func write_dds(file_name : String, volume : Volume, texel_format : String
 	return OK
 
 static func write_ktx2(file_name : String, volume : Volume, texel_format : String) -> Error:
-	const VK_FORMATS : Dictionary = { rgba16f=97, rgba32f=109, rgba8=37, r16f=76, r32f=100 }
-	const TYPE_SIZES : Dictionary = { rgba16f=2, rgba32f=4, rgba8=1, r16f=2, r32f=4 }
 	var size : int = volume.resolution
 	var channel_count : int = 4 if texel_format.begins_with("rgba") else 1
 	var is_float : bool = texel_format.ends_with("f")
-	var bits : int = 8*TYPE_SIZES[texel_format]
+	var bits : int = 8*TEXEL_FORMATS[texel_format].type_size
 	# Data format descriptor: a basic block with one sample per channel
 	var dfd : StreamPeerBuffer = StreamPeerBuffer.new()
 	var block_size : int = 24+16*channel_count
@@ -222,8 +225,8 @@ static func write_ktx2(file_name : String, volume : Volume, texel_format : Strin
 	data_offset += padding
 	var header : StreamPeerBuffer = StreamPeerBuffer.new()
 	header.put_data(PackedByteArray([ 0xAB, 0x4B, 0x54, 0x58, 0x20, 0x32, 0x30, 0xBB, 0x0D, 0x0A, 0x1A, 0x0A ]))
-	header.put_u32(VK_FORMATS[texel_format])
-	header.put_u32(TYPE_SIZES[texel_format])
+	header.put_u32(TEXEL_FORMATS[texel_format].vulkan)
+	header.put_u32(TEXEL_FORMATS[texel_format].type_size)
 	header.put_u32(size)
 	header.put_u32(size)
 	header.put_u32(size)
@@ -314,25 +317,44 @@ static func put_string(file : StreamPeerBuffer, s : String) -> void:
 	file.put_data(data)
 
 static func write_vdb_grid(file : StreamPeerBuffer, volume : Volume, grid : Dictionary) -> void:
-	var n : int = volume.resolution
-	var components : int = grid["values"].size()
 	var is_level_set : bool = grid["class"] == "level set"
-	var voxel_size : float = volume.voxel_size()
-	var background : float = VDB_HALF_WIDTH*voxel_size if is_level_set else 0.0
-	var activity : PackedFloat32Array = grid.get("active", grid["values"][0])
-	# Grid descriptor: name, type, instance parent, then offsets (written
-	# once known)
+	var background : float = VDB_HALF_WIDTH*volume.voxel_size() if is_level_set else 0.0
+	var offsets_position : int = write_vdb_grid_descriptor(file, grid)
+	var grid_position : int = file.get_position()
+	# No compression
+	file.put_u32(0)
+	write_vdb_metadata(file, grid)
+	write_vdb_transform(file, volume)
+	var tree : Dictionary = collect_vdb_leaves(volume, grid, is_level_set, background)
+	write_vdb_topology(file, volume, grid, tree, is_level_set, background)
+	var block_position : int = file.get_position()
+	# Buffers, in the same order
+	for k in tree.keys:
+		for leaf in tree.internal_nodes[k]:
+			file.put_data(leaf.mask)
+			file.put_8(6)
+			file.put_data(leaf.values)
+	var end_position : int = file.get_position()
+	file.seek(offsets_position)
+	file.put_64(grid_position)
+	file.put_64(block_position)
+	file.put_64(end_position)
+	file.seek(end_position)
+
+## The grid descriptor: name, type, instance parent, then room for the
+## offsets (written once known), whose position is returned
+static func write_vdb_grid_descriptor(file : StreamPeerBuffer, grid : Dictionary) -> int:
 	put_string(file, grid.name)
-	put_string(file, "Tree_float_5_4_3" if components == 1 else "Tree_vec3s_5_4_3")
+	put_string(file, "Tree_float_5_4_3" if grid["values"].size() == 1 else "Tree_vec3s_5_4_3")
 	put_string(file, "")
 	var offsets_position : int = file.get_position()
 	file.put_64(0)
 	file.put_64(0)
 	file.put_64(0)
-	var grid_position : int = file.get_position()
-	# No compression
-	file.put_u32(0)
-	# Metadata: the grid's class and name (OpenVDB reads the name from it)
+	return offsets_position
+
+## Metadata: the grid's class and name (OpenVDB reads the name from it)
+static func write_vdb_metadata(file : StreamPeerBuffer, grid : Dictionary) -> void:
 	file.put_u32(2)
 	put_string(file, "class")
 	put_string(file, "string")
@@ -340,13 +362,22 @@ static func write_vdb_grid(file : StreamPeerBuffer, volume : Volume, grid : Dict
 	put_string(file, "name")
 	put_string(file, "string")
 	put_string(file, grid.name)
-	# Transform: voxel centers at ((i+0.5)/n-0.5)*extent
+
+## Transform: voxel centers at ((i+0.5)/n-0.5)*extent
+static func write_vdb_transform(file : StreamPeerBuffer, volume : Volume) -> void:
+	var voxel_size : float = volume.voxel_size()
 	put_string(file, "UniformScaleTranslateMap")
 	var translation : float = 0.5*voxel_size-0.5*volume.extent
 	for v in [ translation, voxel_size, voxel_size, 1.0/voxel_size, 1.0/(voxel_size*voxel_size), 0.5/voxel_size ]:
 		for c in 3:
 			file.put_double(v)
-	# Leaves with active voxels (inside the narrow band for level sets)
+
+## The leaves with active voxels (inside the narrow band for level sets),
+## grouped by 128³ internal node, in the order of the node's slots (x, then y,
+## then z): { keys (the internal nodes), internal_nodes (key -> leaves) }
+static func collect_vdb_leaves(volume : Volume, grid : Dictionary, is_level_set : bool, background : float) -> Dictionary:
+	var n : int = volume.resolution
+	var activity : PackedFloat32Array = grid.get("active", grid["values"][0])
 	var leaf_count : int = (n+7)/8
 	var leaves : Array = []
 	for lx in leaf_count:
@@ -355,8 +386,6 @@ static func write_vdb_grid(file : StreamPeerBuffer, volume : Volume, grid : Dict
 				var leaf : Dictionary = make_leaf(Vector3i(lx*8, ly*8, lz*8), n, grid["values"], activity, is_level_set, background)
 				if not leaf.is_empty():
 					leaves.append(leaf)
-	# Leaves grouped by 128³ internal node, in the order of the node's slots
-	# (x, then y, then z)
 	var internal_nodes : Dictionary = {}
 	for leaf in leaves:
 		var o : Vector3i = leaf.origin
@@ -368,51 +397,46 @@ static func write_vdb_grid(file : StreamPeerBuffer, volume : Volume, grid : Dict
 	keys.sort_custom(func(a, b): return (a.x*32+a.y)*32+a.z < (b.x*32+b.y)*32+b.z)
 	for k in keys:
 		internal_nodes[k].sort_custom(func(a, b): return leaf_slot(a.origin) < leaf_slot(b.origin))
-	# Topology
+	return { keys=keys, internal_nodes=internal_nodes }
+
+## Topology: the root, its 32³ internal node, the 16³ internal nodes and the
+## leaf masks
+static func write_vdb_topology(file : StreamPeerBuffer, volume : Volume, grid : Dictionary, tree : Dictionary, is_level_set : bool, background : float) -> void:
+	var n : int = volume.resolution
+	var components : int = grid["values"].size()
+	var keys : Array = tree.keys
 	file.put_32(1)
 	put_value(file, background, components)
 	file.put_u32(0)
 	file.put_u32(1 if not keys.is_empty() else 0)
-	if not keys.is_empty():
-		file.put_32(0)
-		file.put_32(0)
-		file.put_32(0)
-		# 32³ internal node
-		var mask : PackedByteArray = PackedByteArray()
-		mask.resize(32768/8)
-		for k in keys:
-			set_bit(mask, (k.x*32+k.y)*32+k.z)
-		file.put_data(mask)
-		file.put_data(empty_mask(32768))
-		file.put_8(6)
-		file.put_data(tile_values(32768, components, func(i : int) -> float:
-			return tile_value(i, 32, 128, n, grid["values"][0], is_level_set, background)))
-		for k in keys:
-			# 16³ internal node
-			var child_mask : PackedByteArray = empty_mask(4096)
-			for leaf in internal_nodes[k]:
-				set_bit(child_mask, leaf_slot(leaf.origin))
-			file.put_data(child_mask)
-			file.put_data(empty_mask(4096))
-			file.put_8(6)
-			var base : Vector3i = k*128
-			file.put_data(tile_values(4096, components, func(i : int) -> float:
-				return tile_value(i, 16, 8, n, grid["values"][0], is_level_set, background, base)))
-			for leaf in internal_nodes[k]:
-				file.put_data(leaf.mask)
-	var block_position : int = file.get_position()
-	# Buffers, in the same order
+	if keys.is_empty():
+		return
+	file.put_32(0)
+	file.put_32(0)
+	file.put_32(0)
+	# 32³ internal node
+	var mask : PackedByteArray = PackedByteArray()
+	mask.resize(32768/8)
 	for k in keys:
-		for leaf in internal_nodes[k]:
+		set_bit(mask, (k.x*32+k.y)*32+k.z)
+	file.put_data(mask)
+	file.put_data(empty_mask(32768))
+	file.put_8(6)
+	file.put_data(tile_values(32768, components, func(i : int) -> float:
+		return tile_value(i, 32, 128, n, grid["values"][0], is_level_set, background)))
+	for k in keys:
+		# 16³ internal node
+		var child_mask : PackedByteArray = empty_mask(4096)
+		for leaf in tree.internal_nodes[k]:
+			set_bit(child_mask, leaf_slot(leaf.origin))
+		file.put_data(child_mask)
+		file.put_data(empty_mask(4096))
+		file.put_8(6)
+		var base : Vector3i = k*128
+		file.put_data(tile_values(4096, components, func(i : int) -> float:
+			return tile_value(i, 16, 8, n, grid["values"][0], is_level_set, background, base)))
+		for leaf in tree.internal_nodes[k]:
 			file.put_data(leaf.mask)
-			file.put_8(6)
-			file.put_data(leaf.values)
-	var end_position : int = file.get_position()
-	file.seek(offsets_position)
-	file.put_64(grid_position)
-	file.put_64(block_position)
-	file.put_64(end_position)
-	file.seek(end_position)
 
 static func leaf_slot(origin : Vector3i) -> int:
 	return (((origin.x & 127) >> 3)*16+((origin.y & 127) >> 3))*16+((origin.z & 127) >> 3)

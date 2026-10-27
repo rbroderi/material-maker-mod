@@ -1,0 +1,72 @@
+diff --git a/servers/rendering/rendering_server.cpp b/servers/rendering/rendering_server.cpp
+index d2b235f..c6107a5 100644
+--- a/servers/rendering/rendering_server.cpp
++++ b/servers/rendering/rendering_server.cpp
+@@ -41,6 +41,10 @@
+ #include "servers/rendering/shader_language.h"
+ #include "servers/rendering/shader_warnings.h"
+ 
++#ifdef VULKAN_ENABLED
++#include "drivers/vulkan/rendering_context_driver_vulkan.h"
++#endif
++
+ RenderingServer *RenderingServer::singleton = nullptr;
+ RenderingServer *(*RenderingServer::create_func)() = nullptr;
+ 
+@@ -1886,8 +1890,39 @@ RenderingDevice *RenderingServer::get_rendering_device() const {
+ 	return RenderingDevice::get_singleton();
+ }
+ 
++// Without a rendering device (the dummy renderer of --headless), local
++// rendering devices are created from a Vulkan context without surface, so
++// compute work (and offscreen rendering) is possible without a display.
++static RenderingContextDriver *headless_rendering_context = nullptr;
++static RenderingDevice *headless_rendering_device = nullptr;
++
++static RenderingDevice *_get_headless_rendering_device() {
++#ifdef VULKAN_ENABLED
++	if (headless_rendering_device == nullptr && headless_rendering_context == nullptr) {
++		RenderingContextDriver *context = memnew(RenderingContextDriverVulkan);
++		if (context->initialize() != OK) {
++			memdelete(context);
++			ERR_FAIL_V_MSG(nullptr, "Cannot create a Vulkan context for headless rendering devices.");
++		}
++		RenderingDevice *device = memnew(RenderingDevice);
++		if (device->initialize(context) != OK) {
++			memdelete(device);
++			memdelete(context);
++			ERR_FAIL_V_MSG(nullptr, "Cannot create a headless rendering device.");
++		}
++		headless_rendering_context = context;
++		headless_rendering_device = device;
++		print_verbose("Created a headless rendering device for local rendering devices.");
++	}
++#endif
++	return headless_rendering_device;
++}
++
+ RenderingDevice *RenderingServer::create_local_rendering_device() const {
+ 	RenderingDevice *device = RenderingDevice::get_singleton();
++	if (!device) {
++		device = _get_headless_rendering_device();
++	}
+ 	if (!device) {
+ 		return nullptr;
+ 	}
+@@ -3824,5 +3859,15 @@ void RenderingServer::init() {
+ }
+ 
+ RenderingServer::~RenderingServer() {
++	if (headless_rendering_device != nullptr) {
++		// It was created by the thread that first needed a local device
++		headless_rendering_device->make_current();
++		memdelete(headless_rendering_device);
++		headless_rendering_device = nullptr;
++	}
++	if (headless_rendering_context != nullptr) {
++		memdelete(headless_rendering_context);
++		headless_rendering_context = nullptr;
++	}
+ 	singleton = nullptr;
+ }
+

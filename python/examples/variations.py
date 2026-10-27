@@ -8,13 +8,12 @@ for example:
 """
 
 import os
-import shlex
 import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-from material_maker_client import launch  # noqa: E402
+from material_maker_client import launch, split_command  # noqa: E402
 
-command, graph, output_dir = shlex.split(sys.argv[1]), sys.argv[2], sys.argv[3]
+command, graph, output_dir = split_command(sys.argv[1]), sys.argv[2], sys.argv[3]
 count = int(sys.argv[4]) if len(sys.argv) > 4 else 4
 name = os.path.splitext(os.path.basename(graph))[0]
 

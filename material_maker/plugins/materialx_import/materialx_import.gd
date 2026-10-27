@@ -1,5 +1,4 @@
 extends RefCounted
-class_name MMMaterialXImporter
 
 
 # Imports MaterialX materials (.mtlx) as Material Maker graphs: the inputs of
@@ -64,7 +63,7 @@ const CHANNELS : Array[Dictionary] = [
 		names={ standard_surface="transmission", open_pbr_surface="transmission_weight", gltf_pbr="transmission" } },
 ]
 
-const MATERIAL_INPUTS : Array[String] = [ "albedo_tex", "metallic_tex", "roughness_tex", "emission_tex", "normal_tex", "ao_tex", "depth_tex", "opacity_tex", "sss_tex", "coat_tex", "coat_roughness_tex", "anisotropy_tex", "sheen_tex", "transmission_tex" ]
+const MATERIAL_INPUTS : Array[String] = MMGenMaterial.STANDARD_INPUTS
 
 ## Color spaces of images that hold linear colors (converted to sRGB by the
 ## Image node, Material Maker's colors are sRGB encoded)
@@ -82,10 +81,6 @@ var warnings : PackedStringArray = PackedStringArray()
 ## The graph of the first material of a MaterialX file (or of the material
 ## with the given name), as a dictionary for mm_loader.create_gen(), with the
 ## import warnings in "warnings". Returns an empty dictionary on errors.
-static func import_file(path : String, material_name : String = "") -> Dictionary:
-	var importer : MMMaterialXImporter = MMMaterialXImporter.new()
-	return importer.do_import(path, material_name)
-
 func do_import(path : String, material_name : String) -> Dictionary:
 	base_dir = path.get_base_dir()
 	document = parse(path)
@@ -211,93 +206,111 @@ func get_decompose_node(image_node : String) -> String:
 		connections.append({ from=image_node, from_port=0, to=node_name, to_port=0 })
 	return decomposers[image_node]
 
+## The method that evaluates the output of each supported node
+const NODE_EVALUATORS : Dictionary = {
+	image="evaluate_image", tiledimage="evaluate_image", UsdUVTexture="evaluate_image", gltf_image="evaluate_image",
+	constant="evaluate_constant", convert="evaluate_passthrough", dot="evaluate_passthrough", extract="evaluate_extract",
+	swizzle="evaluate_swizzle", separate2="evaluate_separate", separate3="evaluate_separate", separate4="evaluate_separate",
+	multiply="evaluate_multiply", normalmap="evaluate_normalmap"
+}
+
 ## What an input or node output provides: { value }, or { image, channel,
 ## scale, linear }, or {} when unsupported
 func evaluate(input : Element) -> Dictionary:
+	if input == null:
+		return {}
 	if input.attributes.has("value") and not is_connected_input(input):
 		return { value=parse_value(input.get_attribute("value")) }
 	var node : Element = resolve_connection(input)
 	if node == null:
 		return {}
 	var output_name : String = input.get_attribute("output")
-	match node.tag:
-		"image", "tiledimage", "UsdUVTexture", "gltf_image":
-			var file_input : Element = node.get_input("file")
-			if file_input == null:
-				return {}
-			var file : String = file_input.get_attribute("value")
-			var prefix : String = get_file_prefix(file_input)
-			var path : String = (prefix+file) if prefix != "" else file
-			if path.is_relative_path():
-				path = base_dir.path_join(path)
-			var color_space : String = file_input.get_attribute("colorspace", get_color_space(file_input)).to_lower()
-			var rv : Dictionary = { image=path.simplify_path(), channel=-1, linear=color_space in LINEAR_SPACES }
-			match output_name:
-				"r":
-					rv.channel = 0
-				"g":
-					rv.channel = 1
-				"b":
-					rv.channel = 2
-				"a":
-					rv.channel = 3
-			# Images can be scaled (UsdUVTexture) by a constant factor
-			var scale_input : Element = node.get_input("scale")
-			if scale_input != null and scale_input.attributes.has("value"):
-				var s = parse_value(scale_input.get_attribute("value"))
-				rv.scale = s[0] if s is Array else s
-			return rv
-		"constant":
-			var value_input : Element = node.get_input("value")
-			return evaluate(value_input) if value_input != null else {}
-		"convert", "dot":
-			var in_input : Element = node.get_input("in")
-			return evaluate(in_input) if in_input != null else {}
-		"extract":
-			var source : Dictionary = evaluate(node.get_input("in"))
-			var index_input : Element = node.get_input("index")
-			if source.has("image"):
-				source.channel = int(index_input.get_attribute("value", "0")) if index_input != null else 0
-			elif source.has("value") and source.value is Array:
-				source.value = source.value[int(index_input.get_attribute("value", "0")) if index_input != null else 0]
-			return source
-		"swizzle":
-			var source : Dictionary = evaluate(node.get_input("in"))
-			var channels : String = node.get_input("channels").get_attribute("value", "") if node.get_input("channels") != null else ""
-			if source.has("image") and channels.length() == 1:
-				source.channel = "rgba".find(channels)
-				if source.channel == -1:
-					source.channel = "xyzw".find(channels)
-			return source
-		"separate2", "separate3", "separate4":
-			var source : Dictionary = evaluate(node.get_input("in"))
-			if source.has("image"):
-				source.channel = [ "outr", "outg", "outb", "outa" ].find(output_name)
-				if source.channel == -1:
-					source.channel = [ "outx", "outy", "outz", "outw" ].find(output_name)
-			return source
-		"multiply":
-			var a : Dictionary = evaluate(node.get_input("in1")) if node.get_input("in1") != null else {}
-			var b : Dictionary = evaluate(node.get_input("in2")) if node.get_input("in2") != null else {}
-			for pair in [ [ a, b ], [ b, a ] ]:
-				if pair[0].has("image") and pair[1].has("value"):
-					var factor = pair[1].value
-					var f : float = factor[0] if factor is Array else factor
-					pair[0].scale = pair[0].get("scale", 1.0)*f
-					if factor is Array and factor.size() >= 3:
-						pair[0].color_scale = factor
-					return pair[0]
-			if a.has("value") and b.has("value") and not a.value is Array and not b.value is Array:
-				return { value=a.value*b.value }
-			return {}
-		"normalmap":
-			var source : Dictionary = evaluate(node.get_input("in"))
-			var scale_input : Element = node.get_input("scale")
-			if scale_input != null and scale_input.attributes.has("value") and source.has("image"):
-				source.scale = float(scale_input.get_attribute("value"))
-			return source
+	if NODE_EVALUATORS.has(node.tag):
+		return call(NODE_EVALUATORS[node.tag], node, output_name)
 	warnings.append("unsupported MaterialX node %s (%s)" % [ node.get_attribute("name"), node.tag ])
 	return {}
+
+
+func evaluate_image(node : Element, output_name : String) -> Dictionary:
+	var file_input : Element = node.get_input("file")
+	if file_input == null:
+		return {}
+	var file : String = file_input.get_attribute("value")
+	var prefix : String = get_file_prefix(file_input)
+	var path : String = (prefix+file) if prefix != "" else file
+	if path.is_relative_path():
+		path = base_dir.path_join(path)
+	var color_space : String = file_input.get_attribute("colorspace", get_color_space(file_input)).to_lower()
+	var rv : Dictionary = { image=path.simplify_path(), channel=-1, linear=color_space in LINEAR_SPACES }
+	match output_name:
+		"r":
+			rv.channel = 0
+		"g":
+			rv.channel = 1
+		"b":
+			rv.channel = 2
+		"a":
+			rv.channel = 3
+	# Images can be scaled (UsdUVTexture) by a constant factor
+	var scale_input : Element = node.get_input("scale")
+	if scale_input != null and scale_input.attributes.has("value"):
+		var s = parse_value(scale_input.get_attribute("value"))
+		rv.scale = s[0] if s is Array else s
+	return rv
+
+func evaluate_constant(node : Element, _output_name : String) -> Dictionary:
+	return evaluate(node.get_input("value"))
+
+func evaluate_passthrough(node : Element, _output_name : String) -> Dictionary:
+	return evaluate(node.get_input("in"))
+
+func evaluate_extract(node : Element, _output_name : String) -> Dictionary:
+	var source : Dictionary = evaluate(node.get_input("in"))
+	var index_input : Element = node.get_input("index")
+	if source.has("image"):
+		source.channel = int(index_input.get_attribute("value", "0")) if index_input != null else 0
+	elif source.has("value") and source.value is Array:
+		source.value = source.value[int(index_input.get_attribute("value", "0")) if index_input != null else 0]
+	return source
+
+func evaluate_swizzle(node : Element, _output_name : String) -> Dictionary:
+	var source : Dictionary = evaluate(node.get_input("in"))
+	var channels : String = node.get_input("channels").get_attribute("value", "") if node.get_input("channels") != null else ""
+	if source.has("image") and channels.length() == 1:
+		source.channel = "rgba".find(channels)
+		if source.channel == -1:
+			source.channel = "xyzw".find(channels)
+	return source
+
+func evaluate_separate(node : Element, output_name : String) -> Dictionary:
+	var source : Dictionary = evaluate(node.get_input("in"))
+	if source.has("image"):
+		source.channel = [ "outr", "outg", "outb", "outa" ].find(output_name)
+		if source.channel == -1:
+			source.channel = [ "outx", "outy", "outz", "outw" ].find(output_name)
+	return source
+
+func evaluate_multiply(node : Element, _output_name : String) -> Dictionary:
+	var a : Dictionary = evaluate(node.get_input("in1"))
+	var b : Dictionary = evaluate(node.get_input("in2"))
+	for pair in [ [ a, b ], [ b, a ] ]:
+		if pair[0].has("image") and pair[1].has("value"):
+			var factor = pair[1].value
+			var f : float = factor[0] if factor is Array else factor
+			pair[0].scale = pair[0].get("scale", 1.0)*f
+			if factor is Array and factor.size() >= 3:
+				pair[0].color_scale = factor
+			return pair[0]
+	if a.has("value") and b.has("value") and not a.value is Array and not b.value is Array:
+		return { value=a.value*b.value }
+	return {}
+
+func evaluate_normalmap(node : Element, _output_name : String) -> Dictionary:
+	var source : Dictionary = evaluate(node.get_input("in"))
+	var scale_input : Element = node.get_input("scale")
+	if scale_input != null and scale_input.attributes.has("value") and source.has("image"):
+		source.scale = float(scale_input.get_attribute("value"))
+	return source
 
 ## The node an input is connected to (nodename, or a nodegraph's output)
 func resolve_connection(input : Element) -> Element:

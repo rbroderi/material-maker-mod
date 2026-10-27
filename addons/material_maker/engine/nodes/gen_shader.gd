@@ -597,8 +597,6 @@ func get_buffer_pin(index : int) -> String:
 		return parent.get_connection_buffer(name, index)
 	return ""
 
-## Decides whether an input should be sampled through an automatic buffer,
-## given the estimated cost of its source and how many times it is sampled
 ## Returns true if the node's code reads attributes of an input (such as
 ## $in.texture or $in.size)
 func uses_input_attributes(input_name : String) -> bool:
@@ -608,6 +606,8 @@ func uses_input_attributes(input_name : String) -> bool:
 			return true
 	return false
 
+## Decides whether an input should be sampled through an automatic buffer,
+## given the estimated cost of its source and how many times it is sampled
 func should_auto_buffer(index : int, source_cost : float, sample_count : float) -> bool:
 	var inputs : Array = shader_model_preprocessed.get("inputs", [])
 	if index >= inputs.size() or not inputs[index].type in AUTO_BUFFER_TYPES:

@@ -84,10 +84,17 @@ func process_request(line : String) -> Dictionary:
 	if not params is Dictionary:
 		return make_error(id, ERROR_INVALID_PARAMS, "params must be an object")
 	var method_name : String = "api_"+request.method
-	if not has_method(method_name):
+	# Plugins can add methods
+	var plugin_method : bool = not has_method(method_name) and MMPlugins.rpc_methods.has(request.method)
+	if not has_method(method_name) and not plugin_method:
 		return make_error(id, ERROR_METHOD_NOT_FOUND, "Unknown method '%s'" % request.method)
 	method_error = ""
-	var result = await call(method_name, params)
+	# (await must apply to the call itself for asynchronous methods)
+	var result
+	if plugin_method:
+		result = await MMPlugins.call_rpc_method(request.method, params, self)
+	else:
+		result = await call(method_name, params)
 	# Notifications (requests without id) have no response
 	if not request.has("id"):
 		return {}
@@ -190,10 +197,10 @@ func api_new_graph(params : Dictionary):
 	return true
 
 func list_templates() -> Array:
-	return MMCliTools.ENGINE_TEMPLATES.map(func(t): return t.name)
+	return MMCliTools.get_engine_templates().map(func(t): return t.name)
 
 func api_list_templates(_params : Dictionary):
-	return MMCliTools.ENGINE_TEMPLATES.map(func(t): return { name=t.name, export=t.export, description=t.description })
+	return MMCliTools.get_engine_templates().map(func(t): return { name=t.name, export=t.export, description=t.description })
 
 func api_load(params : Dictionary):
 	if not require(params, [ "path" ]):
@@ -250,7 +257,9 @@ func api_set_parameter(params : Dictionary):
 ## Sets several parameters, given as { name: value } where names are remote
 ## parameter names or labels, or "node:parameter"
 func api_set_parameters(params : Dictionary):
-	if not require(params, [ "values" ]) or not params.values is Dictionary:
+	if not require(params, [ "values" ]):
+		return null
+	if not params.values is Dictionary:
 		return fail("values must be an object")
 	return await set_parameters(params.values)
 
@@ -263,15 +272,16 @@ func set_parameters(values : Dictionary):
 		var p : Dictionary = MMCliTools.resolve_parameter(graph, k)
 		if p.has("error"):
 			return fail(p.error)
+		p.value = values[k]
 		targets.append(p)
 	var undo_actions : Array = []
 	var redo_actions : Array = []
-	for i in targets.size():
-		var generator : MMGenBase = targets[i].generator
-		var parameter : String = targets[i].parameter
+	for target in targets:
+		var generator : MMGenBase = target.generator
+		var parameter : String = target.parameter
 		var node_hier_name : String = generator.get_hier_name()
 		undo_actions.append({ type="setparams", node=node_hier_name, params={ parameter: MMType.serialize_value(generator.get_parameter(parameter)) } })
-		generator.set_parameter(parameter, MMType.deserialize_value(values.values()[i]))
+		generator.set_parameter(parameter, MMType.deserialize_value(target.value))
 		redo_actions.append({ type="setparams", node=node_hier_name, params={ parameter: MMType.serialize_value(generator.get_parameter(parameter)) } })
 	var graph_edit : MMGraphEdit = get_graph_edit()
 	if graph_edit != null:
@@ -393,58 +403,51 @@ func api_render(params : Dictionary):
 			error = "buffers failed to render: "+", ".join(failed)
 	return fail(error) if error != "" else params.path
 
-## Exports a 3D texture or SDF output as a volume (.vdb, .dds or .ktx2)
-func api_export_volume(params : Dictionary):
-	if not require(params, [ "node", "path" ]):
-		return null
-	var graph : MMGenGraph = await get_graph()
-	var generator : MMGenBase = get_generator(graph, params.node)
-	if generator == null:
-		return null
-	await MMCliTools.wait_for_renders(get_tree())
-	var error : String = await MMVolumeExport.export_volume(generator, int(params.get("output", 0)), params.path, int(params.get("resolution", 128)), float(params.get("extent", 1.0)), params.get("texel_format", ""))
-	return fail(error) if error != "" else params.path
-
 func get_preview_3d():
 	if mm_globals.main_window == null:
 		fail("The 3D preview requires the GUI")
 		return null
 	return mm_globals.main_window.get_panel("Preview3D")
 
-## Path traced render of the 3D preview's object (PNG, or linear EXR)
-func api_render_path_traced(params : Dictionary):
+## The 3D preview, once params has the required path and renders are done
+## (null after an error)
+func prepare_preview(params : Dictionary):
 	if not require(params, [ "path" ]):
 		return null
 	var preview = get_preview_3d()
+	if preview != null:
+		await MMCliTools.wait_for_renders(get_tree())
+	return preview
+
+## Path traced render of the 3D preview's object (PNG, or linear EXR)
+func api_render_path_traced(params : Dictionary):
+	var preview = await prepare_preview(params)
 	if preview == null:
 		return null
-	await MMCliTools.wait_for_renders(get_tree())
 	var size : int = int(params.get("size", 512))
-	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), int(params.get("samples", 64)), bool(params.get("transparent", false)))
+	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), int(params.get("samples", 64)), bool(params.get("transparent", false)), Callable(), bool(params.get("thin_walled", false)))
 	return fail(error) if error != "" else params.path
 
 ## Turntable of the 3D preview's object, as a sprite sheet or a PNG sequence
 ## (when the path contains #)
 func api_render_turntable(params : Dictionary):
-	if not require(params, [ "path" ]):
-		return null
-	var preview = get_preview_3d()
+	var preview = await prepare_preview(params)
 	if preview == null:
 		return null
-	await MMCliTools.wait_for_renders(get_tree())
 	var size : int = int(params.get("size", 256))
 	var images : Array[Image] = await preview.render_turntable(int(params.get("frames", 36)), Vector2i(size, size))
 	var error : String = preview.save_turntable(images, params.path)
 	return fail(error) if error != "" else params.path
 
+## The plugins (see MMPlugins), and the RPC methods and commands they add
+func api_list_plugins(_params : Dictionary):
+	var plugins : Array = []
+	for p in MMPlugins.plugins:
+		plugins.append({ id=p.id, name=p.name, version=p.version, enabled=p.enabled, depends=p.depends, error=p.error, path=ProjectSettings.globalize_path(p.path) })
+	return { plugins=plugins, rpc_methods=MMPlugins.rpc_methods.keys(), commands=MMPlugins.commands.keys() }
+
 func get_material(graph : MMGenGraph) -> MMGenBase:
-	var top : Node = graph
-	while top.get_parent() is MMGenGraph:
-		top = top.get_parent()
-	for c in top.get_children():
-		if c.has_method("get_export_profiles"):
-			return c
-	return null
+	return MMCliTools.find_material_node(MMCliTools.get_top_graph(graph))
 
 ## Buffers that are not rendered yet (or failed), to diagnose renders that
 ## never finish
@@ -496,19 +499,6 @@ func api_redo(_params : Dictionary):
 		return fail("redo is only available with the user interface")
 	graph_edit.undoredo.redo()
 	return true
-
-## Exports a runtime package (.mmr) of the material (size 0 is the material's size)
-func api_export_mmr(params : Dictionary):
-	if not require(params, [ "path" ]):
-		return null
-	var graph : MMGenGraph = await get_graph()
-	var top : Node = graph
-	while top.get_parent() is MMGenGraph:
-		top = top.get_parent()
-	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
-	await MMCliTools.wait_for_renders(get_tree())
-	var errors : PackedStringArray = await MMRuntimeExporter.export_package(top, params.path, int(params.get("size", 0)), int(params.get("height", 0)))
-	return fail(", ".join(errors)) if not errors.is_empty() else params.path
 
 ## Quits Material Maker (only when there is no main window)
 func api_quit(_params : Dictionary):

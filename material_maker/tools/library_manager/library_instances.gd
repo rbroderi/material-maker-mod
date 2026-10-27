@@ -28,16 +28,19 @@ static func definition_hash(data : Dictionary) -> String:
 
 ## Removes the keys that are not part of the definition, at all levels
 ## (parameter values of the nodes of a graph change with the graph's own
-## parameters)
-static func strip_definition(value):
+## parameters). For diffs, node names and shader models are kept as they are
+## (their parameter definitions are part of the definition).
+static func strip_definition(value, for_diff : bool = false):
 	if value is Dictionary:
 		var rv : Dictionary = {}
 		for k in value.keys():
-			if not k in NON_DEFINITION_KEYS:
-				rv[k] = strip_definition(value[k])
+			if for_diff and k == "shader_model":
+				rv[k] = value[k]
+			elif (for_diff and k == "name") or not k in NON_DEFINITION_KEYS:
+				rv[k] = strip_definition(value[k], for_diff)
 		return rv
 	elif value is Array:
-		return value.map(strip_definition)
+		return value.map(func(v): return strip_definition(v, for_diff))
 	return value
 
 ## Remembers which library item a newly created generator comes from
@@ -48,12 +51,8 @@ static func tag(generator : MMGenBase, item : Dictionary) -> void:
 		instance_hash=definition_hash(generator.serialize())
 	}
 
-static func collect_instances(generator : Node, rv : Array) -> void:
-	for c in generator.get_children():
-		if c is MMGenBase:
-			if not c.library_source.is_empty():
-				rv.append(c)
-			collect_instances(c, rv)
+static func collect_instances(generator : Node) -> Array:
+	return MMCliTools.collect_generators(generator, func(g): return not g.library_source.is_empty())
 
 ## Returns { status, item } for an instance: status is "up to date",
 ## "outdated", "modified" (edited locally), "outdated, modified" or "missing"
@@ -133,46 +132,43 @@ static func update_instance(generator : MMGenBase, item : Dictionary, graph_edit
 ## to its definition (nodes, connections, parameters, inputs, outputs and code)
 static func describe_changes(old_data : Dictionary, new_data : Dictionary) -> PackedStringArray:
 	var changes : PackedStringArray = PackedStringArray()
-	diff_definitions(strip_for_diff(old_data), strip_for_diff(new_data), "", changes)
+	diff_definitions(strip_definition(old_data, true), strip_definition(new_data, true), "", changes)
 	return changes
 
-## Like strip_definition, but keeps node names, and shader models as they are
-## (their parameter definitions are part of the definition)
-static func strip_for_diff(value):
-	if value is Dictionary:
-		var rv : Dictionary = {}
-		for k in value.keys():
-			if k == "shader_model":
-				rv[k] = value[k]
-			elif k == "name" or not k in NON_DEFINITION_KEYS:
-				rv[k] = strip_for_diff(value[k])
-		return rv
-	elif value is Array:
-		return value.map(strip_for_diff)
-	return value
+## The items of a list by name (key(item, index) for items without a name)
+static func by_name(list : Array, key : Callable) -> Dictionary:
+	var rv : Dictionary = {}
+	for i in list.size():
+		rv[list[i].get("name", key.call(list[i], i))] = list[i]
+	return rv
+
+## Compares lists of named items: { added, removed, changed } names (added and
+## changed in the order of the new list, removed in the order of the old one)
+static func diff_by_name(old_items : Dictionary, new_items : Dictionary) -> Dictionary:
+	var rv : Dictionary = { added=[], removed=[], changed=[] }
+	for n in new_items.keys():
+		if not old_items.has(n):
+			rv.added.append(n)
+		elif JSON.stringify(old_items[n], "", true) != JSON.stringify(new_items[n], "", true):
+			rv.changed.append(n)
+	for n in old_items.keys():
+		if not new_items.has(n):
+			rv.removed.append(n)
+	return rv
 
 static func diff_definitions(old_data : Dictionary, new_data : Dictionary, prefix : String, changes : PackedStringArray) -> void:
 	# Graphs: nodes by name, and connections
 	if old_data.has("nodes") or new_data.has("nodes"):
-		var old_nodes : Dictionary = {}
-		var new_nodes : Dictionary = {}
-		var index : int = 0
-		for n in old_data.get("nodes", []):
-			old_nodes[n.get("name", str(index))] = n
-			index += 1
-		index = 0
-		for n in new_data.get("nodes", []):
-			new_nodes[n.get("name", str(index))] = n
-			index += 1
-		for n in new_nodes.keys():
-			if not old_nodes.has(n):
-				changes.append("%s+ node %s (%s)" % [ prefix, n, new_nodes[n].get("type", "") ])
-		for n in old_nodes.keys():
-			if not new_nodes.has(n):
-				changes.append("%s- node %s (%s)" % [ prefix, n, old_nodes[n].get("type", "") ])
-			elif JSON.stringify(old_nodes[n], "", true) != JSON.stringify(new_nodes[n], "", true):
-				changes.append("%s~ node %s (%s)" % [ prefix, n, new_nodes[n].get("type", "") ])
-				diff_definitions(old_nodes[n], new_nodes[n], prefix+"    ", changes)
+		var old_nodes : Dictionary = by_name(old_data.get("nodes", []), func(_n, i): return str(i))
+		var new_nodes : Dictionary = by_name(new_data.get("nodes", []), func(_n, i): return str(i))
+		var nodes_diff : Dictionary = diff_by_name(old_nodes, new_nodes)
+		for n in nodes_diff.added:
+			changes.append("%s+ node %s (%s)" % [ prefix, n, new_nodes[n].get("type", "") ])
+		for n in nodes_diff.removed:
+			changes.append("%s- node %s (%s)" % [ prefix, n, old_nodes[n].get("type", "") ])
+		for n in nodes_diff.changed:
+			changes.append("%s~ node %s (%s)" % [ prefix, n, new_nodes[n].get("type", "") ])
+			diff_definitions(old_nodes[n], new_nodes[n], prefix+"    ", changes)
 		var old_connections : Array = old_data.get("connections", []).map(connection_text)
 		var new_connections : Array = new_data.get("connections", []).map(connection_text)
 		for c in new_connections:
@@ -201,27 +197,22 @@ static func connection_text(c : Dictionary) -> String:
 	return "%s:%d -> %s:%d" % [ c.get("from", ""), int(c.get("from_port", 0)), c.get("to", ""), int(c.get("to_port", 0)) ]
 
 static func diff_named_list(old_list : Array, new_list : Array, what : String, prefix : String, changes : PackedStringArray) -> void:
-	var old_items : Dictionary = {}
-	for i in old_list:
-		old_items[i.get("name", JSON.stringify(i))] = i
-	var new_items : Dictionary = {}
-	for i in new_list:
-		new_items[i.get("name", JSON.stringify(i))] = i
-	for n in new_items.keys():
-		if not old_items.has(n):
-			changes.append("%s+ %s %s" % [ prefix, what, n ])
-		elif JSON.stringify(old_items[n], "", true) != JSON.stringify(new_items[n], "", true):
-			var fields : Array = []
-			for k in new_items[n].keys():
-				if old_items[n].get(k) != new_items[n][k]:
-					fields.append("%s: %s -> %s" % [ k, JSON.stringify(old_items[n].get(k)), JSON.stringify(new_items[n][k]) ])
-			for k in old_items[n].keys():
-				if not new_items[n].has(k):
-					fields.append("%s removed" % k)
-			changes.append("%s~ %s %s (%s)" % [ prefix, what, n, ", ".join(fields) ])
-	for n in old_items.keys():
-		if not new_items.has(n):
-			changes.append("%s- %s %s" % [ prefix, what, n ])
+	var old_items : Dictionary = by_name(old_list, func(i, _index): return JSON.stringify(i))
+	var new_items : Dictionary = by_name(new_list, func(i, _index): return JSON.stringify(i))
+	var items_diff : Dictionary = diff_by_name(old_items, new_items)
+	for n in items_diff.added:
+		changes.append("%s+ %s %s" % [ prefix, what, n ])
+	for n in items_diff.removed:
+		changes.append("%s- %s %s" % [ prefix, what, n ])
+	for n in items_diff.changed:
+		var fields : Array = []
+		for k in new_items[n].keys():
+			if old_items[n].get(k) != new_items[n][k]:
+				fields.append("%s: %s -> %s" % [ k, JSON.stringify(old_items[n].get(k)), JSON.stringify(new_items[n][k]) ])
+		for k in old_items[n].keys():
+			if not new_items[n].has(k):
+				fields.append("%s removed" % k)
+		changes.append("%s~ %s %s (%s)" % [ prefix, what, n, ", ".join(fields) ])
 
 ## Line diff (longest common subsequence), as "+ line" and "- line"
 static func diff_lines(old_lines : PackedStringArray, new_lines : PackedStringArray) -> PackedStringArray:

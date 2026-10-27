@@ -106,6 +106,10 @@ func get_config(key : String):
 			return ""
 	return config.get_value("config", key)
 
+## A config value, or default when it is not set
+func get_config_or(key : String, default):
+	return config.get_value("config", key) if has_config(key) else default
+
 func set_config(key : String, value):
 	config.set_value("config", key, value)
 

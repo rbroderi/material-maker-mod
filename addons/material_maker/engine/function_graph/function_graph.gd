@@ -204,207 +204,25 @@ class Compiler:
 	func format_float(v) -> String:
 		return "%.9f" % float(v)
 
+	# The method that compiles each operation (the other ones are binary, unary
+	# and comparison operators)
+	const OP_COMPILERS : Dictionary = {
+		"float": "compile_float", "int": "compile_int", "vec2": "compile_vector", "vec3": "compile_vector",
+		"vec4": "compile_vector", "true": "compile_bool", "false": "compile_bool", "pos": "compile_pos",
+		"size": "compile_size", "param": "compile_param", "arg": "compile_arg", "sample": "compile_sample",
+		"to_int": "compile_to_int", "to_float": "compile_to_float", "call": "compile_call", "loop": "compile_loop",
+		"dot": "compile_dot_distance", "distance": "compile_dot_distance", "length": "compile_length", "cross": "compile_cross",
+		"swizzle": "compile_swizzle", "mix": "compile_mix_clamp", "clamp": "compile_mix_clamp", "smoothstep": "compile_mix_clamp",
+		"and": "compile_logic", "or": "compile_logic", "not": "compile_logic", "select": "compile_select",
+		"rand": "compile_rand", "sd_rand": "compile_sd_rand"
+	}
+
 	func compile_node(node_id : String) -> String:
 		var node : Dictionary = nodes[node_id]
 		var op : String = node.get("op", "")
 		var operands : Array = get_operand_ids(node)
-		match op:
-			"float":
-				if not (node.get("value") is float or node.get("value") is int):
-					error(node_id, "float value expected")
-					return ""
-				types[node_id] = "float"
-				return format_float(node.value)
-			"int":
-				if not (node.get("value") is float or node.get("value") is int):
-					error(node_id, "int value expected")
-					return ""
-				types[node_id] = "int"
-				return "%d" % int(node.value)
-			"vec2", "vec3", "vec4":
-				var count : int = COMPONENTS[op]
-				if node.has("value"):
-					if not node.value is Array or node.value.size() != count:
-						error(node_id, "%d values expected" % count)
-						return ""
-					types[node_id] = op
-					return "%s(%s)" % [ op, ", ".join(node.value.map(format_float)) ]
-				if not node.has("args") or not node.args is Array or node.args.is_empty():
-					error(node_id, "value or args expected")
-					return ""
-				var components : int = 0
-				for a in node.args:
-					if not types[a] in VECTOR_TYPES:
-						error(node_id, "operand %s is not a float or vector" % a)
-						return ""
-					components += COMPONENTS[types[a]]
-				if components != count and not (components == 1 and node.args.size() == 1):
-					error(node_id, "%d components expected, %d given" % [ count, components ])
-					return ""
-				types[node_id] = op
-				return "%s(%s)" % [ op, ", ".join(node.args.map(value_of)) ]
-			"true", "false":
-				types[node_id] = "bool"
-				return op
-			"pos":
-				types[node_id] = "vec2"
-				return variables.pos
-			"size":
-				types[node_id] = "vec2"
-				return variables.size
-			"param":
-				if not parameter_expressions.has(node.get("name", "")):
-					error(node_id, "unknown parameter %s" % str(node.get("name")))
-					return ""
-				types[node_id] = "float"
-				return parameter_expressions[node.name]
-			"arg":
-				if not args.has(node.get("name", "")):
-					error(node_id, "unknown argument %s" % str(node.get("name")))
-					return ""
-				types[node_id] = args[node.name].type
-				return args[node.name].glsl_name
-			"sample":
-				var input = node.get("input")
-				if not (input is int or input is float) or int(input) < 0 or int(input) >= sample_expressions.size():
-					error(node_id, "invalid input %s" % str(input))
-					return ""
-				if types[node.uv] != "vec2":
-					error(node_id, "uv must be a vec2")
-					return ""
-				types[node_id] = "vec4"
-				return sample_expressions[int(input)] % value_of(node.uv)
-			"to_int":
-				if types[node.a] != "float":
-					error(node_id, "to_int requires a float")
-					return ""
-				types[node_id] = "int"
-				return "int(floor(%s))" % value_of(node.a)
-			"to_float":
-				if types[node.a] != "int":
-					error(node_id, "to_float requires an int")
-					return ""
-				types[node_id] = "float"
-				return "float(%s)" % value_of(node.a)
-			"call":
-				var info = functions_info.get(node.get("function", ""))
-				if info == null:
-					error(node_id, "unknown function %s" % str(node.get("function")))
-					return ""
-				var call_args : Array = node.get("args", [])
-				if call_args.size() != info.params.size():
-					error(node_id, "%d arguments expected, %d given" % [ info.params.size(), call_args.size() ])
-					return ""
-				for i in call_args.size():
-					if types[call_args[i]] != info.params[i].type:
-						error(node_id, "argument %s must be a %s" % [ info.params[i].name, info.params[i].type ])
-						return ""
-				types[node_id] = info.return_type
-				return "%s(%s)" % [ info.glsl_name, ", ".join([ "uv" ]+call_args.map(value_of)) ]
-			"loop":
-				var info = functions_info.get(node.get("function", ""))
-				if info == null:
-					error(node_id, "unknown function %s" % str(node.get("function")))
-					return ""
-				var count = node.get("count")
-				if not (count is int or count is float) or int(count) < 0 or int(count) > MAX_LOOP_COUNT:
-					error(node_id, "count must be a number between 0 and %d" % MAX_LOOP_COUNT)
-					return ""
-				var t : String = types[node.init]
-				if info.params.size() != 2 or info.params[0].type != t or info.params[1].type != "int" or info.return_type != t:
-					error(node_id, "the loop function must take (%s, int) and return %s" % [ t, t ])
-					return ""
-				# The loop is emitted as statements before the node's value
-				var accumulator : String = "fg_loop_%d" % code.size()
-				code.append("%s %s = %s;" % [ t, accumulator, value_of(node.init) ])
-				code.append("for (int fg_i = 0; fg_i < %d; ++fg_i) { %s = %s(uv, %s, fg_i); }" % [ int(count), accumulator, info.glsl_name, accumulator ])
-				types[node_id] = t
-				return accumulator
-			"dot", "distance":
-				var t : String = common_type(node_id, operands)
-				if t == "":
-					return ""
-				types[node_id] = "float"
-				return "%s(%s, %s)" % [ op, cast(node.a, t), cast(node.b, t) ]
-			"length":
-				if not types[node.a] in VECTOR_TYPES:
-					error(node_id, "a float or vector is expected")
-					return ""
-				types[node_id] = "float"
-				return "length(%s)" % value_of(node.a)
-			"cross":
-				if types[node.a] != "vec3" or types[node.b] != "vec3":
-					error(node_id, "cross requires two vec3")
-					return ""
-				types[node_id] = "vec3"
-				return "cross(%s, %s)" % [ value_of(node.a), value_of(node.b) ]
-			"swizzle":
-				var source_type : String = types[node.a]
-				var components = node.get("components", "")
-				if not components is String or components.length() < 1 or components.length() > 4 or not source_type in [ "vec2", "vec3", "vec4" ]:
-					error(node_id, "invalid swizzle")
-					return ""
-				# Components must all come from the same set (xyzw or rgba)
-				var component_set : String = "xyzw" if "xyzw".contains(components[0]) else "rgba"
-				for c in components:
-					var index : int = component_set.find(c)
-					if index == -1 or index >= COMPONENTS[source_type]:
-						error(node_id, "invalid component %s for type %s" % [ c, source_type ])
-						return ""
-				types[node_id] = "float" if components.length() == 1 else "vec%d" % components.length()
-				return "%s.%s" % [ value_of(node.a), components ]
-			"mix", "clamp", "smoothstep":
-				var t : String = common_type(node_id, operands)
-				if t == "":
-					return ""
-				types[node_id] = t
-				return "%s(%s)" % [ op, ", ".join(operands.map(func(o): return cast(o, t))) ]
-			"and", "or", "not":
-				for o in operands:
-					if types[o] != "bool":
-						error(node_id, "boolean operands expected")
-						return ""
-				types[node_id] = "bool"
-				match op:
-					"and":
-						return "(%s && %s)" % [ value_of(node.a), value_of(node.b) ]
-					"or":
-						return "(%s || %s)" % [ value_of(node.a), value_of(node.b) ]
-				return "(!%s)" % value_of(node.a)
-			"select":
-				if types[node.cond] != "bool":
-					error(node_id, "cond must be a boolean")
-					return ""
-				var t : String = common_type(node_id, [ node.a, node.b ], true)
-				if t == "":
-					return ""
-				types[node_id] = t
-				return "(%s ? %s : %s)" % [ value_of(node.cond), cast(node.a, t), cast(node.b, t) ]
-			"rand":
-				if types[node.a] != "vec2":
-					error(node_id, "rand requires a vec2 seed")
-					return ""
-				types[node_id] = "float"
-				return "rand(%s+vec2(%s))" % [ value_of(node.a), variables.seed ]
-			"sd_rand":
-				# Substance-compatible rand(a): every call advances a random
-				# state, in dependency order (see SD_RAND_* below)
-				if types[node.a] != "float":
-					error(node_id, "sd_rand requires a float amplitude")
-					return ""
-				if not args.is_empty() or context != "":
-					error(node_id, "sd_rand is not supported in sub-functions")
-					return ""
-				var mode : String = variables.get("sd_rand_mode", "pixel")
-				if not uses_sd_rand:
-					uses_sd_rand = true
-					if mode == "value":
-						code.append("uint fg_rng = %s;" % variables.get("sd_seed", "0u"))
-					else:
-						code.append("uint fg_rng = mm_sd_rand_init(%s, uv);" % variables.get("sd_seed", "0u"))
-				code.append("fg_rng = fg_rng*%s;" % (SD_RAND_VALUE_LCG if mode == "value" else SD_RAND_PIXEL_LCG))
-				types[node_id] = "float"
-				return "((uintBitsToFloat(1065353216u | ((fg_rng >> 1u) & 8388607u))-1.0)*%s)" % value_of(node.a)
+		if OP_COMPILERS.has(op):
+			return call(OP_COMPILERS[op], node_id, node, op, operands)
 		if BINARY_OPS.has(op):
 			var t : String = common_type(node_id, operands, INT_BINARY_OPS.has(op))
 			if t == "":
@@ -427,6 +245,225 @@ class Compiler:
 			return "(%s %s %s)" % [ value_of(node.a), COMPARISON_OPS[op], value_of(node.b) ]
 		error(node_id, "unknown operation %s" % op)
 		return ""
+
+
+	func compile_float(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if not (node.get("value") is float or node.get("value") is int):
+			error(node_id, "float value expected")
+			return ""
+		types[node_id] = "float"
+		return format_float(node.value)
+
+	func compile_int(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if not (node.get("value") is float or node.get("value") is int):
+			error(node_id, "int value expected")
+			return ""
+		types[node_id] = "int"
+		return "%d" % int(node.value)
+
+	func compile_vector(node_id : String, node : Dictionary, op : String, _operands : Array) -> String:
+		var count : int = COMPONENTS[op]
+		if node.has("value"):
+			if not node.value is Array or node.value.size() != count:
+				error(node_id, "%d values expected" % count)
+				return ""
+			types[node_id] = op
+			return "%s(%s)" % [ op, ", ".join(node.value.map(format_float)) ]
+		if not node.has("args") or not node.args is Array or node.args.is_empty():
+			error(node_id, "value or args expected")
+			return ""
+		var components : int = 0
+		for a in node.args:
+			if not types[a] in VECTOR_TYPES:
+				error(node_id, "operand %s is not a float or vector" % a)
+				return ""
+			components += COMPONENTS[types[a]]
+		if components != count and not (components == 1 and node.args.size() == 1):
+			error(node_id, "%d components expected, %d given" % [ count, components ])
+			return ""
+		types[node_id] = op
+		return "%s(%s)" % [ op, ", ".join(node.args.map(value_of)) ]
+
+	func compile_bool(node_id : String, _node : Dictionary, op : String, _operands : Array) -> String:
+		types[node_id] = "bool"
+		return op
+
+	func compile_pos(node_id : String, _node : Dictionary, _op : String, _operands : Array) -> String:
+		types[node_id] = "vec2"
+		return variables.pos
+
+	func compile_size(node_id : String, _node : Dictionary, _op : String, _operands : Array) -> String:
+		types[node_id] = "vec2"
+		return variables.size
+
+	func compile_param(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if not parameter_expressions.has(node.get("name", "")):
+			error(node_id, "unknown parameter %s" % str(node.get("name")))
+			return ""
+		types[node_id] = "float"
+		return parameter_expressions[node.name]
+
+	func compile_arg(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if not args.has(node.get("name", "")):
+			error(node_id, "unknown argument %s" % str(node.get("name")))
+			return ""
+		types[node_id] = args[node.name].type
+		return args[node.name].glsl_name
+
+	func compile_sample(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		var input = node.get("input")
+		if not (input is int or input is float) or int(input) < 0 or int(input) >= sample_expressions.size():
+			error(node_id, "invalid input %s" % str(input))
+			return ""
+		if types[node.uv] != "vec2":
+			error(node_id, "uv must be a vec2")
+			return ""
+		types[node_id] = "vec4"
+		return sample_expressions[int(input)] % value_of(node.uv)
+
+	func compile_to_int(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if types[node.a] != "float":
+			error(node_id, "to_int requires a float")
+			return ""
+		types[node_id] = "int"
+		return "int(floor(%s))" % value_of(node.a)
+
+	func compile_to_float(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if types[node.a] != "int":
+			error(node_id, "to_float requires an int")
+			return ""
+		types[node_id] = "float"
+		return "float(%s)" % value_of(node.a)
+
+	func compile_call(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		var info = functions_info.get(node.get("function", ""))
+		if info == null:
+			error(node_id, "unknown function %s" % str(node.get("function")))
+			return ""
+		var call_args : Array = node.get("args", [])
+		if call_args.size() != info.params.size():
+			error(node_id, "%d arguments expected, %d given" % [ info.params.size(), call_args.size() ])
+			return ""
+		for i in call_args.size():
+			if types[call_args[i]] != info.params[i].type:
+				error(node_id, "argument %s must be a %s" % [ info.params[i].name, info.params[i].type ])
+				return ""
+		types[node_id] = info.return_type
+		return "%s(%s)" % [ info.glsl_name, ", ".join([ "uv" ]+call_args.map(value_of)) ]
+
+	func compile_loop(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		var info = functions_info.get(node.get("function", ""))
+		if info == null:
+			error(node_id, "unknown function %s" % str(node.get("function")))
+			return ""
+		var count = node.get("count")
+		if not (count is int or count is float) or int(count) < 0 or int(count) > MAX_LOOP_COUNT:
+			error(node_id, "count must be a number between 0 and %d" % MAX_LOOP_COUNT)
+			return ""
+		var t : String = types[node.init]
+		if info.params.size() != 2 or info.params[0].type != t or info.params[1].type != "int" or info.return_type != t:
+			error(node_id, "the loop function must take (%s, int) and return %s" % [ t, t ])
+			return ""
+		# The loop is emitted as statements before the node's value
+		var accumulator : String = "fg_loop_%d" % code.size()
+		code.append("%s %s = %s;" % [ t, accumulator, value_of(node.init) ])
+		code.append("for (int fg_i = 0; fg_i < %d; ++fg_i) { %s = %s(uv, %s, fg_i); }" % [ int(count), accumulator, info.glsl_name, accumulator ])
+		types[node_id] = t
+		return accumulator
+
+	func compile_dot_distance(node_id : String, node : Dictionary, op : String, operands : Array) -> String:
+		var t : String = common_type(node_id, operands)
+		if t == "":
+			return ""
+		types[node_id] = "float"
+		return "%s(%s, %s)" % [ op, cast(node.a, t), cast(node.b, t) ]
+
+	func compile_length(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if not types[node.a] in VECTOR_TYPES:
+			error(node_id, "a float or vector is expected")
+			return ""
+		types[node_id] = "float"
+		return "length(%s)" % value_of(node.a)
+
+	func compile_cross(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if types[node.a] != "vec3" or types[node.b] != "vec3":
+			error(node_id, "cross requires two vec3")
+			return ""
+		types[node_id] = "vec3"
+		return "cross(%s, %s)" % [ value_of(node.a), value_of(node.b) ]
+
+	func compile_swizzle(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		var source_type : String = types[node.a]
+		var components = node.get("components", "")
+		if not components is String or components.length() < 1 or components.length() > 4 or not source_type in [ "vec2", "vec3", "vec4" ]:
+			error(node_id, "invalid swizzle")
+			return ""
+		# Components must all come from the same set (xyzw or rgba)
+		var component_set : String = "xyzw" if "xyzw".contains(components[0]) else "rgba"
+		for c in components:
+			var index : int = component_set.find(c)
+			if index == -1 or index >= COMPONENTS[source_type]:
+				error(node_id, "invalid component %s for type %s" % [ c, source_type ])
+				return ""
+		types[node_id] = "float" if components.length() == 1 else "vec%d" % components.length()
+		return "%s.%s" % [ value_of(node.a), components ]
+
+	func compile_mix_clamp(node_id : String, _node : Dictionary, op : String, operands : Array) -> String:
+		var t : String = common_type(node_id, operands)
+		if t == "":
+			return ""
+		types[node_id] = t
+		return "%s(%s)" % [ op, ", ".join(operands.map(func(o): return cast(o, t))) ]
+
+	func compile_logic(node_id : String, node : Dictionary, op : String, operands : Array) -> String:
+		for o in operands:
+			if types[o] != "bool":
+				error(node_id, "boolean operands expected")
+				return ""
+		types[node_id] = "bool"
+		match op:
+			"and":
+				return "(%s && %s)" % [ value_of(node.a), value_of(node.b) ]
+			"or":
+				return "(%s || %s)" % [ value_of(node.a), value_of(node.b) ]
+		return "(!%s)" % value_of(node.a)
+
+	func compile_select(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if types[node.cond] != "bool":
+			error(node_id, "cond must be a boolean")
+			return ""
+		var t : String = common_type(node_id, [ node.a, node.b ], true)
+		if t == "":
+			return ""
+		types[node_id] = t
+		return "(%s ? %s : %s)" % [ value_of(node.cond), cast(node.a, t), cast(node.b, t) ]
+
+	func compile_rand(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		if types[node.a] != "vec2":
+			error(node_id, "rand requires a vec2 seed")
+			return ""
+		types[node_id] = "float"
+		return "rand(%s+vec2(%s))" % [ value_of(node.a), variables.seed ]
+
+	func compile_sd_rand(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+		# Substance-compatible rand(a): every call advances a random
+		# state, in dependency order (see SD_RAND_* below)
+		if types[node.a] != "float":
+			error(node_id, "sd_rand requires a float amplitude")
+			return ""
+		if not args.is_empty() or context != "":
+			error(node_id, "sd_rand is not supported in sub-functions")
+			return ""
+		var mode : String = variables.get("sd_rand_mode", "pixel")
+		if not uses_sd_rand:
+			uses_sd_rand = true
+			if mode == "value":
+				code.append("uint fg_rng = %s;" % variables.get("sd_seed", "0u"))
+			else:
+				code.append("uint fg_rng = mm_sd_rand_init(%s, uv);" % variables.get("sd_seed", "0u"))
+		code.append("fg_rng = fg_rng*%s;" % (SD_RAND_VALUE_LCG if mode == "value" else SD_RAND_PIXEL_LCG))
+		types[node_id] = "float"
+		return "((uintBitsToFloat(1065353216u | ((fg_rng >> 1u) & 8388607u))-1.0)*%s)" % value_of(node.a)
 
 	# Compiles nodes reachable from output into code, returns false on error
 	func compile_body() -> bool:

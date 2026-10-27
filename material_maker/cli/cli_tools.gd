@@ -110,10 +110,17 @@ const ENGINE_TEMPLATES : Array[Dictionary] = [
 		description="Blender material import script and textures" },
 ]
 
+## The output templates whose export target exists (some are added by
+## plugins)
+static func get_engine_templates() -> Array[Dictionary]:
+	var material : Dictionary = mm_loader.predefined_generators.get("material", {})
+	var targets : Array = material.get("shader_model", {}).get("exports", {}).keys()+mm_loader.get_external_export_targets("material").keys()
+	return ENGINE_TEMPLATES.filter(func(t): return t.export in targets)
+
 ## Graph data of a new material from an output template (by name or export
 ## target), or an empty dictionary
 static func get_engine_template_graph(template_name : String) -> Dictionary:
-	for t in ENGINE_TEMPLATES:
+	for t in get_engine_templates():
 		if t.name == template_name or t.export == template_name:
 			var parameters : Dictionary = { size=11 }
 			parameters.merge(t.parameters, true)
@@ -138,12 +145,18 @@ static func get_preset_names(graph : MMGenBase) -> PackedStringArray:
 					names.append(n)
 	return names
 
+## Unlocked seeds are offset by the golden ratio (modulo 1) for each step, so
+## successive seeds are well distributed (the runtimes use the same constant)
+const SEED_OFFSET : float = 0.6180339887
+## Frames without pending renders after which rendering is considered done
+const IDLE_FRAMES_DONE : int = 10
+
 ## Changes the seeds of all nodes that are not locked, deterministically
 static func reseed(generator : Node, seed_offset : int) -> void:
 	for c in generator.get_children():
 		if c is MMGenBase:
 			if c.has_randomness() and not c.is_seed_locked():
-				c.set_seed(fmod(c.seed_value+0.6180339887*seed_offset, 1.0))
+				c.set_seed(fmod(c.seed_value+SEED_OFFSET*seed_offset, 1.0))
 			reseed(c, seed_offset)
 
 ## Returns a description of the parameters that can be overridden
@@ -173,25 +186,49 @@ static func wait_for_renders(tree : SceneTree, max_frames : int = 6000) -> void:
 	for i in max_frames:
 		await tree.process_frame
 		idle_frames = idle_frames+1 if mm_deps.get_render_queue_size() == 0 else 0
-		if idle_frames >= 10:
+		if idle_frames >= IDLE_FRAMES_DONE:
 			return
+
+## The generator and output of a node output spec ("node/path" or
+## "node/path:output"): { generator, output }, or { error }
+static func resolve_node_output(graph : MMGenBase, node_spec : String) -> Dictionary:
+	var node_path : String = node_spec.get_slice(":", 0)
+	var generator = graph.get_node_or_null(NodePath(node_path))
+	if not generator is MMGenBase:
+		return { error="node '%s' not found" % node_path }
+	return { generator=generator, output=node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0 }
+
+## The top graph of a project, that contains a graph
+static func get_top_graph(graph : MMGenGraph) -> MMGenGraph:
+	var top : MMGenGraph = graph
+	while top.get_parent() is MMGenGraph:
+		top = top.get_parent()
+	return top
+
+## The material node (the node with export profiles) of a graph, or null
+static func find_material_node(graph : Node) -> MMGenBase:
+	for c in graph.get_children():
+		if c.has_method("get_export_profiles"):
+			return c
+	return null
+
+## A node output spec as a part of a file name
+static func spec_to_file_part(node_spec : String) -> String:
+	return node_spec.replace("/", "_").replace(":", "_")
 
 ## Renders a node output ("node/path" or "node/path:output") to a file, size
 ## pixels wide and height pixels high (0 for a square image)
 static func render_node(graph : MMGenBase, node_spec : String, size : int, file_name : String, height : int = 0) -> String:
+	var resolved : Dictionary = resolve_node_output(graph, node_spec)
+	if resolved.has("error"):
+		return resolved.error
+	var generator : MMGenBase = resolved.generator
+	var output : int = resolved.output
 	var node_path : String = node_spec.get_slice(":", 0)
-	var output : int = node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0
-	var generator = graph.get_node_or_null(NodePath(node_path))
-	if not generator is MMGenBase:
-		return "node '%s' not found" % node_path
 	# Material nodes only show their (export) outputs with show_hidden
 	if output < 0 or output >= generator.get_output_defs(true).size():
 		return "node '%s' has no output %d" % [ node_path, output ]
-	# Generating the shader creates the automatic buffers it needs, that must
-	# be rendered first
-	generator.get_shader_code("uv", output, MMGenContext.new())
-	await wait_for_renders(generator.get_tree())
-	var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(size, height if height > 0 else size))
+	var texture : MMTexture = await render_output_texture(generator, output, Vector2i(size, height if height > 0 else size))
 	if await texture.save_to_file(file_name) != OK:
 		return "could not save '%s'" % file_name
 	return ""
@@ -199,17 +236,13 @@ static func render_node(graph : MMGenBase, node_spec : String, size : int, file_
 ## Renders animation frames of a node output ($time from 0 to duration) in a
 ## sprite sheet with the given number of columns (rows are filled first)
 static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, frames : int, duration : float, columns : int, file_name : String) -> String:
-	var node_path : String = node_spec.get_slice(":", 0)
-	var output : int = node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0
-	var generator = graph.get_node_or_null(NodePath(node_path))
-	if not generator is MMGenBase:
-		return "node '%s' not found" % node_path
-	if columns <= 0:
-		columns = int(ceil(sqrt(float(frames))))
-	var rows : int = (frames+columns-1)/columns
-	var sheet : Image = null
-	var buffers : Array = []
-	collect_buffers(graph, buffers)
+	var resolved : Dictionary = resolve_node_output(graph, node_spec)
+	if resolved.has("error"):
+		return resolved.error
+	var generator : MMGenBase = resolved.generator
+	var output : int = resolved.output
+	var images : Array[Image] = []
+	var buffers : Array = collect_generators(graph, func(g): return g is MMGenBuffer)
 	for frame in frames:
 		MMComputeShader.fixed_time = duration*float(frame)/float(frames)
 		# Buffers (including automatic ones) are rendered again at this time
@@ -218,23 +251,56 @@ static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, f
 			if mm_deps.buffers.has(buffer_name):
 				mm_deps.buffer_invalidate(buffer_name)
 		mm_deps.update()
-		await wait_for_renders(generator.get_tree())
-		var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(size, size))
-		var image : Image = (await texture.get_texture()).get_image()
-		if sheet == null:
-			sheet = Image.create(size*columns, size*rows, false, image.get_format())
-		sheet.blit_rect(image, Rect2i(0, 0, size, size), Vector2i((frame%columns)*size, (frame/columns)*size))
+		images.append(await render_output_image(generator, output, Vector2i(size, size)))
 	MMComputeShader.fixed_time = -1.0
+	var sheet : Image = make_sprite_sheet(images, columns)
 	if sheet == null:
 		return "no frame rendered"
 	var error : Error = sheet.save_exr(file_name) if file_name.get_extension() == "exr" else sheet.save_png(file_name)
 	return "could not save '%s'" % file_name if error != OK else ""
 
-static func collect_buffers(generator : Node, buffers : Array) -> void:
-	for c in generator.get_children():
-		if c is MMGenBuffer:
-			buffers.append(c)
-		collect_buffers(c, buffers)
+## The generators under root (in its subgraphs too, and including the
+## automatic buffers of shader nodes) for which predicate returns true
+static func collect_generators(root : Node, predicate : Callable) -> Array:
+	var rv : Array = []
+	add_generators(root, predicate, rv)
+	return rv
+
+static func add_generators(root : Node, predicate : Callable, rv : Array) -> void:
+	for c in root.get_children():
+		if c is MMGenBase:
+			if predicate.call(c):
+				rv.append(c)
+			add_generators(c, predicate, rv)
+
+## Renders an output of a generator, after the buffers it needs (generating
+## its shader creates the automatic ones) are rendered
+static func render_output_texture(generator : MMGenBase, output : int, size : Vector2i) -> MMTexture:
+	generator.get_shader_code("uv", output, MMGenContext.new())
+	await wait_for_renders(generator.get_tree())
+	return await generator.render_output_to_texture(output, size)
+
+static func render_output_image(generator : MMGenBase, output : int, size : Vector2i) -> Image:
+	var texture : MMTexture = await render_output_texture(generator, output, size)
+	return (await texture.get_texture()).get_image()
+
+## Images of the same size in a sprite sheet with the given number of columns
+## (a square sheet when 0), rows being filled first, in the format of the
+## first image (null without images)
+static func make_sprite_sheet(images : Array[Image], columns : int = 0) -> Image:
+	if images.is_empty():
+		return null
+	if columns <= 0:
+		columns = ceili(sqrt(images.size()))
+	var rows : int = ceili(float(images.size())/columns)
+	var frame_size : Vector2i = images[0].get_size()
+	var sheet : Image = Image.create(frame_size.x*columns, frame_size.y*rows, false, images[0].get_format())
+	for i in images.size():
+		var image : Image = images[i]
+		if image.get_format() != sheet.get_format():
+			image.convert(sheet.get_format())
+		sheet.blit_rect(image, Rect2i(Vector2i(), frame_size), Vector2i(i%columns, i/columns)*frame_size)
+	return sheet
 
 ## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors.
 ## With a high poly mesh (options.high), maps are baked from it (see
@@ -248,7 +314,7 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 	if mesh == null:
 		errors.append("could not load mesh '%s'" % mesh_path)
 		return errors
-	var bake_options : Dictionary = { match_by_name=match_names }
+	var bake_options : Dictionary = { match_by_name=match_names, hardware=not options.get("software_raytracing", false) }
 	for o in [ [ "skew", "skew_map" ], [ "high_texture", "high_texture" ] ]:
 		if options.get(o[0], "") != "":
 			var image : Image = Image.load_from_file(options[o[0]])
@@ -269,18 +335,23 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 			errors.append("could not load mesh '%s'" % options.cage)
 			return errors
 	var valid_maps : Array = BAKE_MAPS+(Array(MMHighPolyBaker.MAPS) if high_mesh != null else [])
-	for m in maps:
-		if not m in valid_maps:
-			errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
-			continue
-		var texture : MMTexture
-		if m in MMHighPolyBaker.MAPS and high_mesh != null:
-			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh, bake_options)
-		else:
-			texture = await MMMapGenerator.get_map(mesh, m, size, true)
-		var file_name : String = "%s_%s.png" % [ prefix, m ]
-		if await texture.save_to_file(file_name) != OK:
-			errors.append("could not save '%s'" % file_name)
-		else:
-			print("Baked %s" % file_name)
+	# With --udim, each UDIM tile of the mesh is baked to <prefix>_<map>.<tile>.png
+	var tiles : PackedInt32Array = MMHighPolyBaker.udim_tiles(mesh) if options.get("udim", false) else PackedInt32Array([ 0 ])
+	for tile in tiles:
+		var tile_mesh : Mesh = MMHighPolyBaker.udim_tile_mesh(mesh, tile) if tile != 0 else mesh
+		var tile_cage : Mesh = MMHighPolyBaker.udim_tile_mesh(cage_mesh, tile) if tile != 0 and cage_mesh != null else cage_mesh
+		for m in maps:
+			if not m in valid_maps:
+				errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
+				continue
+			var texture : MMTexture
+			if m in MMHighPolyBaker.MAPS and high_mesh != null:
+				texture = await MMHighPolyBaker.bake(tile_mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, tile_cage, bake_options)
+			else:
+				texture = await MMMapGenerator.get_map(tile_mesh, m, size, true)
+			var file_name : String = "%s_%s.png" % [ prefix, m ] if tile == 0 else "%s_%s.%d.png" % [ prefix, m, tile ]
+			if await texture.save_to_file(file_name) != OK:
+				errors.append("could not save '%s'" % file_name)
+			else:
+				print("Baked %s%s" % [ file_name, " (hardware ray tracing)" if m in MMHighPolyBaker.MAPS and high_mesh != null and MMHighPolyBaker.last_bake_used_hardware else "" ])
 	return errors

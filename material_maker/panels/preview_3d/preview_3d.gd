@@ -268,7 +268,7 @@ func do_generate_map(file_name : String, map : String, image_size : int) -> void
 ## A path traced render of the current object, from the current view, saved
 ## to a PNG (tone mapped) or EXR (linear) file. Returns an error message, or
 ## an empty string.
-func render_path_traced(file_name : String, image_size : Vector2i, samples : int, transparent_background : bool = false, progress : Callable = Callable()) -> String:
+func render_path_traced(file_name : String, image_size : Vector2i, samples : int, transparent_background : bool = false, progress : Callable = Callable(), thin_walled : bool = false) -> String:
 	var project = mm_globals.main_window.get_current_project() if mm_globals.main_window != null else null
 	var material = project.get_material_node() if project != null and project.has_method("get_material_node") else null
 	if material == null:
@@ -278,7 +278,7 @@ func render_path_traced(file_name : String, image_size : Vector2i, samples : int
 	object_rotate.pause()
 	var tracer : MMPathTracer = MMPathTracer.new()
 	var error : String = ""
-	if not await tracer.setup(current_object, material, camera, environment, image_size, transparent_background):
+	if not await tracer.setup(current_object, material, camera, environment, image_size, transparent_background, true, thin_walled):
 		error = "Cannot prepare the path tracer"
 	else:
 		var done : int = 0
@@ -345,13 +345,7 @@ static func save_turntable(images : Array[Image], file_name : String) -> String:
 			if images[i].save_png(frame_file) != OK:
 				return "Cannot save "+frame_file
 		return ""
-	var columns : int = ceili(sqrt(images.size()))
-	var rows : int = ceili(float(images.size())/columns)
-	var frame_size : Vector2i = images[0].get_size()
-	var sheet : Image = Image.create(frame_size.x*columns, frame_size.y*rows, false, Image.FORMAT_RGBA8)
-	for i in images.size():
-		var image : Image = images[i]
-		if image.get_format() != Image.FORMAT_RGBA8:
-			image.convert(Image.FORMAT_RGBA8)
-		sheet.blit_rect(image, Rect2i(Vector2i(), frame_size), Vector2i(i%columns, i/columns)*frame_size)
+	if images[0].get_format() != Image.FORMAT_RGBA8:
+		images[0].convert(Image.FORMAT_RGBA8)
+	var sheet : Image = MMCliTools.make_sprite_sheet(images)
 	return "" if sheet.save_png(file_name) == OK else "Cannot save "+file_name

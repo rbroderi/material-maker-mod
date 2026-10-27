@@ -352,10 +352,7 @@ func take_snapshot() -> void:
 ## Renders the current output with float precision, once the buffers it
 ## depends on are rendered
 func render_output_image() -> Image:
-	generator.get_shader_code("uv", output, MMGenContext.new())
-	await MMCliTools.wait_for_renders(get_tree())
-	var texture : MMTexture = await generator.render_output_to_texture(output, Vector2i(PIXEL_PICK_SIZE, PIXEL_PICK_SIZE))
-	return (await texture.get_texture()).get_image()
+	return await MMCliTools.render_output_image(generator, output, Vector2i(PIXEL_PICK_SIZE, PIXEL_PICK_SIZE))
 
 ## UV of a position in the preview
 func pos_to_uv(pos : Vector2) -> Vector2:

@@ -1,4 +1,4 @@
-extends Window
+extends MMToolWindow
 class_name MMDependenciesWindow
 
 
@@ -18,46 +18,19 @@ var summary : Label
 
 
 func _init() -> void:
-	title = "Dependencies"
-	size = Vector2i(900, 500)
-	min_size = Vector2i(600, 300)
-	close_requested.connect(queue_free)
-	var margin : MarginContainer = MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	for side in [ "left", "right", "top", "bottom" ]:
-		margin.add_theme_constant_override("margin_"+side, 6)
-	add_child(margin)
-	var vbox : VBoxContainer = VBoxContainer.new()
-	margin.add_child(vbox)
+	var vbox : VBoxContainer = create_layout("Dependencies", Vector2i(900, 500), Vector2i(600, 300))
 	summary = Label.new()
 	vbox.add_child(summary)
-	tree = Tree.new()
-	tree.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	tree.columns = 3
-	tree.column_titles_visible = true
-	tree.set_column_title(0, "Node")
-	tree.set_column_title(1, "File")
-	tree.set_column_title(2, "Status")
+	tree = create_tree([ "Node", "File", "Status" ])
 	tree.set_column_expand_ratio(1, 3)
-	tree.hide_root = true
-	tree.select_mode = Tree.SELECT_ROW
 	vbox.add_child(tree)
 	var buttons : HBoxContainer = HBoxContainer.new()
 	vbox.add_child(buttons)
 	add_button(buttons, "Relink selected...", relink_selected)
 	add_button(buttons, "Find missing files in folder...", find_missing_in_folder)
 	add_button(buttons, "Collect files into folder...", collect_files)
-	var spacer : Control = Control.new()
-	spacer.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	buttons.add_child(spacer)
+	add_spacer(buttons)
 	add_button(buttons, "Close", queue_free)
-
-static func add_button(parent : Control, text : String, callable : Callable) -> Button:
-	var button : Button = Button.new()
-	button.text = text
-	button.pressed.connect(callable)
-	parent.add_child(button)
-	return button
 
 func show_graph(ge) -> void:
 	graph_edit = ge
@@ -66,15 +39,12 @@ func show_graph(ge) -> void:
 
 ## Returns the file dependencies of a generator and its children
 static func collect_dependencies(generator : Node, rv : Array[Dictionary]) -> void:
-	for c in generator.get_children():
-		if not c is MMGenBase:
-			continue
+	for c in MMCliTools.collect_generators(generator, func(_g): return true):
 		for p in c.get_parameter_defs():
 			if p.type in FILE_PARAMETER_TYPES:
 				var path = c.get_parameter(p.name)
 				if path is String and path != "":
 					rv.append({ generator=c, parameter=p.name, path=path })
-		collect_dependencies(c, rv)
 
 func refresh() -> void:
 	dependencies = []

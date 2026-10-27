@@ -67,12 +67,108 @@ graph (and in **list_nodes**).
 * **export_mmr(path, size, height)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
   SDF output as a volume (.vdb, .dds or .ktx2)
-* **render_path_traced(path, size, samples, transparent)** and **render_turntable(path, frames, size)**
+* **render_path_traced(path, size, samples, transparent, thin_walled)** and **render_turntable(path, frames, size)**
   render the 3D preview (with the user interface only, see the 3D preview panel)
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 
 Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).
+
+Plugins
+-------
+
+Plugins are folders that contain a **plugin.cfg** file, in the **plugins** folder of Material
+Maker's user data folder (the *Tools > Plugins...* window has a button that opens it) or in the **plugins** folder next to
+Material Maker. *Tools > Plugins...* lists them and enables or disables them (changes are
+applied when Material Maker starts again).
+
+.. code-block:: ini
+
+    [plugin]
+    name="My plugin"
+    description="What it does"
+    version="1.0"
+    script="plugin.gd"          ; optional, extends MMPlugin
+    nodes="nodes"               ; optional, a folder of nodes (.mmg files)
+    library="library.json"      ; optional, a node library
+    export_targets="exports"    ; optional, a folder of export targets (.mme files)
+    enabled_by_default=true
+    depends=["car_paint", "other_plugin>=1.2"] ; optional, plugins it needs
+    cli_modes=["--my-export"]   ; optional, command line modes added by the script
+
+**depends** lists the plugins (by folder name, optionally with a minimum version) that must be
+loaded first. Dependencies that are only disabled by default are enabled when needed. A plugin
+whose dependencies are missing, too old, disabled by the user, cannot be loaded or depend on it
+again (a cycle) is not loaded, and *Tools > Plugins...* shows why. Enabling a plugin in that
+window also enables its dependencies, and disabling one also disables the plugins that need it.
+
+A plugin's script extends **MMPlugin**. Its **_enable(api)** function is called when Material
+Maker starts, and **_disable()** when it quits. The API object adds:
+
+* menu items: **api.add_menu_item(label, callable, menu="Plugins", after="")**, in the
+  **Plugins** menu, or in another menu (e.g. *File*) after one of its items (e.g. *Export
+  material*)
+* import formats: **api.add_import_format(extension, description, callable)**, whose files are
+  imported as new material graphs by *File > Load*, drag and drop, the **load** JSON-RPC method and
+  the command line. The callable receives the file's path and returns the graph (a dictionary, as
+  in .ptex files, with optional **warnings**), or an empty dictionary on errors
+* JSON-RPC methods: **api.add_rpc_method(name, callable)**, called with the request's parameters
+  (and, when the callable has 2 arguments, the RPC server, whose **fail(message)**,
+  **require(params, names)**, **get_graph()** and **get_generator(graph, name)** report errors
+  and give access to the current graph)
+* command line commands, run with **--plugin <command> [arguments]**:
+  **api.add_command(name, callable)**, called with the arguments and returning the exit code
+* command line modes (such as **--export-volume**, also listed in **cli_modes**):
+  **api.add_cli_mode(mode, callable, usage, options)**. The callable receives the command line
+  tool (whose **process_graph_files(files, options, variation, mode)** loads each graph, applies
+  **--set**, **--preset**, **--seed** and **--variations**, and calls **variation(suffix, graph,
+  file, options)**), the files and the options. **options** maps the mode's own options to
+  **{ key, type, help }** (type is TYPE_INT, TYPE_FLOAT, TYPE_STRING, or TYPE_BOOL for flags), and
+  **usage** and the options' help are shown by **--help**
+* sections of the 2D preview's export menu: **api.add_export_menu_section(callable)**, that
+  receives the export menu (with **get_generator()**, **get_output()** and
+  **export_notification(text)**) and returns a Control, whose optional
+  **update(generator, output_index)** method is called when the previewed output changes
+* export hooks, called after each material export with the material node, the exported file
+  prefix and the export target: **api.add_export_hook(callable)**
+* **api.get_main_window()**, the main window (null on the command line), to add panels or dialogs
+
+Export targets of plugins (**export_targets** folder) are listed with the Material node's own
+targets. The user's export targets (edited in the material editor) override them, and plugin
+targets that are left unchanged are not copied to the user's export targets.
+
+.. code-block:: gdscript
+
+    extends MMPlugin
+
+    func _enable(api) -> void:
+        api.add_menu_item("Say hello", func(): print("Hello"))
+        api.add_rpc_method("node_count", func(params): return 42)
+        api.add_export_hook(func(material, prefix, target): print("exported ", prefix))
+
+The **list_plugins** JSON-RPC method lists the plugins, and the RPC methods and commands they add.
+The **material_maker/plugins/example** folder contains an example plugin (disabled by default).
+Several features of Material Maker are bundled plugins, enabled by default, that can be disabled
+in *Tools > Plugins...*: **materialx_import** (MaterialX import), **runtime_export** (runtime
+packages, **--export-mmr**), **volume_export** (volumes, **--export-volume**), **export_targets**
+(the Godot 4, Unity and Unreal Engine 5 shader exports, MaterialX and USD), **car_paint** (the
+Car Paint Material node) and **axf_import** (AxF import, that depends on **car_paint**).
+
+Cooking runtime packages
+------------------------
+
+**python/mm_cook.py** (no dependencies) cooks graphs into runtime packages (.mmr files, see
+:ref:`export-section`), like Substance's cooker. Its inputs are .ptex files, folders (searched
+recursively, and whose structure is kept in the output folder) or wildcards:
+
+ python mm_cook.py --mm "material_maker" -o cooked --size 1024 --jobs 4 materials/
+ python mm_cook.py -o cooked --verify mmr_render --report report.json materials/*.ptex
+
+Cooking is incremental: a package is only cooked again when its graph, the options or Material
+Maker's version changed (unless **--force** is used). **--jobs** runs several Material Maker
+processes, **--verify** renders each package with the C++ runtime to check it, and **--report**
+writes a JSON report. The Material Maker command is **--mm** or the **MATERIAL_MAKER**
+environment variable. The exit code is 1 if a package failed.
 
 Version control
 ---------------
