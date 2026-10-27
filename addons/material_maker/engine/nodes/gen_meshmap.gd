@@ -108,7 +108,11 @@ func get_parameter_defs() -> Array:
 	]
 
 func update_map() -> void:
+	var start_time : int = Time.get_ticks_msec()
 	current_map = await MMMapGenerator.get_map(current_mesh, MESH_MAPS[get_parameter("map")].map)
+	# Shown under the node and in Tools > Show buffer render times
+	rendering_time = Time.get_ticks_msec()-start_time
+	rendering_time_updated.emit(rendering_time)
 	notify_output_change(0)
 	mm_deps.dependency_update(get_texture_parameter_name(), current_map, true)
 

@@ -113,6 +113,7 @@ const MENU : Array[Dictionary] = [
 	{ menu="Tools/Add selection to library", submenu="add_selection_to_library", mode="material" },
 	{ menu="Tools/Add current brush to library", submenu="add_brush_to_library", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/Create a screenshot of the current graph", command="generate_graph_screenshot", mode="material" },
+	{ menu="Tools/Show buffer render times", command="show_buffer_render_times", mode="material" },
 	{ menu="Tools/Paint project settings", command="paint_project_settings", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/Set painting environment", submenu="paint_environment", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/-" },
@@ -1405,6 +1406,48 @@ func generate_screenshots():
 	var result : int = await library.generate_node_screenshots(graph)
 	result += await library.generate_material_screenshots(graph)
 	print(result)
+
+## Buffers listed in the render time summary
+const MAX_LISTED_BUFFERS : int = 20
+
+## Shows the last render time of each buffer of the current graph (and of
+## other generators that report one, such as mesh maps), slowest first
+func show_buffer_render_times():
+	var graph_edit : MMGraphEdit = get_current_graph_edit()
+	if graph_edit == null or graph_edit.top_generator == null:
+		return
+	var buffers : Array = []
+	collect_timed_generators(graph_edit.top_generator, buffers)
+	if buffers.is_empty():
+		accept_dialog("This graph has no buffers.")
+		return
+	buffers.sort_custom(func(a, b): return a.rendering_time > b.rendering_time)
+	var total_time : int = 0
+	var lines : PackedStringArray = PackedStringArray()
+	for b in buffers:
+		total_time += b.rendering_time
+		if lines.size() < MAX_LISTED_BUFFERS:
+			# Prefix the node name with the groups that contain it
+			var path : PackedStringArray = PackedStringArray([ str(b.name) ])
+			var parent = b.get_parent()
+			while parent is MMGenGraph and parent != graph_edit.top_generator:
+				path.insert(0, parent.get_type_name())
+				parent = parent.get_parent()
+			lines.push_back("%6d ms   %s" % [ b.rendering_time, "/".join(path) ])
+	if buffers.size() > MAX_LISTED_BUFFERS:
+		lines.push_back("...")
+	var text : String = tr("%d buffer(s), %d ms in total (last render of each)") % [ buffers.size(), total_time ]
+	text += "\n\n" + "\n".join(lines)
+	accept_dialog(text)
+
+## Adds to rv the buffers under root (in groups too) and the other
+## generators that reported a rendering time
+func collect_timed_generators(root : Node, rv : Array) -> void:
+	for c in root.get_children():
+		if c is MMGenBase:
+			if c in c.get_buffers() or c.rendering_time > 0:
+				rv.append(c)
+			collect_timed_generators(c, rv)
 
 func generate_graph_screenshot():
 	# Prompt for a target PNG file
