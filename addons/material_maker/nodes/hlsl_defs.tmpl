@@ -15,6 +15,26 @@ inline int2 toint2(int x) {
 inline int2 toint2(int x, int y) {
     return int2(x, y);
 }
+// Copies (and conversions of float vectors), and truncations of larger
+// vectors, as GLSL's constructors
+inline int2 toint2(int2 v) {
+    return v;
+}
+inline int2 toint2(int3 v) {
+    return v.xy;
+}
+inline int2 toint2(int4 v) {
+    return v.xy;
+}
+inline int3 toint3(int3 v) {
+    return v;
+}
+inline int3 toint3(int4 v) {
+    return v.xyz;
+}
+inline int4 toint4(int4 v) {
+    return v;
+}
 
 inline int3 toint3(int x) {
     return int3(x, x, x);
@@ -47,6 +67,12 @@ inline int4 toint4(int3 xyz, int w) {
 inline int4 toint4(int2 xy, int z, int w) {
     return int4(xy.x, xy.y, z, w);
 }
+inline int4 toint4(int x, int2 yz, int w) {
+    return int4(x, yz.x, yz.y, w);
+}
+inline int4 toint4(int x, int y, int2 zw) {
+    return int4(x, y, zw.x, zw.y);
+}
 
 // float vector funtions
 
@@ -55,6 +81,26 @@ inline float2 tofloat2(float x) {
 }
 inline float2 tofloat2(float x, float y) {
     return float2(x, y);
+}
+// Copies (and conversions of int vectors), and truncations of larger
+// vectors, as GLSL's constructors
+inline float2 tofloat2(float2 v) {
+    return v;
+}
+inline float2 tofloat2(float3 v) {
+    return v.xy;
+}
+inline float2 tofloat2(float4 v) {
+    return v.xy;
+}
+inline float3 tofloat3(float3 v) {
+    return v;
+}
+inline float3 tofloat3(float4 v) {
+    return v.xyz;
+}
+inline float4 tofloat4(float4 v) {
+    return v;
 }
 
 inline float3 tofloat3(float x) {
@@ -87,6 +133,12 @@ inline float4 tofloat4(float3 xyz, float w) {
 }
 inline float4 tofloat4(float2 xy, float z, float w) {
     return float4(xy.x, xy.y, z, w);
+}
+inline float4 tofloat4(float x, float2 yz, float w) {
+    return float4(x, yz.x, yz.y, w);
+}
+inline float4 tofloat4(float x, float y, float2 zw) {
+    return float4(x, y, zw.x, zw.y);
 }
 
 inline float2x2 tofloat2x2(float2 v1, float2 v2) {
