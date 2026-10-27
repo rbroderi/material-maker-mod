@@ -41,6 +41,13 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   **api.add_command(name, callable)**, called with the arguments and returning the exit code
 * export hooks, called after each material export with the material node, the exported file
   prefix and the export target: **api.add_export_hook(callable)**
+* image file formats: **api.add_image_format(extension, description, callable)**, used wherever
+  images are saved (texture exports, the 2D preview's export menu, whose file type list and file
+  dialog show them). The callable receives the image, the file name and options, and returns an
+  error code
+* files that hold several images: **api.add_layered_image_format(extension, description,
+  callable)**. The callable receives the file name and the layers (an array of **{ name, image,
+  options }**), and returns an error code
 * **api.get_main_window()**, the main window (null on the command line), to add panels or dialogs
 
 **MMPlugins.load_plugin_file(plugin_id, file_name)** loads a file of another (loaded) plugin, for
@@ -55,4 +62,33 @@ example a script shared with the plugins that depend on it.
         api.add_export_hook(func(material, prefix, target): print("exported ", prefix))
 
 The **material_maker/plugins/example** folder contains an example plugin (disabled by default)
-that adds a node, a menu item, a command and an export hook.
+that adds a node, a menu item, a command, an export hook and an image format (Netpbm, with
+an *Example/Netpbm* export target that saves the height map with 16 bits).
+
+Image formats
+-------------
+
+Texture files of export targets (**"type": "texture"**) can have **"options"**, which are passed
+to the image format that saves them (Material Maker's own PNG, JPEG, WebP and EXR formats ignore
+them). Their meaning is up to each format; the usual ones are:
+
+* **bits**: bits per component (e.g. 8, 16 or 32; numbers in export targets are floats, so
+  use **int(options.bits)**)
+* **srgb**: whether colors are sRGB encoded (by default, true for the Material node's albedo and
+  emission **output**, and false for **expression** files)
+* **grayscale**: whether to save a single channel (by default, true for outputs of type **f**)
+* **alpha**: whether to keep the alpha channel (by default, true for outputs of type **rgba**)
+* **normal_map**: whether the image is a normal map (e.g. to generate its mipmaps)
+
+Texture files with a **"layer"** name are saved together, in a file of a layered format (the
+texture files that have the same file name are the layers of that file):
+
+.. code-block:: json
+
+    { "type": "texture", "output": 13, "file_name": "$(path_prefix).layers",
+      "layer": "roughness", "options": { "bits": 16 } }
+
+**MMTexture.save_image(image, file_name, options)** saves an image in any of these formats
+(chosen by the file extension), and **MMTexture.image_channels(format)** and
+**MMTexture.image_bits(format)** give the channel count and the component size of a Godot image
+format.

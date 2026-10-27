@@ -35,6 +35,10 @@ const TEXTURE_FILTERING_LIMIT : int = 256
 
 const EXPORT_OUTPUT_DEF_INDEX : int = 12345
 
+## Outputs of the standard Material node that are colors (albedo, emission),
+## sRGB encoded in exported texture files
+const COLOR_OUTPUTS : Array[int] = [ 0, 2 ]
+
 
 func _ready() -> void:
 	preview_material = ShaderMaterial.new()
@@ -647,6 +651,26 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
+## Options of an exported texture file for image formats added by plugins:
+## the "options" of the export target's file, plus srgb, grayscale and alpha
+## (from the exported output) unless the export target sets them
+func get_texture_file_options(f : Dictionary, output_index : int) -> Dictionary:
+	var options : Dictionary = f.get("options", {}).duplicate()
+	if not options.has("srgb"):
+		options.srgb = output_index in COLOR_OUTPUTS
+	# Rendered textures are RGBA: formats that can store fewer channels use
+	# the output's type
+	var output_type : String = "rgba"
+	if output_index == EXPORT_OUTPUT_DEF_INDEX:
+		output_type = export_output_def.type
+	elif output_index < shader_model.outputs.size():
+		output_type = shader_model.outputs[output_index].get("type", "rgba")
+	if not options.has("grayscale"):
+		options.grayscale = output_type == "f"
+	if not options.has("alpha"):
+		options.alpha = output_type == "rgba"
+	return options
+
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
 	reset_uids()
 	if size == 0:
@@ -713,6 +737,9 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 				total_files += preview_texture_dependencies.size()
 	var processed_files = 0
 	var error_files = 0
+	# Images of texture files with a layer name, saved together in layered
+	# image files (formats added by plugins) when all textures are rendered
+	var layers : Dictionary = {}
 	for f in exported_files:
 		#print("Exporting ", f)
 		var e: Error = OK
@@ -752,7 +779,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
 					continue
 				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
-				e = await result.save_to_file(file_name)
+				var options : Dictionary = get_texture_file_options(f, output_index)
+				if f.has("layer"):
+					if not layers.has(file_name):
+						layers[file_name] = []
+					layers[file_name].append({ name=f.layer, image=(await result.get_texture()).get_image(), options=options })
+				else:
+					e = await result.save_to_file(file_name, options)
 				if e != OK:
 					error_files += 1
 				processed_files += 1
@@ -787,8 +820,11 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					var texture : Texture2D = await preview_texture_dependencies[t].get_texture()
 					var image : Image = texture.get_image()
 					if image:
-						image.convert(Image.FORMAT_RGBA8)
-						e = image.save_png(file_name)
+						if file_name.get_extension() == "png":
+							image.convert(Image.FORMAT_RGBA8)
+							e = image.save_png(file_name)
+						else:
+							e = MMTexture.save_image(image, file_name)
 						if e != OK:
 							error_files += 1
 					else:
@@ -816,6 +852,9 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					processed_files += 1
 					if progress_dialog:
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
+	for file_name in layers.keys():
+		if MMPlugins.save_layered_image(file_name, layers[file_name]) != OK:
+			error_files += 1
 	if progress_dialog != null:
 		progress_dialog.queue_free()
 	if dim_color_rect != null:

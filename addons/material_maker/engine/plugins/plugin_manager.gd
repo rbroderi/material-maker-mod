@@ -24,7 +24,8 @@ class_name MMPlugins
 # is only disabled by default is enabled), and a plugin whose dependencies are
 # missing, too old, disabled, failed to load or depend on it is not loaded.
 # Their scripts can add menu items, command line commands
-# (material_maker --plugin <command> [arguments]) and export hooks.
+# (material_maker --plugin <command> [arguments]), export hooks and image file
+# formats.
 
 
 const CONFIG_SECTION : String = "plugins"
@@ -56,10 +57,26 @@ class API:
 	func add_export_hook(callable : Callable) -> void:
 		MMPlugins.export_hooks.append(callable)
 
+	## Adds an image file format, used wherever images are saved (texture
+	## exports, the 2D preview's export menu): callable receives the image, the
+	## file name and options (from export targets, e.g. srgb or bits) and
+	## returns an error code
+	func add_image_format(extension : String, description : String, callable : Callable) -> void:
+		MMPlugins.image_formats[extension.to_lower()] = { plugin=plugin_id, description=description, callable=callable }
+
+	## Adds a format of files that hold several images (layers): texture files
+	## of export targets with a "layer" name and the same file name are saved
+	## together. callable receives the file name and the layers (an array of
+	## { name, image, options }) and returns an error code.
+	func add_layered_image_format(extension : String, description : String, callable : Callable) -> void:
+		MMPlugins.layered_image_formats[extension.to_lower()] = { plugin=plugin_id, description=description, callable=callable }
+
 static var plugins : Array[Dictionary] = []
 static var menu_items : Array[Dictionary] = []
 static var commands : Dictionary = {}
 static var export_hooks : Array[Callable] = []
+static var image_formats : Dictionary = {}
+static var layered_image_formats : Dictionary = {}
 static var loaded : bool = false
 static var discovered : bool = false
 static var configs : Dictionary = {}
@@ -257,6 +274,27 @@ static func call_export_hooks(material : MMGenBase, prefix : String, target : St
 	for h in export_hooks:
 		await h.call(material, prefix, target)
 
+## Saves an image in a format added by a plugin (see API.add_image_format)
+static func save_image(image : Image, file_name : String, options : Dictionary = {}) -> Error:
+	var image_format : Dictionary = image_formats.get(file_name.get_extension().to_lower(), {})
+	if image_format.is_empty():
+		return ERR_FILE_UNRECOGNIZED
+	return image_format.callable.call(image, file_name, options)
+
+## Saves layers in a file (see API.add_layered_image_format)
+static func save_layered_image(file_name : String, layers : Array) -> Error:
+	var layered_format : Dictionary = layered_image_formats.get(file_name.get_extension().to_lower(), {})
+	if layered_format.is_empty():
+		return ERR_FILE_UNRECOGNIZED
+	return layered_format.callable.call(file_name, layers)
+
+## File dialog filters of the image formats added by plugins
+static func get_image_format_filters() -> PackedStringArray:
+	var filters : PackedStringArray = PackedStringArray()
+	for extension in image_formats.keys():
+		filters.append("*.%s; %s" % [ extension, image_formats[extension].description ])
+	return filters
+
 ## A file of a plugin (e.g. a script shared with the plugins that depend on
 ## it), or null if the plugin is not loaded
 static func load_plugin_file(plugin_id : String, file_name : String) -> Resource:
@@ -275,5 +313,7 @@ static func clear_registrations() -> void:
 	menu_items.clear()
 	commands.clear()
 	export_hooks.clear()
+	image_formats.clear()
+	layered_image_formats.clear()
 	for p in plugins:
 		p.erase("instance")

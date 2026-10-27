@@ -1,0 +1,24 @@
+{
+	"files": [
+		{
+			"file_name": "$(path_prefix)_albedo.pnm",
+			"output": 0,
+			"type": "texture"
+		},
+		{
+			"file_name": "$(path_prefix)_normal.pnm",
+			"output": 7,
+			"type": "texture"
+		},
+		{
+			"file_name": "$(path_prefix)_height.pnm",
+			"options": {
+				"bits": 16
+			},
+			"output": 8,
+			"type": "texture"
+		}
+	],
+	"material": "material",
+	"name": "Example/Netpbm"
+}

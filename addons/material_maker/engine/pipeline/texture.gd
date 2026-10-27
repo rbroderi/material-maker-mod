@@ -119,9 +119,33 @@ func get_width() -> int:
 func get_height() -> int:
 	return texture_size.y
 
-func save_to_file(file_name : String) -> Error:
+func save_to_file(file_name : String, options : Dictionary = {}) -> Error:
 	var texture : ImageTexture = await get_texture()
-	var image : Image = texture.get_image()
+	return save_image(texture.get_image(), file_name, options)
+
+## Channel count of a Godot image format
+static func image_channels(format : int) -> int:
+	match format:
+		Image.FORMAT_L8, Image.FORMAT_R8, Image.FORMAT_RH, Image.FORMAT_RF:
+			return 1
+		Image.FORMAT_LA8, Image.FORMAT_RG8, Image.FORMAT_RGH, Image.FORMAT_RGF:
+			return 2
+		Image.FORMAT_RGB8, Image.FORMAT_RGBH, Image.FORMAT_RGBF:
+			return 3
+	return 4
+
+## Component size of a Godot image format, in bits
+static func image_bits(format : int) -> int:
+	match format:
+		Image.FORMAT_RH, Image.FORMAT_RGH, Image.FORMAT_RGBH, Image.FORMAT_RGBAH:
+			return 16
+		Image.FORMAT_RF, Image.FORMAT_RGF, Image.FORMAT_RGBF, Image.FORMAT_RGBAF:
+			return 32
+	return 8
+
+## Saves an image in the format given by the file extension (formats added
+## by plugins get the options)
+static func save_image(image : Image, file_name : String, options : Dictionary = {}) -> Error:
 	if image != null:
 		var export_image : Image = image
 		match file_name.get_extension():
@@ -138,4 +162,6 @@ func save_to_file(file_name : String) -> Error:
 						return export_image.save_exr(file_name, true)
 					_:
 						return export_image.save_exr(file_name, false)
+			_:
+				return MMPlugins.save_image(export_image, file_name, options)
 	return ERR_DOES_NOT_EXIST
