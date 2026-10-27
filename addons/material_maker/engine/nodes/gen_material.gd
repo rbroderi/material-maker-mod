@@ -527,23 +527,28 @@ static func get_template_text(template : String) -> String:
 func process_conditionals(template : String) -> String:
 	var context = get_connections_and_parameters_context()
 	var processed : String = ""
-	var skip_state : Array = [ false ]
+	# For each nested block: [ skipped by its own condition, skipped by an
+	# enclosing block ], so that blocks nested in skipped ones stay skipped
+	var skip_state : Array = [ [ false, false ] ]
 	for l in template.split("\n"):
 		if l == "":
 			continue
 		elif l.left(4) == "$if ":
+			var outer : bool = skip_state.back()[0] or skip_state.back()[1]
 			var condition = subst_string(l.right(-4), context)
 			var expr = Expression.new()
 			var error = expr.parse(condition, [])
 			if error != OK:
 				print("Error in expression "+condition+": "+expr.get_error_text())
+				skip_state.push_back([ true, outer ])
 				continue
-			skip_state.push_back(!expr.execute())
+			skip_state.push_back([ !expr.execute(), outer ])
 		elif l.left(3) == "$fi":
-			skip_state.pop_back()
+			if skip_state.size() > 1:
+				skip_state.pop_back()
 		elif l.left(5) == "$else":
-			skip_state.push_back(!skip_state.pop_back())
-		elif ! skip_state.back():
+			skip_state.back()[0] = !skip_state.back()[0]
+		elif ! (skip_state.back()[0] or skip_state.back()[1]):
 			processed += l
 			processed += "\n"
 	return processed
