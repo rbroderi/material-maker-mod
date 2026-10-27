@@ -72,7 +72,29 @@ func get_parameter_defs() -> Array:
 				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset" })
 			parameter_defs.push_back({ name="size_offset", label="Size offset", type="float", min=-6.0, max=4.0, step=1.0, default=0.0,
 				longdesc="Size relative to the material's size, as a power of 2 (only used in relative size mode)" })
+			parameter_defs.push_back({ name="aspect", label="Aspect ratio", type="enum", default=0, values=ASPECT_RATIOS,
+				longdesc="Width:height of the buffer (the size is its width). Non-square buffers have a different resolution horizontally and vertically, the image is still mapped to the whole UV square" })
 	return parameter_defs
+
+## Aspect ratios of non-square buffers and materials (width:height), the
+## value being the height divided by the width
+const ASPECT_RATIOS : Array[Dictionary] = [
+	{ name="1:1", value="1" }, { name="2:1", value="0.5" }, { name="1:2", value="2" },
+	{ name="4:1", value="0.25" }, { name="1:4", value="4" }, { name="8:1", value="0.125" }, { name="1:8", value="8" } ]
+
+## Height of an image of a given width with an aspect ratio (index in
+## ASPECT_RATIOS)
+static func aspect_height(width : int, aspect : int) -> int:
+	if aspect <= 0 or aspect >= ASPECT_RATIOS.size():
+		return width
+	return clampi(roundi(width*float(ASPECT_RATIOS[aspect].value)), 1, 16384)
+
+## Width and height of the buffer, in pixels
+func get_buffer_dimensions() -> Vector2i:
+	var width : int = 1 << get_buffer_size()
+	if version != VERSION_COMPLEX:
+		return Vector2i(width, width)
+	return Vector2i(width, aspect_height(width, int(get_parameter("aspect"))))
 
 ## Returns the material's output size (as log2), or -1 if there is none
 func get_output_size() -> int:
@@ -115,7 +137,9 @@ func get_badge() -> String:
 			format = "32F"
 		elif get_parameter("f8"):
 			format = "8 bits"
-	return "%d px  %s %s" % [ 1 << get_buffer_size(), format, "gray" if is_greyscale else "RGBA" ]
+	var dimensions : Vector2i = get_buffer_dimensions()
+	var size_text : String = "%d px" % dimensions.x if dimensions.x == dimensions.y else "%dx%d px" % [ dimensions.x, dimensions.y ]
+	return "%s  %s %s" % [ size_text, format, "gray" if is_greyscale else "RGBA" ]
 
 ## Keywords of node types and input names that need more than 8 bits of precision
 const NORMAL_KEYWORDS : Array[String] = [ "normal" ]
@@ -181,7 +205,9 @@ func on_output_size_changed() -> void:
 
 func update_buffer_size() -> void:
 	if is_inside_tree():
-		mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), pow(2, get_buffer_size()))
+		var dimensions : Vector2i = get_buffer_dimensions()
+		mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), float(dimensions.x))
+		mm_deps.dependency_update("o%d_tex_size_y" % get_instance_id(), float(dimensions.y))
 		# Remote nodes can set the size before the buffer is created
 		var buffer_name : String = "o%d_tex" % get_instance_id()
 		if mm_deps.buffers.has(buffer_name):
@@ -204,7 +230,7 @@ func all_sources_changed() -> void:
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
-	if n in [ "size", "size_mode", "size_offset" ]:
+	if n in [ "size", "size_mode", "size_offset", "aspect" ]:
 		update_buffer_size()
 
 var updating_shader : bool = false
@@ -252,7 +278,8 @@ func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
 func on_dep_update_buffer(buffer_name : String) -> bool:
 	if is_paused:
 		return false
-	var status = await shader_compute.render(texture, pow(2, get_buffer_size()))
+	var dimensions : Vector2i = get_buffer_dimensions()
+	var status = await shader_compute.render(texture, dimensions.x, dimensions.y)
 	if status:
 		rendering_time = shader_compute.get_render_time()
 		self.rendering_time_updated.emit(rendering_time)
@@ -269,14 +296,17 @@ func on_buffer_updated():
 func get_adjusted_uv(uv : String) -> String:
 	if version == VERSION_COMPLEX and not get_parameter("filter"):
 		var genname = "o"+str(get_instance_id())
-		return "((floor(fract(%s) * %s_tex_size)+vec2(0.5))/%s_tex_size)" % [ uv, genname, genname ]
+		var size : String = "vec2(%s_tex_size, %s_tex_size_y)" % [ genname, genname ]
+		return "((floor(fract(%s) * %s)+vec2(0.5))/%s)" % [ uv, size, size ]
 	else:
 		return "fract(%s)" % uv
 
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
 	var genname = "o"+str(get_instance_id())
 	var shader_code = _get_shader_code_lod(uv, output_index, context, is_greyscale, -1.0 if output_index == 0 else parameters.lod)
-	shader_code.add_uniform("%s_tex_size" % genname, "float", pow(2, get_buffer_size()))
+	var dimensions : Vector2i = get_buffer_dimensions()
+	shader_code.add_uniform("%s_tex_size" % genname, "float", float(dimensions.x))
+	shader_code.add_uniform("%s_tex_size_y" % genname, "float", float(dimensions.y))
 	return shader_code
 
 func get_output_attributes(output_index : int) -> Dictionary:

@@ -70,6 +70,13 @@ func get_preprocessed_output_def(output_index : int):
 	return super.get_preprocessed_output_def(output_index)
 
 
+## Height of exported images of a given width, with the material's aspect
+## ratio (for materials that have one)
+func get_image_height(width : int) -> int:
+	if parameters.has("aspect"):
+		return MMGenBuffer.aspect_height(width, int(parameters.aspect))
+	return width
+
 func get_image_size() -> int:
 	var rv : int
 	if parameters.has("size"):
@@ -668,7 +675,10 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
-func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
+## Exports the material with a target (profile). Textures are size pixels wide
+## (the material's size if 0) and height pixels high (if 0, the size with the
+## material's aspect ratio).
+func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
@@ -679,6 +689,8 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 			export_size_override = size_log2
 			if get_parent() != null:
 				notify_output_size_changed(get_parent())
+	if height <= 0:
+		height = get_image_height(size)
 	export_last_target = profile
 	export_paths[profile] = prefix
 	var export_context : Dictionary = get_connections_and_parameters_context()
@@ -779,7 +791,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					if progress_dialog:
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
 					continue
-				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
+				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, height))
 				e = await result.save_to_file(file_name)
 				if e != OK:
 					error_files += 1

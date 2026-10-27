@@ -3529,6 +3529,43 @@
 				"last": 13,
 				"name": "size",
 				"type": "size"
+			},
+			{
+				"default": 0,
+				"label": "Aspect ratio",
+				"longdesc": "Width:height of exported images (the size is their width). The material is stretched to the image's shape",
+				"name": "aspect",
+				"type": "enum",
+				"values": [
+					{
+						"name": "1:1",
+						"value": "1"
+					},
+					{
+						"name": "2:1",
+						"value": "0.5"
+					},
+					{
+						"name": "1:2",
+						"value": "2"
+					},
+					{
+						"name": "4:1",
+						"value": "0.25"
+					},
+					{
+						"name": "1:4",
+						"value": "4"
+					},
+					{
+						"name": "8:1",
+						"value": "0.125"
+					},
+					{
+						"name": "1:8",
+						"value": "8"
+					}
+				]
 			}
 		],
 		"preview_shader": [

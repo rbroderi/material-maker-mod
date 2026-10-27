@@ -16,3 +16,7 @@ Where:
 * **engine** is the target engine/platform (Blender, Godot, Unity or Unreal)
 * **output_path** is the path where files will be generated
 * **input_files** is the list of input files (wildcards are accepted)
+
+The **--size <size>** option sets the size of exported textures. **--size <width>x<height>**
+(for example 2048x1024) exports non-square textures: the graph is stretched to the textures'
+shape. Without a height, the height depends on the material's aspect ratio.
