@@ -43,7 +43,7 @@ func get_parameter_defs() -> Array:
 		$node, $project, $idx and $resolution can be used.
 		"""
 	return [
-			{ name="size", label="Size", type="size", first=4, last=13, default=10 },
+			{ name="size", label="Size", type="size", first=4, last=14, default=10 },
 			{ name="format", label="Format", default=0, type="enum", values=[
 				{ name="PNG" }, { name="JPG" }, { name="WEBP" }, { name="EXR" },
 			]},

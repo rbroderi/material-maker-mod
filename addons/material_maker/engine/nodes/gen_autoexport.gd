@@ -18,7 +18,7 @@ func get_description() -> String:
 
 func get_parameter_defs() -> Array:
 	var parameter_defs : Array = [
-		{ name="size",label="Size", type="size", first=4, last=13, default=4 },
+		{ name="size",label="Size", type="size", first=4, last=14, default=4 },
 		{ name="filename", label="Filename", type="string", default="test.png", longdesc="Name of the exported file" }
 	]
 	return parameter_defs

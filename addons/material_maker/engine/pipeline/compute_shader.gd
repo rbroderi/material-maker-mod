@@ -187,6 +187,7 @@ func render_2(rd : RenderingDevice, textures : Array[MMTexture], output_paramete
 	
 	#print("Preparing render")
 	var output_textures_rids : Array[RID] = []
+	var created_rids : Array[RID] = []
 	for i in range(textures.size()):
 		var output_texture : OutputTexture = output_textures[i]
 		if output_texture.keep:
@@ -196,7 +197,14 @@ func render_2(rd : RenderingDevice, textures : Array[MMTexture], output_paramete
 				output_textures_rids.append(texture_rid)
 				continue
 		#print("Creating texture for "+output_texture.name)
-		output_textures_rids.append(create_output_texture(rd, size, output_texture.type))
+		var output_texture_rid : RID = create_output_texture(rd, size, output_texture.type)
+		if not output_texture_rid.is_valid():
+			# Texture creation fails when size exceeds the GPU's limit
+			for rid in created_rids:
+				rd.free_rid(rid)
+			return false
+		created_rids.append(output_texture_rid)
+		output_textures_rids.append(output_texture_rid)
 	
 	var status : bool = do_render(rd, output_textures_rids, size, rids, output_parameters_values)
 	if ! status:

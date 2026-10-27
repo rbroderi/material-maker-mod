@@ -9,6 +9,15 @@ var texture_format : RenderingDevice.DataFormat
 var texture : Texture2D
 var texture_needs_update : bool = false
 
+const BYTES_PER_PIXEL : Dictionary = {
+	RenderingDevice.DATA_FORMAT_R16_SFLOAT: 2,
+	RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT: 8,
+	RenderingDevice.DATA_FORMAT_R32_SFLOAT: 4,
+	RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT: 16,
+	RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM: 4
+}
+# Textures larger than this (in bytes) are read back in strips
+const MAX_READBACK_SIZE : int = 1 << 29
 
 func _init() -> void:
 	rid = RID()
@@ -57,23 +66,52 @@ func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.Da
 
 func in_thread_get_texture() -> Texture2D:
 	if texture_needs_update:
-		var byte_data : PackedByteArray = rd.texture_get_data(rid, 0)
-		var image_format : Image.Format
-		match texture_format:
-			RenderingDevice.DATA_FORMAT_R32_SFLOAT:
-				image_format = Image.FORMAT_RF
-			RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT:
-				image_format = Image.FORMAT_RGBAF
-			RenderingDevice.DATA_FORMAT_R16_SFLOAT:
-				image_format = Image.FORMAT_RH
-			RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT:
-				image_format = Image.FORMAT_RGBAH
-			RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM:
-				image_format = Image.FORMAT_RGBA8
-		var image : Image = Image.create_from_data(texture_size.x, texture_size.y, false, image_format, byte_data)
+		var image : Image = in_thread_read_image()
 		texture.set_image.call_deferred(image)
 		texture_needs_update = false
 	return texture
+
+## Reads the texture back from the rendering device. Large textures are read
+## in strips, since drivers may fail to allocate a staging buffer for the whole
+## texture (e.g. 2 GB for 16384x16384 RGBA16F)
+func in_thread_read_image() -> Image:
+	var image_format : Image.Format
+	match texture_format:
+		RenderingDevice.DATA_FORMAT_R32_SFLOAT:
+			image_format = Image.FORMAT_RF
+		RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT:
+			image_format = Image.FORMAT_RGBAF
+		RenderingDevice.DATA_FORMAT_R16_SFLOAT:
+			image_format = Image.FORMAT_RH
+		RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT:
+			image_format = Image.FORMAT_RGBAH
+		RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM:
+			image_format = Image.FORMAT_RGBA8
+	var row_size : int = texture_size.x*BYTES_PER_PIXEL.get(texture_format, 0)
+	if row_size == 0 or row_size*texture_size.y <= MAX_READBACK_SIZE:
+		return Image.create_from_data(texture_size.x, texture_size.y, false, image_format, rd.texture_get_data(rid, 0))
+	var strip_height : int = max(1, MAX_READBACK_SIZE/row_size)
+	var fmt : RDTextureFormat = RDTextureFormat.new()
+	fmt.width = texture_size.x
+	fmt.height = strip_height
+	fmt.format = texture_format
+	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+	var strip_rid : RID = rd.texture_create(fmt, RDTextureView.new(), [])
+	if not strip_rid.is_valid():
+		return null
+	var image : Image = Image.create_empty(texture_size.x, texture_size.y, false, image_format)
+	var y : int = 0
+	while y < texture_size.y:
+		var height : int = min(strip_height, texture_size.y-y)
+		if rd.texture_copy(rid, strip_rid, Vector3(0, y, 0), Vector3.ZERO, Vector3(texture_size.x, height, 1), 0, 0, 0, 0) != OK:
+			push_error("Failed to read back texture of size %dx%d" % [ texture_size.x, texture_size.y ])
+			image = null
+			break
+		var strip : Image = Image.create_from_data(texture_size.x, strip_height, false, image_format, rd.texture_get_data(strip_rid, 0))
+		image.blit_rect(strip, Rect2i(0, 0, texture_size.x, height), Vector2i(0, y))
+		y += height
+	rd.free_rid(strip_rid)
+	return image
 
 func get_texture() -> Texture2D:
 	if texture_needs_update:
@@ -120,8 +158,14 @@ func get_height() -> int:
 	return texture_size.y
 
 func save_to_file(file_name : String) -> Error:
-	var texture : ImageTexture = await get_texture()
-	var image : Image = texture.get_image()
+	var image : Image
+	if texture_needs_update and rd and rid.is_valid():
+		# Read the rendered texture directly, without uploading it again as
+		# an ImageTexture (which may not fit in GPU memory for 16k textures)
+		image = await mm_renderer.thread_run(in_thread_read_image)
+	else:
+		var texture : ImageTexture = await get_texture()
+		image = texture.get_image()
 	if image != null:
 		var export_image : Image = image
 		match file_name.get_extension():

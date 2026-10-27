@@ -3177,7 +3177,7 @@
 				"default": 11,
 				"first": 6,
 				"label": "Size",
-				"last": 13,
+				"last": 14,
 				"name": "size",
 				"type": "size"
 			}

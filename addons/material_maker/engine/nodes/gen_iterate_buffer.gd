@@ -69,7 +69,7 @@ func get_buffers(flags : int = BUFFERS_ALL) -> Array:
 
 func get_parameter_defs() -> Array:
 	return [
-		{ name="size", label="Size", type="size", first=4, last=13, default=4 },
+		{ name="size", label="Size", type="size", first=4, last=14, default=4 },
 		{ name="shrink", label="Shrink", type="boolean", default=false },
 		{ name="autostop", label="Auto stop", type="boolean", default=false },
 		{ name="iterations", label="Iterations", type="float", min=1, max=50, step=1, default=5 },
