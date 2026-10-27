@@ -53,12 +53,22 @@ func create_buffer(buffer_name : String, object : Object = null):
 		object.connect("tree_exiting", self.delete_buffers_from_object.bind(object))
 
 func delete_buffer(buffer_name : String):
+	# If the buffer is being rendered, its object is probably being freed and
+	# its render coroutine will never return, so the update loop that awaits it
+	# would be stuck forever: a new update loop takes over
+	var was_updating : bool = buffers.has(buffer_name) and buffers[buffer_name].status in [ Buffer.Updating, Buffer.UpdatingInvalidated ]
 	buffer_clear_dependencies(buffer_name)
 	buffers.erase(buffer_name)
 	if dependencies.has(buffer_name):
 		for b in dependencies[buffer_name]:
-			buffers[b].dependencies.erase(buffer_name)
+			if buffers.has(b):
+				buffers[b].dependencies.erase(buffer_name)
 	dependencies_values.erase(buffer_name)
+	if was_updating and updating:
+		updating = false
+		update_scheduled = false
+		update_generation += 1
+		update()
 
 func delete_buffers_from_object(object : Object):
 	var remove_buffers : Array = []
@@ -174,6 +184,8 @@ func dependencies_update(dependency_values : Dictionary):
 
 var updating : bool = false
 var update_scheduled : bool = false
+## Incremented when an update loop replaces a stuck one
+var update_generation : int = 0
 
 func update():
 	if update_scheduled:
@@ -188,6 +200,7 @@ func update():
 
 func do_update():
 	updating = true
+	var generation : int = update_generation
 	while update_scheduled:
 		update_scheduled = false
 		var invalidated_buffers : int = 0
@@ -195,12 +208,17 @@ func do_update():
 			if ! buffers.has(b):
 				continue
 			var buffer : Buffer = buffers[b]
-			if buffer.object != null and buffer.object is MMGenBase and buffer.status != Buffer.Updated:
+			# Buffers that failed to render are not pending (they would block
+			# everything that waits for an empty render queue)
+			if buffer.object != null and buffer.object is MMGenBase and buffer.status != Buffer.Updated and buffer.status != Buffer.Error:
 				invalidated_buffers += 1
 			if (buffer.status == Buffer.Invalidated or buffer.status == Buffer.UpdatingInvalidated) and buffer.pending_dependencies == 0:
 				if buffer.object.has_method("on_dep_update_buffer"):
 					buffer.status = Buffer.Updating
 					var status = await buffer.object.on_dep_update_buffer(b)
+					if generation != update_generation:
+						# A newer update loop took over (see delete_buffer)
+						return
 					if status is bool and ! status:
 						buffer.status = Buffer.Error
 		if reset_stats:
@@ -216,7 +234,7 @@ func get_render_queue_size() -> int:
 	var invalidated_buffers : int = 0
 	for b in buffers.keys():
 		var buffer : Buffer = buffers[b]
-		if buffer.object != null and buffer.object is MMGenBase and buffer.status != Buffer.Updated:
+		if buffer.object != null and buffer.object is MMGenBase and buffer.status != Buffer.Updated and buffer.status != Buffer.Error:
 			invalidated_buffers += 1
 	return invalidated_buffers
 
