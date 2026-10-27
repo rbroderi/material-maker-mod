@@ -360,8 +360,30 @@ func load_external_export_targets():
 					external_export_targets[material].files.append(file_name)
 		file_name = dir.get_next()
 
+## Export targets of plugins (material name -> export name -> export target),
+## overridden by the user's external export targets
+var plugin_export_targets : Dictionary = {}
+
+func add_plugin_export_target(export_target : Dictionary) -> void:
+	if not plugin_export_targets.has(export_target.material):
+		plugin_export_targets[export_target.material] = {}
+	plugin_export_targets[export_target.material][export_target.name] = export_target
+
 func get_external_export_targets(material_name : String) -> Dictionary:
-	return external_export_targets[material_name].exports if external_export_targets.has(material_name) else {}
+	var export_targets : Dictionary = plugin_export_targets.get(material_name, {}).duplicate()
+	if external_export_targets.has(material_name):
+		export_targets.merge(external_export_targets[material_name].exports, true)
+	return export_targets
+
+## Whether an export target is a plugin's, unchanged
+func is_plugin_export_target(material_name : String, export_target_name : String, export_target : Dictionary) -> bool:
+	var plugin_target : Dictionary = plugin_export_targets.get(material_name, {}).get(export_target_name, {})
+	if plugin_target.is_empty():
+		return false
+	for k in plugin_target.keys()+export_target.keys():
+		if not k in [ "name", "material", "external" ] and plugin_target.get(k) != export_target.get(k):
+			return false
+	return true
 
 func save_export_target(material_name : String, export_target_name : String, export_target : Dictionary) -> String:
 	var file_name : String = get_export_file_name(material_name, export_target_name)
@@ -375,6 +397,10 @@ func update_external_export_targets(material_name : String, export_targets : Dic
 	var dir : DirAccess = DirAccess.open("")
 	DirAccess.make_dir_absolute(USER_EXPORT_DIR)
 	var files = []
+	# Unchanged export targets of plugins are not saved
+	for k in export_targets.keys():
+		if is_plugin_export_target(material_name, k, export_targets[k]):
+			export_targets.erase(k)
 	for k in export_targets.keys():
 		files.append(save_export_target(material_name, k, export_targets[k]))
 	if ! external_export_targets.has(material_name):

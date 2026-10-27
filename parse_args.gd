@@ -98,8 +98,21 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 func _ready():
 	RenderingServer.set_default_clear_color(Color.BLACK)
 	var args : PackedStringArray = OS.get_cmdline_args()
-	if ("--export" in args) or ("--export-material" in args):
+	if "--plugin" in args:
+		# A command of a plugin, with the following arguments
+		MMPlugins.load_plugins()
+		var command_index : int = args.find("--plugin")+1
+		var command : String = args[command_index] if command_index < args.size() else ""
+		if not MMPlugins.commands.has(command):
+			show_error("ERROR: unknown plugin command %s (commands: %s)" % [ command, ", ".join(MMPlugins.commands.keys()) ])
+			get_tree().quit(1)
+			return
+		var exit_code = await MMPlugins.commands[command].call(args.slice(command_index+1))
+		get_tree().quit(exit_code if exit_code is int else 0)
+	elif ("--export" in args) or ("--export-material" in args):
 		print("Exporting...")
+		# Plugins add nodes and export targets
+		MMPlugins.load_plugins()
 		var image_size : int = 2048
 		var dir : DirAccess = DirAccess.open(".")
 		print("Current dir: ", dir.get_current_dir())

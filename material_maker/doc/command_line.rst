@@ -16,3 +16,7 @@ Where:
 * **engine** is the target engine/platform (Blender, Godot, Unity or Unreal)
 * **output_path** is the path where files will be generated
 * **input_files** is the list of input files (wildcards are accepted)
+
+Plugins (see :ref:`plugins-section`) can add commands, that are run with:
+
+ material_maker --plugin <command> [<arguments>]
