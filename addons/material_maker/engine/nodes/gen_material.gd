@@ -268,7 +268,12 @@ func process_shader(shader_text : String, custom_script : String = "", force_uni
 	for l in shader_text.split("\n"):
 		if generating:
 			if l == "$end_generate":
-				var subst_code = replace_variables(gen_buffer, variables, rv, context)
+				# Each block is generated on its own (it may use other UVs and
+				# be in another scope): its code does not include the code of
+				# previous blocks. A child context generates the code again,
+				# while functions are only defined once (by the parent context).
+				rv.code = ""
+				var subst_code = replace_variables(gen_buffer, variables, rv, MMGenContext.new(context))
 				# Add generated code
 				var new_code : String = rv.code+"\n"
 				new_code += subst_code+"\n"
