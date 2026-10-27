@@ -1411,14 +1411,16 @@ func generate_screenshots():
 const MAX_LISTED_BUFFERS : int = 20
 
 ## Shows the last render time of each buffer of the current graph (and of
-## other generators that report one, such as mesh maps), slowest first
+## other generators that report one, such as mesh maps), slowest first, and
+## the render times of the visible previews
 func show_buffer_render_times():
 	var graph_edit : MMGraphEdit = get_current_graph_edit()
 	if graph_edit == null or graph_edit.top_generator == null:
 		return
 	var buffers : Array = []
 	collect_timed_generators(graph_edit.top_generator, buffers)
-	if buffers.is_empty():
+	var preview_lines : PackedStringArray = await get_preview_render_times()
+	if buffers.is_empty() and preview_lines.is_empty():
 		accept_dialog("This graph has no buffers.")
 		return
 	buffers.sort_custom(func(a, b): return a.rendering_time > b.rendering_time)
@@ -1427,18 +1429,43 @@ func show_buffer_render_times():
 	for b in buffers:
 		total_time += b.rendering_time
 		if lines.size() < MAX_LISTED_BUFFERS:
-			# Prefix the node name with the groups that contain it
-			var path : PackedStringArray = PackedStringArray([ str(b.name) ])
-			var parent = b.get_parent()
-			while parent is MMGenGraph and parent != graph_edit.top_generator:
-				path.insert(0, parent.get_type_name())
-				parent = parent.get_parent()
-			lines.push_back("%6d ms   %s" % [ b.rendering_time, "/".join(path) ])
+			lines.push_back("%6d ms   %s" % [ b.rendering_time, get_generator_path(b) ])
 	if buffers.size() > MAX_LISTED_BUFFERS:
 		lines.push_back("...")
-	var text : String = tr("%d buffer(s), %d ms in total (last render of each)") % [ buffers.size(), total_time ]
-	text += "\n\n" + "\n".join(lines)
+	var text : String
+	if buffers.is_empty():
+		text = tr("This graph has no buffers.")
+	else:
+		text = tr("%d buffer(s), %d ms in total (last render of each)") % [ buffers.size(), total_time ]
+		text += "\n\n" + "\n".join(lines)
+	if not preview_lines.is_empty():
+		text += "\n\n" + tr("Previews (rendered again when the view changes):") + "\n" + "\n".join(preview_lines)
 	accept_dialog(text)
+
+## Render times of the visible 2D previews (their shader, at their size) and
+## of the 3D preview (GPU time of a frame, averaged over 10 frames)
+func get_preview_render_times() -> PackedStringArray:
+	var rv : PackedStringArray = PackedStringArray()
+	for p in preview_2d:
+		if p == null:
+			continue
+		var time : int = await p.measure_render_time()
+		if time >= 0:
+			rv.push_back("%6d ms   %s (%s)" % [ time, p.name, tr("%s, %dx%d px") % [ get_generator_path(p.generator), int(p.size.x), int(p.size.y) ] ])
+	if preview_3d != null:
+		var time : float = await preview_3d.measure_render_time()
+		if time >= 0.0:
+			rv.push_back("%6.1f ms   %s (%s)" % [ time, preview_3d.name, tr("GPU time of a frame, %dx%d px") % [ int(preview_3d.size.x), int(preview_3d.size.y) ] ])
+	return rv
+
+## A generator's name, prefixed with the groups that contain it
+func get_generator_path(generator : MMGenBase) -> String:
+	var path : PackedStringArray = PackedStringArray([ str(generator.name) ])
+	var parent = generator.get_parent()
+	while parent is MMGenGraph and parent.get_parent() is MMGenGraph:
+		path.insert(0, parent.get_type_name())
+		parent = parent.get_parent()
+	return "/".join(path)
 
 ## Adds to rv the buffers under root (in groups too) and the other
 ## generators that reported a rendering time
