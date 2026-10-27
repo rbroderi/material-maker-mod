@@ -16,10 +16,18 @@ layout(location = 3) in vec2 uv;
 const float PI = 3.1415928;
 
 float intersect_aabb(vec3 ray_origin, vec3 ray_dir, vec3 box_min, vec3 box_max, bool solid) {
-	vec3 tMin = (box_min - ray_origin) / ray_dir;
-	vec3 tMax = (box_max - ray_origin) / ray_dir;
-	vec3 t1 = min(tMin, tMax);
-	vec3 t2 = max(tMin, tMax);
+	// A ray parallel to a slab (null direction component) either stays inside it
+	// or misses the box. Dividing by zero would give 0/0 (NaN) for origins on a box face.
+	vec3 parallel = vec3(equal(ray_dir, vec3(0.0)));
+	vec3 outside = vec3(lessThan(ray_origin, box_min)) + vec3(greaterThan(ray_origin, box_max));
+	if (dot(parallel, outside) > 0.0) {
+		return -1.0;
+	}
+	vec3 safe_dir = mix(ray_dir, vec3(1.0), parallel);
+	vec3 tMin = (box_min - ray_origin) / safe_dir;
+	vec3 tMax = (box_max - ray_origin) / safe_dir;
+	vec3 t1 = mix(min(tMin, tMax), vec3(-1e30), parallel);
+	vec3 t2 = mix(max(tMin, tMax), vec3(1e30), parallel);
 	float tNear = max(max(t1.x, t1.y), t1.z);
 	float tFar = min(min(t2.x, t2.y), t2.z);
 
