@@ -20,6 +20,10 @@ var preview_texture_dependencies : Dictionary[String, MMTexture] = {}
 var external_previews : Dictionary[Node, Array] = {}
 var export_output_def : Dictionary
 
+## Size (as log2) of command line exports, followed by buffers sized
+## relatively to the material, or -1
+var export_size_override : int = -1
+
 
 # The minimum allowed texture size as a power-of-two exponent
 const TEXTURE_SIZE_MIN : int = 4  # 16x16
@@ -81,8 +85,25 @@ func update_preview() -> void:
 	if graph_edit != null and graph_edit.has_method("send_changed_signal"):
 		graph_edit.send_changed_signal()
 
+## Returns the material's output size (as log2), or -1 if it has none
+func get_output_size() -> int:
+	if export_size_override >= 0:
+		return export_size_override
+	if parameters.has("size"):
+		return int(parameters.size)
+	return -1
+
 func set_parameter(p, v) -> void:
 	super.set_parameter(p, v)
+	# Buffers can be sized relatively to the material's size
+	if p == "size" and get_parent() != null:
+		notify_output_size_changed(get_parent())
+
+static func notify_output_size_changed(node : Node) -> void:
+	for c in node.get_children():
+		if c.has_method("on_output_size_changed"):
+			c.on_output_size_changed()
+		notify_output_size_changed(c)
 
 func source_changed(input_index : int) -> void:
 	update()
@@ -651,6 +672,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
+	elif command_line:
+		# Buffers sized relatively to the material follow the export size
+		var size_log2 : int = roundi(log(size)/log(2.0))
+		if size_log2 != get_output_size():
+			export_size_override = size_log2
+			if get_parent() != null:
+				notify_output_size_changed(get_parent())
 	export_last_target = profile
 	export_paths[profile] = prefix
 	var export_context : Dictionary = get_connections_and_parameters_context()

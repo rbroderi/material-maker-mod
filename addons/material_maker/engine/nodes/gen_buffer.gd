@@ -65,7 +65,46 @@ func get_parameter_defs() -> Array:
 			parameter_defs.push_back({ name="filter", label="Filter", type="boolean", default=true })
 			parameter_defs.push_back({ name="mipmap", label="Mipmap", type="boolean", default=true })
 			parameter_defs.push_back({ name="f32", label="32 bits", type="boolean", default=false })
+			parameter_defs.push_back({ name="f8", label="8 bits", type="boolean", default=false,
+				longdesc="Use an 8 bits buffer to save memory (ignored if 32 bits is set)" })
+			parameter_defs.push_back({ name="size_mode", label="Size mode", type="enum", default=0,
+				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" } ],
+				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset" })
+			parameter_defs.push_back({ name="size_offset", label="Size offset", type="float", min=-6.0, max=4.0, step=1.0, default=0.0,
+				longdesc="Size relative to the material's size, as a power of 2 (only used in relative size mode)" })
 	return parameter_defs
+
+## Returns the material's output size (as log2), or -1 if there is none
+func get_output_size() -> int:
+	var root : Node = self
+	while root.get_parent() is MMGenBase:
+		root = root.get_parent()
+	for c in root.get_children():
+		if c is MMGenMaterial:
+			return c.get_output_size()
+	return -1
+
+## Returns the buffer's size (as log2), that depends on its size mode
+func get_buffer_size() -> int:
+	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:
+		var output_size : int = get_output_size()
+		if output_size >= 0:
+			var size_def : Dictionary = get_parameter_def("size")
+			return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
+	return int(get_parameter("size"))
+
+## Called when the material's size changes
+func on_output_size_changed() -> void:
+	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:
+		update_buffer_size()
+
+func update_buffer_size() -> void:
+	if is_inside_tree():
+		mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), pow(2, get_buffer_size()))
+		# Remote nodes can set the size before the buffer is created
+		var buffer_name : String = "o%d_tex" % get_instance_id()
+		if mm_deps.buffers.has(buffer_name):
+			mm_deps.buffer_invalidate(buffer_name)
 
 func get_input_defs() -> Array:
 	return [ { name="in", type="rgba" } ]
@@ -83,12 +122,9 @@ func all_sources_changed() -> void:
 	update_shader()
 
 func set_parameter(n : String, v) -> void:
-	if is_inside_tree():
-		if n == "size":
-			var param_name = "o%d_tex_size" % get_instance_id()
-			var param_value = pow(2, v)
-			mm_deps.dependency_update(param_name, param_value)
 	super.set_parameter(n, v)
+	if n in [ "size", "size_mode", "size_offset" ]:
+		update_buffer_size()
 
 var updating_shader : bool = false
 func update_shader() -> void:
@@ -110,11 +146,13 @@ func do_update_shader() -> void:
 	else:
 		source = get_default_generated_shader()
 	var f32 = false
+	var f8 = false
 	if version == VERSION_COMPLEX:
 		f32 = get_parameter("f32")
-	var shader_status : bool = await shader_compute.set_shader_from_shadercode(source, f32)
+		f8 = get_parameter("f8")
+	var shader_status : bool = await shader_compute.set_shader_from_shadercode(source, f32, f8)
 	if shader_status:
-		var new_is_greyscale = ((shader_compute.get_texture_type() & 1) == 0)
+		var new_is_greyscale = shader_compute.is_greyscale()
 		if new_is_greyscale != is_greyscale:
 			is_greyscale = new_is_greyscale
 			notify_output_change(0)
@@ -133,7 +171,7 @@ func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
 func on_dep_update_buffer(buffer_name : String) -> bool:
 	if is_paused:
 		return false
-	var status = await shader_compute.render(texture, pow(2, get_parameter("size")))
+	var status = await shader_compute.render(texture, pow(2, get_buffer_size()))
 	if status:
 		rendering_time = shader_compute.get_render_time()
 		self.rendering_time_updated.emit(rendering_time)
@@ -157,7 +195,7 @@ func get_adjusted_uv(uv : String) -> String:
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
 	var genname = "o"+str(get_instance_id())
 	var shader_code = _get_shader_code_lod(uv, output_index, context, is_greyscale, -1.0 if output_index == 0 else parameters.lod)
-	shader_code.add_uniform("%s_tex_size" % genname, "float", pow(2, get_parameter("size")))
+	shader_code.add_uniform("%s_tex_size" % genname, "float", pow(2, get_buffer_size()))
 	return shader_code
 
 func get_output_attributes(output_index : int) -> Dictionary:

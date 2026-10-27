@@ -70,6 +70,8 @@ func in_thread_get_texture() -> Texture2D:
 				image_format = Image.FORMAT_RGBAH
 			RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM:
 				image_format = Image.FORMAT_RGBA8
+			RenderingDevice.DATA_FORMAT_R8_UNORM:
+				image_format = Image.FORMAT_R8
 		var image : Image = Image.create_from_data(texture_size.x, texture_size.y, false, image_format, byte_data)
 		texture.set_image.call_deferred(image)
 		texture_needs_update = false

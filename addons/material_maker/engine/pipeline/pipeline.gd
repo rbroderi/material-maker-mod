@@ -63,12 +63,16 @@ const TEXTURE_TYPE_RGBA16F : int = 1
 const TEXTURE_TYPE_R32F    : int = 2
 const TEXTURE_TYPE_RGBA32F : int = 3
 const TEXTURE_TYPE_DEPTH   : int = 4
+const TEXTURE_TYPE_R8      : int = 5
+const TEXTURE_TYPE_RGBA8   : int = 6
 const TEXTURE_TYPE : Array[Dictionary] = [
 	{ decl="r16f", data_format=RenderingDevice.DATA_FORMAT_R16_SFLOAT, image_format=Image.FORMAT_RH, channels=1, bytes_per_channel=2 },
 	{ decl="rgba16f", data_format=RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, image_format=Image.FORMAT_RGBAH, channels=4, bytes_per_channel=2 },
 	{ decl="r32f", data_format=RenderingDevice.DATA_FORMAT_R32_SFLOAT, image_format=Image.FORMAT_RF, channels=1, bytes_per_channel=4 },
 	{ decl="rgba32f", data_format=RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, image_format=Image.FORMAT_RGBAF, channels=4, bytes_per_channel=4 },
-	{ decl="r32f", data_format=RenderingDevice.DATA_FORMAT_D32_SFLOAT, image_format=Image.FORMAT_RF, channels=1, bytes_per_channel=4 }
+	{ decl="r32f", data_format=RenderingDevice.DATA_FORMAT_D32_SFLOAT, image_format=Image.FORMAT_RF, channels=1, bytes_per_channel=4 },
+	{ decl="r8", data_format=RenderingDevice.DATA_FORMAT_R8_UNORM, image_format=Image.FORMAT_R8, channels=1, bytes_per_channel=1 },
+	{ decl="rgba8", data_format=RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM, image_format=Image.FORMAT_RGBA8, channels=4, bytes_per_channel=1 }
 ]
 
 
