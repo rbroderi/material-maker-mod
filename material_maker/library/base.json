@@ -6861,7 +6861,7 @@
 			"name": "sd_mask_to_sdf",
 			"parameters": {
 				"param0": 10.0,
-				"param1": 30.0,
+				"param1": 12.0,
 				"param2": true,
 				"param3": 0.0
 			},
