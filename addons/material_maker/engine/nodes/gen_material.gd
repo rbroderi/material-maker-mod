@@ -441,7 +441,8 @@ func process_option_unreal5(s : String, is_declaration : bool = false, declarati
 						if value.count("(") == value.count(")"):
 							break
 					initializations += d.strings[2]+"["+str(i)+"] = "+value.strip_edges()+";\n"
-		s = initializations+s
+		# Declarations are renamed with the buffers, so are their initializations
+		s = process_option_rename_buffers(initializations)+s
 	s = s.replace("sampler2D", "sampler")
 	return s
 
