@@ -17,7 +17,8 @@ func _init() -> void:
 func _notification(what : int) -> void:
 	match what:
 		NOTIFICATION_PREDELETE:
-			if mm_renderer:
+			# At exit, the renderer has already left the tree (or is freed)
+			if is_instance_valid(mm_renderer) and mm_renderer.is_inside_tree():
 				await mm_renderer.thread_run(in_thread_free_rid, [rid, rd])
 
 static func in_thread_free_rid(texture_rid, rendering_device):
