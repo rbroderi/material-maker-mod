@@ -97,13 +97,45 @@ const STORAGE_16 : int = 3
 
 ## The texture type of a buffer: its channels (1 for grayscale, 2 for RG or 4)
 ## and storage format
+## (8 and 16 bits integer storages fall back to 16 bits floats when the GPU
+## does not support them for compute shader outputs)
 static func get_texture_type(channels : int, storage : int) -> int:
+	return get_texture_type_for_storage(channels, get_effective_storage(channels, storage))
+
+static func get_texture_type_for_storage(channels : int, storage : int) -> int:
 	match channels:
 		1:
 			return [ TEXTURE_TYPE_R16F, TEXTURE_TYPE_R32F, TEXTURE_TYPE_R8, TEXTURE_TYPE_R16 ][storage]
 		2:
 			return [ TEXTURE_TYPE_RG16F, TEXTURE_TYPE_RG32F, TEXTURE_TYPE_RG8, TEXTURE_TYPE_RG16 ][storage]
 	return [ TEXTURE_TYPE_RGBA16F, TEXTURE_TYPE_RGBA32F, TEXTURE_TYPE_RGBA8, TEXTURE_TYPE_RGBA16 ][storage]
+
+## The storage that is really used for a storage format: STORAGE_16F if the
+## GPU does not support the format for compute shader outputs
+static func get_effective_storage(channels : int, storage : int) -> int:
+	if storage == STORAGE_8 or storage == STORAGE_16:
+		if not is_output_texture_type_supported(get_texture_type_for_storage(channels, storage)):
+			return STORAGE_16F
+	return storage
+
+const OUTPUT_TEXTURE_USAGE_BITS : int = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+
+static var output_texture_type_supported : Dictionary[int, bool] = {}
+
+## Returns true if the GPU supports the texture type for compute shader outputs
+## (the result is cached, and a warning is shown once if it is not supported)
+static func is_output_texture_type_supported(texture_type : int) -> bool:
+	if not output_texture_type_supported.has(texture_type):
+		var rd : RenderingDevice = mm_renderer.rendering_device
+		if rd == null:
+			# Not known yet (the rendering device is created by the rendering thread)
+			return true
+		var data_format : int = TEXTURE_TYPE[texture_type].data_format
+		var supported : bool = rd.texture_is_format_supported_for_usage(data_format, OUTPUT_TEXTURE_USAGE_BITS)
+		if not supported:
+			push_warning("%s textures are not supported by the GPU, using 16 bits floats instead" % TEXTURE_TYPE[texture_type].decl)
+		output_texture_type_supported[texture_type] = supported
+	return output_texture_type_supported[texture_type]
 
 ## Rounding of 8 and 16 bits integer stores (GPUs round ties differently)
 const ROUNDING_GPU : int = 0
@@ -554,7 +586,7 @@ func create_output_texture(rd : RenderingDevice, texture_size : Vector2i, textur
 	if is_framebuffer:
 		usage_bits =  RenderingDevice.TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 	else:
-		usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+		usage_bits = OUTPUT_TEXTURE_USAGE_BITS
 	
 	return create_texture(rd, texture_size, texture_type, usage_bits)
 
