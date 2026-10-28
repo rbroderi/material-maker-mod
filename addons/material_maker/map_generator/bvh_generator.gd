@@ -430,10 +430,22 @@ class BVHNode:
 		return aabb.size[a] > aabb.size[b]
 
 	func _intersect_aabb(ray_origin: Vector3, ray_dir: Vector3, box_min: Vector3, box_max: Vector3, solid:=false) -> float:
-		var tMin : Vector3 = (box_min - ray_origin) / ray_dir
-		var tMax : Vector3 = (box_max - ray_origin) / ray_dir
+		# A ray parallel to a slab (null direction component) either stays inside it
+		# or misses the box. Dividing by zero would give 0/0 (NaN) for origins on a box face.
+		var safe_dir : Vector3 = ray_dir
+		for a in 3:
+			if ray_dir[a] == 0.0:
+				if ray_origin[a] < box_min[a] or ray_origin[a] > box_max[a]:
+					return -1.0
+				safe_dir[a] = 1.0
+		var tMin : Vector3 = (box_min - ray_origin) / safe_dir
+		var tMax : Vector3 = (box_max - ray_origin) / safe_dir
 		var t1 : Vector3 = Vector3(min(tMin.x, tMax.x), min(tMin.y, tMax.y), min(tMin.z, tMax.z))
 		var t2 : Vector3 = Vector3(max(tMin.x, tMax.x), max(tMin.y, tMax.y), max(tMin.z, tMax.z))
+		for a in 3:
+			if ray_dir[a] == 0.0:
+				t1[a] = -INF
+				t2[a] = INF
 		var tNear : float = max(max(t1.x, t1.y), t1.z)
 		var tFar : float = min(min(t2.x, t2.y), t2.z)
 
