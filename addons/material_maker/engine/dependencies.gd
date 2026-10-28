@@ -43,6 +43,10 @@ var buffers : Dictionary[String, Buffer] = {}
 var reset_stats : bool = true
 var render_queue_size : int = 0
 
+## Set while nodes are moved to another parent (e.g. into a new group), so
+## their buffers are kept when they leave the tree
+var moving_nodes : bool = false
+
 ## When buffers are freed after their last reader was rendered (see
 ## design/buffer_lifetimes.md)
 enum { RELEASE_NEVER, RELEASE_DURING_EXPORTS, RELEASE_ALWAYS }
@@ -79,9 +83,16 @@ func delete_buffer(buffer_name : String):
 	buffers.erase(buffer_name)
 	render_order_dirty = true
 	if dependencies.has(buffer_name):
+		# The buffer has just been invalidated, so the buffers that depend on
+		# it count it as a pending dependency: release them so they can be
+		# rendered again
 		for b in dependencies[buffer_name]:
 			if buffers.has(b):
 				buffers[b].dependencies.erase(buffer_name)
+				if buffers[b].pending_dependencies > 0:
+					buffers[b].pending_dependencies -= 1
+		dependencies.erase(buffer_name)
+		update()
 	dependencies_values.erase(buffer_name)
 	if was_updating and updating:
 		updating = false
@@ -90,6 +101,8 @@ func delete_buffer(buffer_name : String):
 		update()
 
 func delete_buffers_from_object(object : Object):
+	if moving_nodes:
+		return
 	var remove_buffers : Array = []
 	for b in buffers.keys():
 		if buffers[b].object == object:
@@ -155,6 +168,12 @@ func buffer_invalidate(buffer_name):
 	update()
 	if buffer.object != null and buffer.object.has_method("on_dep_buffer_invalidated"):
 		buffer.object.on_dep_buffer_invalidated(buffer_name)
+
+## Invalidates a buffer that could not be rendered (e.g. because its generator
+## was paused when it was invalidated), so it is rendered again
+func buffer_retry(buffer_name : String) -> void:
+	if buffers.has(buffer_name) and buffers[buffer_name].status == Buffer.Error:
+		buffer_invalidate(buffer_name)
 
 func dependency_update(dependency_name : String, value = null, internal : bool = false):
 	var need_update : bool = false

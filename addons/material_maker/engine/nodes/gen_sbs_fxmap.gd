@@ -205,6 +205,9 @@ func _ready() -> void:
 		mm_deps.create_buffer(get_input_buffer_name(i), self)
 	update_shaders()
 
+func _enter_tree() -> void:
+	exiting = false
+
 func _exit_tree() -> void:
 	exiting = true
 

@@ -45,6 +45,9 @@ func _ready() -> void:
 	# iterate buffer without inputs would never render
 	update_shaders()
 
+func _enter_tree() -> void:
+	exiting = false
+
 func _exit_tree() -> void:
 	exiting = true
 
@@ -66,6 +69,9 @@ func set_paused(v : bool) -> void:
 		return
 	is_paused = v
 	if ! v:
+		# Render the buffers that were invalidated while paused
+		for b in [ buffer_name_init_input, buffer_name_loop_input, buffer_name_output ]:
+			mm_deps.buffer_retry(b)
 		mm_deps.update()
 
 func get_buffers(flags : int = BUFFERS_ALL) -> Array:
@@ -181,11 +187,28 @@ func on_dep_buffer_invalidated(buffer_name : String):
 	if not exiting and (buffer_name == buffer_name_init_input or buffer_name == buffer_name_loop_input):
 		mm_deps.buffer_invalidate(buffer_name_output)
 
+func get_iteration_count() -> int:
+	var iterations = calculate_float_parameter("iterations")
+	if iterations.has("used_named_parameters"):
+		used_named_parameters = iterations.used_named_parameters
+	if iterations.has("value"):
+		return int(iterations.value)
+	return 1
+
+func is_buffer_updated(buffer_name : String) -> bool:
+	var buffer = mm_deps.buffers[buffer_name]
+	return buffer.status == buffer.Updated
+
 func on_dep_update_buffer(buffer_name : String) -> bool:
 	#print("on_dep_update_buffer(", buffer_name, ")")
 	if is_paused:
 		return false
 	if buffer_name == buffer_name_output:
+		if not is_rendering and current_iteration > get_iteration_count() and is_buffer_updated(buffer_name_init_input) and is_buffer_updated(buffer_name_loop_input):
+			# The output was invalidated after the iterations were done
+			# (e.g. the first and last iterations were rendered in the
+			# same update), so it would otherwise never be updated
+			mm_deps.dependency_update(buffer_name_output, texture, true)
 		return true
 	if is_rendering:
 		print("Already rendering ", buffer_name)
@@ -201,14 +224,7 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		set_current_iteration(0)
 	var first_iteration : bool = ( current_iteration == 0 )
 	var shader_compute : MMShaderCompute = shader_computes[0] if first_iteration else shader_computes[1]
-	# Calculate iteration count
-	var iterations = calculate_float_parameter("iterations")
-	if iterations.has("used_named_parameters"):
-		used_named_parameters = iterations.used_named_parameters
-	if iterations.has("value"):
-		iterations = iterations.value
-	else:
-		iterations = 1
+	var iterations : int = get_iteration_count()
 	if current_iteration > iterations:
 		print("Bad iteration for buffer %s (%d > %d)" % [ buffer_name, current_iteration, iterations ])
 		await get_tree().process_frame

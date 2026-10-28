@@ -87,6 +87,9 @@ func _ready() -> void:
 	super._ready()
 	update_shaders()
 
+func _enter_tree() -> void:
+	exiting = false
+
 func _exit_tree() -> void:
 	exiting = true
 
@@ -116,6 +119,11 @@ func set_paused(v : bool) -> void:
 		return
 	is_paused = v
 	if ! v:
+		# Render the buffers that were invalidated while paused
+		for b in [ buffer_name_init, buffer_name_loop ]:
+			mm_deps.buffer_retry(b)
+		for k in MAX_STATES:
+			mm_deps.buffer_retry(get_output_buffer_name(k))
 		mm_deps.update()
 
 func get_buffers(flags : int = BUFFERS_ALL) -> Array:
@@ -356,6 +364,12 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		if buffer_name.ends_with("_tex") and int(buffer_name.get_slice("_v2_o", 1).to_int()) >= get_state_count():
 			await get_tree().process_frame
 			mm_deps.dependency_update(buffer_name, null, true)
+		elif buffer_name.ends_with("_tex") and not is_rendering and current_iteration > get_iterations() and is_buffer_updated(buffer_name_init) and is_buffer_updated(buffer_name_loop):
+			# The final state was invalidated after the iterations were done
+			# (e.g. the first and last iterations were rendered in the same
+			# update), so it would otherwise never be updated
+			var k : int = int(buffer_name.get_slice("_v2_o", 1).to_int())
+			mm_deps.dependency_update(buffer_name, states[k], true)
 		return true
 	if is_rendering:
 		return true
@@ -406,6 +420,12 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		if not loop_reads_states:
 			mm_deps.buffer_invalidate(buffer_name_loop)
 	return status
+
+func is_buffer_updated(buffer_name : String) -> bool:
+	if not mm_deps.buffers.has(buffer_name):
+		return false
+	var buffer = mm_deps.buffers[buffer_name]
+	return buffer.status == buffer.Updated
 
 func set_current_iteration(i : int) -> void:
 	if i == current_iteration:

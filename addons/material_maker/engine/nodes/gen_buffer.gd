@@ -39,6 +39,9 @@ func _ready() -> void:
 	mm_deps.create_buffer("o%d_tex" % get_instance_id(), self)
 	do_update_shader()
 
+func _enter_tree() -> void:
+	exiting = false
+
 func _exit_tree() -> void:
 	exiting = true
 
@@ -53,6 +56,8 @@ func set_paused(v : bool) -> void:
 		return
 	is_paused = v
 	if ! v:
+		# Render the buffer if it was invalidated while paused
+		mm_deps.buffer_retry("o%d_tex" % get_instance_id())
 		mm_deps.update()
 
 func get_buffers(flags : int = BUFFERS_ALL) -> Array:
