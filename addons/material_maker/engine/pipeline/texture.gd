@@ -24,6 +24,16 @@ static func in_thread_free_rid(texture_rid, rendering_device):
 	if texture_rid.is_valid():
 		rendering_device.free_rid(texture_rid)
 
+## Frees a texture of the renderer's RenderingDevice from any thread. The device
+## can only be used from the rendering thread, so the free is queued there (it
+## then also runs after any render that may still be using the texture).
+static func free_rid_in_render_thread(texture_rid : RID, rendering_device : RenderingDevice) -> void:
+	var rendering_thread : Thread = mm_renderer.rendering_thread
+	if rendering_thread != null and rendering_thread.get_id() == str(OS.get_thread_caller_id()):
+		in_thread_free_rid(texture_rid, rendering_device)
+	else:
+		mm_renderer.thread_run(in_thread_free_rid, [texture_rid, rendering_device])
+
 func get_texture_rid(target_rd : RenderingDevice) -> RID:
 	if ! rid.is_valid():
 		var image : Image = texture.get_image()
@@ -110,7 +120,7 @@ func set_texture(new_texture : ImageTexture) -> void:
 				texture_format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
 		texture_size = image.get_size()
 	if rid.is_valid():
-		rd.free_rid(rid)
+		free_rid_in_render_thread(rid, rd)
 	rid = RID()
 
 func get_width() -> int:
