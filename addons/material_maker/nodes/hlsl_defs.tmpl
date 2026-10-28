@@ -74,6 +74,17 @@ inline int4 toint4(int x, int y, int2 zw) {
     return int4(x, y, zw.x, zw.y);
 }
 
+// GLSL bit casts (used by integer hashes)
+inline uint floatBitsToUint(float x) {
+    return asuint(x);
+}
+inline int floatBitsToInt(float x) {
+    return asint(x);
+}
+inline float uintBitsToFloat(uint x) {
+    return asfloat(x);
+}
+
 // float vector funtions
 
 inline float2 tofloat2(float x) {
