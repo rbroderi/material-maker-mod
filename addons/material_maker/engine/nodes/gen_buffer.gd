@@ -43,6 +43,8 @@ func set_paused(v : bool) -> void:
 		return
 	is_paused = v
 	if ! v:
+		# Render the buffer if it was invalidated while paused
+		mm_deps.buffer_retry("o%d_tex" % get_instance_id())
 		mm_deps.update()
 
 func get_buffers(flags : int = BUFFERS_ALL) -> Array:

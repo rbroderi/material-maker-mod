@@ -124,6 +124,12 @@ func buffer_invalidate(buffer_name):
 	if buffer.object != null and buffer.object.has_method("on_dep_buffer_invalidated"):
 		buffer.object.on_dep_buffer_invalidated(buffer_name)
 
+## Invalidates a buffer that could not be rendered (e.g. because its generator
+## was paused when it was invalidated), so it is rendered again
+func buffer_retry(buffer_name : String) -> void:
+	if buffers.has(buffer_name) and buffers[buffer_name].status == Buffer.Error:
+		buffer_invalidate(buffer_name)
+
 func dependency_update(dependency_name : String, value = null, internal : bool = false):
 	var need_update : bool = false
 	var is_buffer_just_updated : bool = false

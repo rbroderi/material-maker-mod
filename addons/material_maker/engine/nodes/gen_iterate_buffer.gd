@@ -60,6 +60,9 @@ func set_paused(v : bool) -> void:
 		return
 	is_paused = v
 	if ! v:
+		# Render the buffers that were invalidated while paused
+		for b in [ buffer_name_init_input, buffer_name_loop_input, buffer_name_output ]:
+			mm_deps.buffer_retry(b)
 		mm_deps.update()
 
 func get_buffers(flags : int = BUFFERS_ALL) -> Array:
