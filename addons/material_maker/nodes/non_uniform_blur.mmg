@@ -48,7 +48,8 @@
 				"param5": false,
 				"param6": 0.0,
 				"param7": 0.0,
-				"param8": 0.0
+				"param8": 0.0,
+				"param9": 1.0
 			},
 			"seed": 343.0,
 			"type": "remote",
@@ -133,6 +134,19 @@
 					"longdesc": "The number of samples taken for each pixel. More samples give a smoother result but are slower",
 					"name": "param4",
 					"shortdesc": "Samples",
+					"type": "linked_control"
+				},
+				{
+					"label": "Jitter",
+					"linked_widgets": [
+						{
+							"node": "non_uniform_blur",
+							"widget": "jitter"
+						}
+					],
+					"longdesc": "Rotates the sample pattern by a different angle for each pixel, which turns the ring-like artifacts of large blurs with few samples into fine noise. 0 uses the same pattern everywhere",
+					"name": "param9",
+					"shortdesc": "Jitter",
 					"type": "linked_control"
 				},
 				{
@@ -236,7 +250,8 @@
 				"asymmetry": 0.0,
 				"samples": 32.0,
 				"blades": 0.0,
-				"blade_rotation": 0.0
+				"blade_rotation": 0.0,
+				"jitter": 1.0
 			},
 			"seed": -47470.0,
 			"seed_locked": true,
@@ -272,6 +287,13 @@
 					"\tfloat blades = floor($blades);",
 					"\tfloat sector = 6.28318530718/max(blades, 1.0);",
 					"\tfloat blade_rotation = $blade_rotation*0.01745329251;",
+					"\t// Jitter: rotate the sample pattern by a per pixel angle, hashed from the integer",
+					"\t// pixel coordinates (wrapped, so the result tiles and is the same on every run)",
+					"\tuvec2 pixel = uvec2(ivec2(floor(fract(uv)*$size))) % uvec2(uint($size));",
+					"\tuint h = (pixel.y*8192u+pixel.x)*747796405u+2891336453u;",
+					"\th = ((h >> ((h >> 28u)+4u)) ^ h)*277803737u;",
+					"\th = (h >> 22u) ^ h;",
+					"\tfloat jitter = $jitter*6.28318530718*float(h >> 8u)/16777216.0;",
 					"\tvec4 rv = vec4(0.0);",
 					"\tfloat total = 0.0;",
 					"\t// Vogel disc: samples spread evenly over the disc using the golden angle",
@@ -279,12 +301,13 @@
 					"\t\tif (i >= count) {",
 					"\t\t\tbreak;",
 					"\t\t}",
-					"\t\tfloat t = i*2.39996322973;",
+					"\t\tfloat t = i*2.39996322973+jitter;",
 					"\t\tvec2 offset = vec2(cos(t), sin(t))*sqrt((i+0.5)/count);",
 					"\t\tfloat weight = 1.0;",
 					"\t\tif (blades >= 3.0) {",
 					"\t\t\t// Polygonal aperture: scale the disc to the polygon in this direction,",
 					"\t\t\t// and weight the sample by the area it now covers to keep the density uniform",
+					"\t\t\t// t includes the jitter, so the polygon itself does not rotate",
 					"\t\t\tfloat scale = cos(0.5*sector)/cos(mod(t-blade_rotation, sector)-0.5*sector);",
 					"\t\t\toffset *= scale;",
 					"\t\t\tweight = scale*scale;",
@@ -367,6 +390,16 @@
 					},
 					{
 						"control": "None",
+						"default": 1.0,
+						"label": "Jitter",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "jitter",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
 						"default": 0.0,
 						"label": "Blades",
 						"max": 8.0,
@@ -415,7 +448,8 @@
 		"param5": false,
 		"param6": 0.0,
 		"param7": 0.0,
-		"param8": 0.0
+		"param8": 0.0,
+		"param9": 1.0
 	},
 	"scroll_offset": {
 		"x": -868.152221679688,

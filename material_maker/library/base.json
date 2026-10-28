@@ -2894,7 +2894,8 @@
 				"param5": false,
 				"param6": 0.0,
 				"param7": 0.0,
-				"param8": 0.0
+				"param8": 0.0,
+				"param9": 1.0
 			},
 			"tree_item": "Filter/Blur/Non-Uniform",
 			"type": "non_uniform_blur"
