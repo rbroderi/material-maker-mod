@@ -9,7 +9,7 @@
 	"parameters": {},
 	"shader_model": {
 		"code": "",
-		"global": "// Material Maker's normal maps: x and y in [0, 1], z inverted\nvec3 mm_normal_decode(vec3 c) {\n\treturn normalize(vec3(2.0*c.xy-vec2(1.0), 1.0-2.0*c.z));\n}\n\nvec3 mm_normal_encode(vec3 n) {\n\treturn vec3(vec2(0.5)+0.5*n.xy, 0.5-0.5*n.z);\n}\n",
+		"global": "// Material Maker's normal maps: x and y in [0, 1], z inverted\n// A unit vector, or a flat normal for null vectors (normalize() gives NaN)\nvec3 mm_normal_safe_normalize(vec3 n) {\n\tfloat l = dot(n, n);\n\treturn (l > 1e-12) ? n*inversesqrt(l) : vec3(0.0, 0.0, 1.0);\n}\n\n// Decodes a normal as a unit vector that does not point into the surface (z >= 0)\nvec3 mm_normal_decode(vec3 c) {\n\tvec3 n = vec3(2.0*c.xy-vec2(1.0), 1.0-2.0*c.z);\n\tn.z = max(n.z, 0.0);\n\treturn mm_normal_safe_normalize(n);\n}\n\nvec3 mm_normal_encode(vec3 n) {\n\treturn vec3(vec2(0.5)+0.5*n.xy, 0.5-0.5*n.z);\n}\n",
 		"inputs": [
 			{
 				"default": "vec3(0.5, 0.5, 0.0)",
@@ -22,7 +22,7 @@
 			}
 		],
 		"instance": [],
-		"longdesc": "Normalizes the vectors of a normal map (for example after blending or filtering it)",
+		"longdesc": "Normalizes the vectors of a normal map, for example after blending, filtering or resizing it. Null vectors become flat normals, and normals that point into the surface are moved onto it",
 		"name": "Normal Normalize",
 		"outputs": [
 			{

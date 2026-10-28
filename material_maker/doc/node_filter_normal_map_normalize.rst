@@ -17,3 +17,8 @@ Parameters
 ++++++++++
 
 The **Normal Normalize** node has no parameter.
+
+Notes
++++++
+
+Null vectors become flat normals, and normals that point into the surface are moved onto it.
