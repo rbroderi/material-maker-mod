@@ -734,6 +734,29 @@ max_value = 65536.0
 step = 64.0
 float_only = true
 
+[node name="ReleaseBuffers" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1739204551]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/ReleaseBuffers" unique_id=1739204552]
+layout_mode = 2
+text = "Release buffers"
+
+[node name="EnumOption" type="OptionButton" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/ReleaseBuffers" unique_id=1739204553]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Frees the texture of a buffer when all the buffers that read it are rendered, so large graphs need less GPU memory. Released buffers are rendered again when they are needed (which makes editing slower)."
+selected = 0
+item_count = 3
+popup/item_0/text = "Never"
+popup/item_0/id = 0
+popup/item_1/text = "During exports"
+popup/item_1/id = 1
+popup/item_2/text = "Always"
+popup/item_2/id = 2
+script = ExtResource("5_vp06c")
+config_variable = "release_buffers"
+
 [node name="AutoBufferSize" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=859498607]
 layout_mode = 2
 

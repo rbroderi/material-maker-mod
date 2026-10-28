@@ -21,6 +21,16 @@ var is_greyscale : bool = false
 
 var is_paused : bool = false
 
+## Named parameters used by the size offset expression (their changes resize
+## the buffer)
+var size_named_parameters : Array = []
+## Dimensions of the buffer in the size uniforms of the shaders that read it
+var published_dimensions : Vector2i = Vector2i(-1, -1)
+
+const SIZE_MODE_ABSOLUTE : int = 0
+const SIZE_MODE_RELATIVE_TO_OUTPUT : int = 1
+const SIZE_MODE_RELATIVE_TO_INPUT : int = 2
+
 
 func _ready() -> void:
 	shader_compute = MMShaderCompute.new()
@@ -67,11 +77,18 @@ func get_parameter_defs() -> Array:
 			parameter_defs.push_back({ name="f32", label="32 bits", type="boolean", default=false })
 			parameter_defs.push_back({ name="f8", label="8 bits", type="boolean", default=false,
 				longdesc="Use an 8 bits buffer to save memory (ignored if 32 bits is set)" })
+			parameter_defs.push_back({ name="f16i", label="16 bits integer", type="boolean", default=false,
+				longdesc="Store 16 bits integers (as Substance's 16 bits format) instead of 16 bits floats (ignored if 32 bits is set)" })
+			parameter_defs.push_back({ name="rg", label="RG", type="boolean", default=false,
+				longdesc="Store only the red and green channels of color inputs (blue is 0 and alpha 1 when read)" })
+			parameter_defs.push_back({ name="rounding", label="Rounding", type="enum", default=0,
+				values=[ { name="GPU", value="gpu" }, { name="Half down", value="half_down" }, { name="Half up", value="half_up" } ],
+				longdesc="How values are rounded when they are stored in 8 or 16 bits: as the GPU does (it varies between GPUs: ties are rounded down or up, and some truncate 16 bits floats), or to the nearest step with ties down or up (the same on all GPUs)" })
 			parameter_defs.push_back({ name="size_mode", label="Size mode", type="enum", default=0,
-				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" } ],
-				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset" })
+				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" }, { name="Relative to input", value="input" } ],
+				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset, relative to input uses the size of the texture the input reads (the nearest buffer or image upstream) multiplied by 2^offset" })
 			parameter_defs.push_back({ name="size_offset", label="Size offset", type="float", min=-6.0, max=4.0, step=1.0, default=0.0,
-				longdesc="Size relative to the material's size, as a power of 2 (only used in relative size mode)" })
+				longdesc="Size relative to the material's or the input's size, as a power of 2 (only used in relative size modes). It can be an expression of the graph's named parameters ($name)." })
 			parameter_defs.push_back({ name="aspect", label="Aspect ratio", type="enum", default=0, values=ASPECT_RATIOS,
 				longdesc="Width:height of the buffer (the size is its width). Non-square buffers have a different resolution horizontally and vertically, the image is still mapped to the whole UV square" })
 	return parameter_defs
@@ -97,33 +114,73 @@ func get_buffer_dimensions() -> Vector2i:
 
 ## Returns the material's output size (as log2), or -1 if there is none
 func get_output_size() -> int:
-	var root : Node = self
-	while root.get_parent() is MMGenBase:
-		root = root.get_parent()
-	for c in root.get_children():
-		if c is MMGenMaterial and c.parameters.has("size"):
-			return int(c.parameters.size)
+	var material : Node = find_material()
+	if material != null and material.parameters.has("size"):
+		return int(material.parameters.size)
 	return -1
+
+## The width of the texture an output reads: that of the nearest buffer or
+## texture (image...) upstream, following the first input of other nodes,
+## or -1 if there is none
+static func find_texture_width(port : OutputPort, depth : int = 0) -> int:
+	if port == null or depth > 256:
+		return -1
+	var generator : MMGenBase = port.generator
+	if generator.has_method("get_buffer_dimensions"):
+		return generator.get_buffer_dimensions().x
+	if generator is MMGenTexture and generator.texture.texture_size.x > 0:
+		return generator.texture.texture_size.x
+	if generator is MMGenGraph:
+		var outputs : Node = generator.get_node_or_null("gen_outputs")
+		return find_texture_width(outputs.get_source(port.output_index) if outputs != null else null, depth+1)
+	if generator.name == "gen_inputs" and generator.get_parent() is MMGenBase:
+		return find_texture_width(generator.get_parent().get_source(port.output_index), depth+1)
+	if generator.get_input_defs().is_empty():
+		return -1
+	return find_texture_width(generator.get_source(0), depth+1)
+
+## The size offset (an expression of named parameters, or a number)
+func get_size_offset() -> int:
+	var offset : Dictionary = calculate_float_parameter("size_offset")
+	size_named_parameters = offset.get("used_named_parameters", [])
+	return roundi(offset.get("value", 0.0))
 
 ## Returns the buffer's size (as log2), that depends on its size mode
 func get_buffer_size() -> int:
-	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:
-		var output_size : int = get_output_size()
-		if output_size >= 0:
-			return clamp(output_size+int(get_parameter("size_offset")), 0, 14)
+	if version == VERSION_COMPLEX:
+		match int(get_parameter("size_mode")):
+			SIZE_MODE_RELATIVE_TO_OUTPUT:
+				var output_size : int = get_output_size()
+				if output_size >= 0:
+					return clamp(output_size+get_size_offset(), 0, 14)
+			SIZE_MODE_RELATIVE_TO_INPUT:
+				var input_width : int = find_texture_width(get_source(0))
+				if input_width <= 0:
+					# Inputs that do not read a texture are rendered at the material's size
+					var output_size : int = get_output_size()
+					input_width = (1 << output_size) if output_size >= 0 else (1 << int(get_parameter("size")))
+				return clamp(roundi(log(float(input_width))/log(2.0))+get_size_offset(), 0, 14)
 	return int(get_parameter("size"))
+
+## The storage format of the buffer (MMPipeline.STORAGE_*)
+func get_storage() -> int:
+	if version != VERSION_COMPLEX:
+		return MMPipeline.STORAGE_16F
+	if get_parameter("f32"):
+		return MMPipeline.STORAGE_32F
+	if get_parameter("f16i"):
+		return MMPipeline.STORAGE_16
+	if get_parameter("f8"):
+		return MMPipeline.STORAGE_8
+	return MMPipeline.STORAGE_16F
 
 ## The size and format of the buffer, shown under the node
 func get_badge() -> String:
-	var format : String = "16F"
-	if version == VERSION_COMPLEX:
-		if get_parameter("f32"):
-			format = "32F"
-		elif get_parameter("f8"):
-			format = "8 bits"
+	var format : String = [ "16F", "32F", "8 bits", "16 bits" ][get_storage()]
 	var dimensions : Vector2i = get_buffer_dimensions()
 	var size_text : String = "%d px" % dimensions.x if dimensions.x == dimensions.y else "%dx%d px" % [ dimensions.x, dimensions.y ]
-	return "%s  %s %s" % [ size_text, format, "gray" if is_greyscale else "RGBA" ]
+	var channels : String = "gray" if is_greyscale else ("RG" if version == VERSION_COMPLEX and get_parameter("rg") else "RGBA")
+	return "%s  %s %s" % [ size_text, format, channels ]
 
 ## A warning when an 8 bits buffer stores data that needs more precision:
 ## grayscale data (usually heights or masks used as heights), or data used
@@ -151,14 +208,22 @@ func get_precision_warning() -> String:
 
 ## Called when the material's size changes
 func on_output_size_changed() -> void:
-	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:
+	if version == VERSION_COMPLEX and get_parameter("size_mode") != SIZE_MODE_ABSOLUTE:
 		update_buffer_size()
+
+## Updates the size uniforms of the shaders that read the buffer
+func publish_dimensions(dimensions : Vector2i) -> void:
+	if dimensions == published_dimensions:
+		return
+	published_dimensions = dimensions
+	mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), float(dimensions.x))
+	mm_deps.dependency_update("o%d_tex_size_y" % get_instance_id(), float(dimensions.y))
 
 func update_buffer_size() -> void:
 	if is_inside_tree():
 		var dimensions : Vector2i = get_buffer_dimensions()
-		mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), float(dimensions.x))
-		mm_deps.dependency_update("o%d_tex_size_y" % get_instance_id(), float(dimensions.y))
+		published_dimensions = Vector2i(-1, -1)
+		publish_dimensions(dimensions)
 		# Remote nodes can set the size before the buffer is created
 		var buffer_name : String = "o%d_tex" % get_instance_id()
 		if mm_deps.buffers.has(buffer_name):
@@ -183,7 +248,7 @@ func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
 	if n in [ "size", "size_mode", "size_offset", "aspect" ]:
 		update_buffer_size()
-	elif n == "f8" and is_inside_tree():
+	elif n in [ "f32", "f8", "f16i", "rg", "rounding" ] and is_inside_tree():
 		update_shader()
 
 var updating_shader : bool = false
@@ -205,12 +270,12 @@ func do_update_shader() -> void:
 		source = source_output.generator.get_shader_code("uv", source_output.output_index, context)
 	else:
 		source = get_default_generated_shader()
-	var f32 = false
-	var f8 = false
+	var rg : bool = false
+	var rounding : int = MMPipeline.ROUNDING_GPU
 	if version == VERSION_COMPLEX:
-		f32 = get_parameter("f32")
-		f8 = get_parameter("f8")
-	var shader_status : bool = await shader_compute.set_shader_from_shadercode(source, f32, f8)
+		rg = get_parameter("rg")
+		rounding = int(get_parameter("rounding"))
+	var shader_status : bool = await shader_compute.set_shader_from_shadercode_storage(source, get_storage(), rg, rounding)
 	if shader_status:
 		var new_is_greyscale = shader_compute.is_greyscale()
 		if new_is_greyscale != is_greyscale:
@@ -219,11 +284,18 @@ func do_update_shader() -> void:
 			if version == VERSION_OLD:
 				notify_output_change(1)
 		await mm_deps.buffer_create_compute_material("o%d_tex" % get_instance_id(), shader_compute)
+		# Named parameters of the size offset resize the buffer
+		get_buffer_size()
+		for p in size_named_parameters:
+			mm_deps.buffer_add_dependency("o%d_tex" % get_instance_id(), p)
 		mm_deps.update()
 	else:
 		print("buffer is invalid")
 
 func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
+	if parameter_name in size_named_parameters:
+		# The buffer is resized (and rendered again)
+		return false
 	if value != null:
 		shader_compute.set_parameter(parameter_name, value)
 	return false
@@ -231,7 +303,9 @@ func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
 func on_dep_update_buffer(buffer_name : String) -> bool:
 	if is_paused:
 		return false
+	# Relative sizes depend on inputs that are rendered first
 	var dimensions : Vector2i = get_buffer_dimensions()
+	publish_dimensions(dimensions)
 	var status = await shader_compute.render(texture, dimensions.x, dimensions.y)
 	if status:
 		rendering_time = shader_compute.get_render_time()
@@ -245,6 +319,13 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 
 func on_buffer_updated():
 	pass
+
+## Frees the buffer's texture (it is rendered again when needed, see mm_deps)
+func release_buffer(buffer_name : String) -> bool:
+	if is_paused or buffer_name != "o%d_tex" % get_instance_id():
+		return false
+	texture.release(buffer_name)
+	return true
 
 func get_adjusted_uv(uv : String) -> String:
 	if version == VERSION_COMPLEX and not get_parameter("filter"):

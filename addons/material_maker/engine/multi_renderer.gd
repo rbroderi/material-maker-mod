@@ -120,6 +120,13 @@ var rendering_thread_running : bool
 var rendering_thread_working : bool = false
 var rendering_device : RenderingDevice
 var rendering_device_user = null
+## Highest memory used by Material Maker's textures in the rendering device
+## (buffers, images...), in bytes
+var peak_texture_memory : int = 0
+
+## Updates peak_texture_memory (in the main thread)
+func update_peak_texture_memory() -> void:
+	peak_texture_memory = max(peak_texture_memory, MMTexture.get_gpu_memory_usage().bytes)
 
 func thread_loop():
 	while true:
@@ -159,9 +166,13 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 			rendering_mutex.unlock()
 		rendering_thread_working = false
 		await get_tree().process_frame
+		# Textures are registered in deferred calls
+		update_peak_texture_memory()
 		return rv
 	else:
-		return await c.callv(p)
+		var rv = await c.callv(p)
+		update_peak_texture_memory()
+		return rv
 
 func create_rendering_device():
 	rendering_device = RenderingServer.create_local_rendering_device()
@@ -177,6 +188,9 @@ func wait_for_rendering_device() -> RenderingDevice:
 # GPU memory budget (see MMTexture and design/hybrid_evaluator.md)
 
 var texture_budget_check_scheduled : bool = false
+## GPU memory budget in MB set on the command line (--gpu-budget), used
+## instead of the preference when not negative
+var gpu_memory_budget_override : float = -1.0
 var texture_budget_check_running : bool = false
 
 func request_texture_budget_check() -> void:
@@ -190,7 +204,9 @@ func check_texture_budget() -> void:
 		# Check again when the current check is done
 		request_texture_budget_check.call_deferred()
 		return
-	var budget_mb : float = float(mm_globals.get_config("gpu_memory_budget")) if mm_globals else 0.0
+	var budget_mb : float = gpu_memory_budget_override
+	if budget_mb < 0.0:
+		budget_mb = float(mm_globals.get_config("gpu_memory_budget")) if mm_globals else 0.0
 	if budget_mb <= 0.0:
 		return
 	texture_budget_check_running = true

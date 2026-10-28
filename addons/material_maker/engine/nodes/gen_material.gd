@@ -745,6 +745,13 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 ## size x height when height is not 0). With UDIM tiles, textures are exported
 ## for each tile (see export_texture_file).
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
+	mm_deps.set_exporting(true)
+	await export_material_with_profile(prefix, profile, size, command_line, height, tiles)
+	mm_deps.set_exporting(false)
+
+func export_material_with_profile(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
+	# Buffers that are rendered can be released before the export renders more
+	mm_deps.release_unused_buffers()
 	# Exports that generate shader code (procedural materials) export the
 	# buffers their code uses instead of the textures of the preview
 	var export_profile = get_export(profile)
@@ -879,7 +886,7 @@ func export_texture_file(f : Dictionary, export_context : Dictionary, image_size
 		layers[file_name].append({ name=f.layer, image=image, options=options })
 		return OK
 	if image != null:
-		return MMTexture.save_image(image, file_name, options)
+		return await MMTexture.save_image_rounded(image, file_name, options)
 	return await result.save_to_file(file_name, options)
 
 func do_export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
@@ -1003,8 +1010,7 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 						# PNG files (8 bits), or the format of the file name
 						# (e.g. EXR to keep the precision of iterate buffers)
 						if file_name.get_extension().to_lower() == "png":
-							image.convert(Image.FORMAT_RGBA8)
-							e = image.save_png(file_name)
+							e = await MMTexture.save_image_rounded(image, file_name)
 						else:
 							if image.get_format() < Image.FORMAT_RF:
 								image.convert(Image.FORMAT_RGBAH)

@@ -14,6 +14,9 @@ static func name_to_lower(s : String) -> String:
 var output_height : int = 0
 ## Options of --export-material
 var export_options : Dictionary = {}
+## Exit code of modes that process several graphs (2 when a graph's
+## requirements are not met)
+var exit_code : int = 0
 
 ## UDIM tiles exported by --export-material (--udim-tiles, or --udim for the
 ## graph's tiles)
@@ -69,6 +72,10 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 				print("Failed to download asset ", asset_index)
 				continue
 			from_website = true
+		if gen != null and not check_requirements(gen, f, options):
+			gen.free()
+			get_tree().quit(2)
+			return
 		if gen != null:
 			add_child(gen)
 			await apply_graph_options(gen, f, options)
@@ -77,6 +84,8 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			gen.queue_free()
 	if not export_list.is_empty():
 		print(",\n".join(PackedStringArray(export_list)))
+	print("Peak GPU texture memory: %d MB" % (mm_renderer.peak_texture_memory >> 20))
+	print("Shaders: %d compiled, %d from the cache" % [ MMPipeline.shader_cache_misses, MMPipeline.shader_cache_hits ])
 	get_tree().quit()
 
 func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array) -> void:
@@ -115,11 +124,29 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 				var tiles : PackedInt32Array = get_udim_tiles(c, export_options)
 				if export_options.has("udim_tiles") and tiles.is_empty():
 					show_error("ERROR: invalid --udim-tiles %s" % export_options.udim_tiles)
-				await c.export_material(prefix, best_target, image_size, true, output_height, tiles)
+				# Without --size, the Material's size (and aspect ratio) is used
+				var material_size : int = 0
+				if export_options.get("size_given", false):
+					material_size = image_size
+					set_material_size(c, image_size)
+				await c.export_material(prefix, best_target, material_size, true, output_height, tiles)
 			else:
 				await c.export_material(prefix, best_target, image_size, true, output_height)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
+
+## Sets the size of a Material (when it is a power of 2), so buffers that are
+## sized relative to the output follow it
+static func set_material_size(material : MMGenMaterial, image_size : int) -> void:
+	if nearest_po2(image_size) != image_size or not material.parameters.has("size"):
+		return
+	var exponent : int = 0
+	while (1 << exponent) < image_size:
+		exponent += 1
+	if exponent < MMGenMaterial.TEXTURE_SIZE_MIN or exponent > MMGenMaterial.TEXTURE_SIZE_MAX:
+		return
+	if int(material.parameters.size) != exponent:
+		material.set_parameter("size", exponent)
 
 # Plugins add other modes (see MMPlugins.API.add_cli_mode), e.g. --export-volume
 # and --export-mmr
@@ -153,6 +180,9 @@ const VALUE_OPTIONS : Dictionary = {
 	"--duration": { key="duration", type=TYPE_FLOAT },
 	"--columns": { key="columns", type=TYPE_INT },
 	"--rpc-port": { key="rpc_port", type=TYPE_INT },
+	"--gpu-budget": { key="gpu_budget", type=TYPE_FLOAT, minimum=0.0 },
+	"--low-memory": { key="low_memory", type=TYPE_BOOL },
+	"--strict": { key="strict", type=TYPE_BOOL },
 }
 
 const HELP : String = """Material Maker command line
@@ -171,7 +201,9 @@ Options:
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels, or <width>x<height> for non-square outputs of --render,
-                             --export-material and plugin modes (buffers stay square)
+                             --export-material and plugin modes (buffers stay square). --export-material
+                             uses the Material node's size by default, and --size also sets it (so
+                             buffers sized relative to the output follow it)
   --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
@@ -205,6 +237,12 @@ Options:
   --show-window              do not minimize the window (with --headless, builds without headless.patch
                              run again with a hidden window, using xvfb-run when there is no display)
   --rpc-port <port>          port of the JSON-RPC server (localhost only, default 7680)
+  --gpu-budget <MB>          GPU memory budget: the least recently used textures are moved to RAM above it
+  --strict                   fail when a graph has nodes of unknown types (by default they are kept
+                             as magenta placeholders). Graphs that need missing plugins or a newer
+                             version (their "requires") always fail.
+  --low-memory               free each buffer's texture when all the buffers that read it are rendered
+                             (render again when needed): large graphs need much less memory
 """
 
 func _ready():
@@ -300,6 +338,10 @@ func _ready():
 				if not arg in CLI_MODES and not MMPlugins.cli_modes.has(arg):
 					files.push_back(arg)
 		i += 1
+	if options.has("gpu_budget"):
+		mm_renderer.gpu_memory_budget_override = options.gpu_budget
+	if options.get("low_memory", false):
+		mm_deps.release_mode = mm_deps.RELEASE_ALWAYS
 	if ! dir.dir_exists(options.output_dir):
 		dir.make_dir_recursive(options.output_dir)
 	print("Output dir: ", options.output_dir)
@@ -464,9 +506,27 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 	if gen == null:
 		show_error("ERROR: cannot load %s" % f)
 		return null
+	if not check_requirements(gen, f, options):
+		gen.free()
+		return null
 	add_child(gen)
 	await apply_graph_options(gen, f, options)
 	return gen
+
+## Whether a loaded graph has what it needs (see MMPlugins.check_requirements),
+## and with --strict, no nodes of unknown types
+func check_requirements(gen : MMGenBase, f : String, options : Dictionary) -> bool:
+	var missing : PackedStringArray = gen.get_meta("missing_requirements", PackedStringArray())
+	var ok : bool = true
+	for m in missing:
+		if m.begins_with("nodes of type ") and not options.get("strict", false):
+			print("WARNING: %s needs %s (kept as magenta placeholders)" % [ f.get_file(), m ])
+		else:
+			show_error("ERROR: %s needs %s" % [ f.get_file(), m ])
+			ok = false
+	if not ok:
+		exit_code = 2
+	return ok
 
 ## Applies --preset, then --set values (presets are applied first)
 func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
@@ -496,7 +556,7 @@ func process_graph_files(files : Array, options : Dictionary, variation : Callab
 		await for_each_variation(gen, options, variation.bind(gen, f, options))
 		gen.queue_free()
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(exit_code)
 
 ## Calls callable once per variation, after changing the seeds, with the
 ## suffix of the variation's files

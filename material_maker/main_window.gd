@@ -341,6 +341,7 @@ func on_config_changed() -> void:
 	# Clamp the FPS to reasonable values to avoid locking up the UI.
 	@warning_ignore("narrowing_conversion")
 	OS.low_processor_usage_mode_sleep_usec = (1.0 / clamp(mm_globals.get_config("fps_limit"), FPS_LIMIT_MIN, FPS_LIMIT_MAX)) * 1_000_000
+	mm_deps.release_mode = int(mm_globals.get_config("release_buffers"))
 	# locale
 	var locale = mm_globals.get_config("locale")
 	if locale != "" and locale != TranslationServer.get_locale():

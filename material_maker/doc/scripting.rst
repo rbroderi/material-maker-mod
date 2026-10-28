@@ -141,6 +141,10 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   callable)**. Texture files of an export target with a **layer** name and the same file name
   are saved together: the callable receives the file name and the layers (**{ name, image,
   options }**)
+* node types implemented by scripts: **api.add_node_type(type, script)**, for nodes that shader
+  definitions (.mmg files) cannot describe. **script** extends **MMGenBase** (see the engine's
+  generators, such as **MMGenSbsFxMap**), and nodes whose **"type"** is **type** in graph files
+  are created from it
 * **MMPlugins.load_plugin_file(plugin_id, file_name)** loads a file of another (loaded) plugin, for
   example a script shared with the plugins that depend on it
 * **api.get_main_window()**, the main window (null on the command line), to add panels or dialogs
@@ -158,12 +162,44 @@ targets that are left unchanged are not copied to the user's export targets.
         api.add_rpc_method("node_count", func(params): return 42)
         api.add_export_hook(func(material, prefix, target): print("exported ", prefix))
 
+Nodes whose type is unknown when a graph is loaded (for example nodes of a plugin that is not
+installed) are kept as magenta placeholders, that are saved unchanged with the graph.
+
+Graph requirements
+++++++++++++++++++
+
+Graphs can declare what they need, in a top-level **requires** dictionary, or, for files that are
+also loaded by versions that do not save it, in a line of the graph's long description
+(**<anything>requires:** followed by the JSON on the same line, for example
+**sbsar2ptex-requires: {"material_maker_mod": ">=1.17", "plugins": {"sbs": ">=1.0"}}**):
+
+* **material_maker_mod**: the minimum version of this fork's features (1.17)
+* **plugins**: plugin ids with an optional minimum version (**">=1.0"**)
+* **node_types**: node types that must be available
+* **features**: features of this fork: buffer_release, buffer_size_relative_to_input,
+  buffer_size_expressions, pass_size, iterate_buffer_v2, iteration_variable, unorm16, rg_formats,
+  store_rounding, node_types, missing_node_placeholders, sbs_fxmap
+
+When a graph is loaded, what it needs and is missing (and the types of its placeholders) is shown
+in a dialog, returned by the **load** JSON-RPC method (**{ loaded, missing }**), and makes the
+command line fail with exit code 2 (placeholders only fail with **--strict**).
+
+Graph-local node definitions
+++++++++++++++++++++++++++++
+
+The .mmg files of a folder named **<graph>_nodes** next to a graph file (or of the folder given by
+the graph's **nodes_dir**, relative to the graph file) are loaded before the graph, and their names
+are node types, that take precedence over the nodes of Material Maker and of plugins. Converters
+use them to write each repeated subgraph once (for example sbsar2ptex's
+**sbs_<material>_<node>** types).
+
 The **list_plugins** JSON-RPC method lists the plugins, and the RPC methods and commands they add.
 The **material_maker/plugins/example** folder contains an example plugin (disabled by default).
 Several features of Material Maker are bundled plugins, enabled by default, that can be disabled
 in *Tools > Plugins...*: **materialx_import** (MaterialX import), **runtime_export** (runtime
 packages, **--export-mmr**), **volume_export** (volumes, **--export-volume**), **export_targets**
-(the Godot 4, Unity and Unreal Engine 5 shader exports, MaterialX and USD), **ktx2_format**,
+(the Godot 4, Unity and Unreal Engine 5 shader exports, MaterialX and USD), **sbs** (a skeleton
+of the Substance atomic nodes plugin that sbsar2ptex installs), **ktx2_format**,
 **tx_format** and **exr_layers_format** (the KTX2 and TX image formats, multi-layer OpenEXR,
 and their export targets), **car_paint** (the
 Car Paint Material node) and **axf_import** (AxF import, that depends on **car_paint**).

@@ -46,9 +46,23 @@ The **Advanced Buffer** node has 3 parameters:
 * the *8 bits* property; if set (and *32 bits* is not), the buffer is stored as 8 bits values,
   which uses half the memory of the default 16 bits floats, but values are clamped between 0 and 1
 
-* the *size mode*: *Absolute* uses the *texture resolution*, and *Relative to output* uses the
+* the *16 bits integer* property; if set (and *32 bits* is not), the buffer is stored as 16 bits
+  integers (as Substance Designer's 16 bits format), clamped between 0 and 1
+
+* the *RG* property; if set, only the red and green channels of color inputs are stored (blue is
+  0 and alpha 1 when the buffer is read), for half the memory of RGBA
+
+* the *rounding* of 8 and 16 bits buffers: *GPU* converts values as the GPU does (values exactly
+  halfway between two integer steps are rounded down by some GPUs and up by others, and some GPUs
+  truncate 16 bits floats), *Half down* and *Half up* round values to the nearest step (ties
+  down or up) the same way on all GPUs
+
+* the *size mode*: *Absolute* uses the *texture resolution*, *Relative to output* uses the
   size of the graph's material multiplied by 2 to the power of *size offset*, so the buffer
-  follows the output resolution when it is changed
+  follows the output resolution when it is changed, and *Relative to input* uses the size of the
+  texture its input reads (the nearest buffer or image upstream, following the first input of
+  other nodes) multiplied by 2 to the power of *size offset*. The *size offset* can be an
+  expression of the graph's named parameters (for example *$detail-2*)
 
 * the *aspect ratio* (1:1, 2:1, 1:2, 4:1, 1:4, 8:1 or 1:8): the buffer's height is its
   resolution divided by the ratio, for example 1024x512 for a 1024 buffer with a 2:1 ratio
@@ -89,3 +103,21 @@ GPU memory budget
 When a GPU memory budget is set in the preferences, the least recently used buffers are
 copied back to the main memory when the budget is exceeded, and uploaded again when they
 are needed. Their content is kept, so nothing has to be rendered again.
+
+Releasing buffers
++++++++++++++++++
+
+The *Release buffers* preference (Graph tab) frees the texture of a buffer (in the GPU and in
+the main memory) as soon as all the buffers that read it are rendered, and renders it again when
+it is needed. Buffers are then rendered depth first (each input just before the buffers that read
+it), so very large graphs only keep a few textures at a time. *Never* keeps all buffers (editing
+is fastest), *During exports* releases them while exporting, and *Always* also releases them while
+editing (changing a node renders the released buffers it needs again). Buffers read by previews,
+the Material node, widgets and iterate buffers are never released. The command line's *--low-memory* option
+releases buffers.
+
+Pass size
++++++++++
+
+In shaders, *$pass_size* is the size in pixels of the texture being rendered (a vec2): the
+buffer's size in buffers, iterate buffers and exports, and the material's size in previews.

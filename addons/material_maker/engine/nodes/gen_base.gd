@@ -321,6 +321,31 @@ func init_parameters() -> void:
 func set_position(p) -> void:
 	position = p
 
+## The Material node of the graph that contains this node (cached in the root
+## graph), or null
+func find_material() -> Node:
+	var root : Node = self
+	while root.get_parent() is MMGenBase:
+		root = root.get_parent()
+	var cached = root.get_meta("mm_material") if root.has_meta("mm_material") else null
+	if cached is WeakRef:
+		var material = cached.get_ref()
+		if material != null and is_instance_valid(material) and material.get_parent() == root:
+			return material
+	for c in root.get_children():
+		if c is MMGenMaterial:
+			root.set_meta("mm_material", weakref(c))
+			return c
+	return null
+
+## Default size of rendered textures ($pass_size in shaders, compute renders
+## set the actual size): the material's size
+func get_pass_size() -> Vector2i:
+	var material : Node = find_material()
+	if material != null:
+		return Vector2i(material.get_image_size(), material.get_image_height())
+	return Vector2i(1024, 1024)
+
 func get_type() -> String:
 	return "generic"
 

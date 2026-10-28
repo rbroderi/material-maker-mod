@@ -40,3 +40,26 @@ The **Iterate Buffer** node has two parameters:
 * the *filter* property; if set, the buffer output will be filtered
 
 * the *mipmap* property; if set, mipmaps will be generated for this buffer
+
+The number of iterations can be an expression of the graph's named parameters. Shaders of the
+loop can use *$iteration*: 0 for the initialization, then 1 to the number of iterations.
+
+Iterate Buffer with several states
+++++++++++++++++++++++++++++++++++
+
+Graphs can also use iterate buffers with several states (type **iterate_buffer_v2**), for
+example an image and a running mean. Inputs 1 to n initialize the states, and inputs n+1 to 2n
+are the loop inputs. Outputs 1 to n are the final states, and outputs n+1 to 2n the current
+states, that are connected to the loop. All states are rendered by a single shader in each
+iteration, so the loop always reads the states of the previous iteration. Its parameters are:
+
+* the number of *states* (1 to 4)
+* the *size mode*, *size* and *size offset*, as in the Advanced Buffer node
+* the number of *iterations*, a number or an expression of named parameters and of *$pass_size*
+  (the width of the states in pixels)
+* *filter*, and the *rounding* of 8 and 16 bits integer states
+* the *format* of each state (16 or 32 bits floats, 8 or 16 bits integers), and whether it only
+  stores the *RG* channels
+
+In the loop, *$iteration* is 1 for the first loop pass, and *iterations* loop passes follow the
+initialization.

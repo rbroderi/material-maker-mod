@@ -874,6 +874,7 @@ func load_file(filename) -> bool:
 			set_save_path("")
 			set_need_save(true)
 		#print("Material has %d buffers" % find_buffers(new_generator))
+		show_missing_requirements(filename, new_generator.get_meta("missing_requirements", PackedStringArray()))
 		return true
 	else:
 		var dialog : AcceptDialog = AcceptDialog.new()
@@ -886,6 +887,21 @@ func load_file(filename) -> bool:
 		dialog.connect("popup_hide", Callable(dialog, "queue_free"))
 		dialog.popup_centered()
 		return false
+
+## Tells what a loaded graph needs that is missing (plugins, node types...,
+## see MMPlugins.check_requirements)
+func show_missing_requirements(filename : String, missing : PackedStringArray) -> void:
+	if missing.is_empty():
+		return
+	var dialog : AcceptDialog = AcceptDialog.new()
+	add_child(dialog)
+	var content_scale_factor : float = mm_globals.ui_scale_factor()
+	dialog.content_scale_factor = content_scale_factor
+	dialog.title = "Missing requirements"
+	dialog.dialog_text = "%s needs:\n\n- %s\n\nNodes of unknown types are shown as magenta placeholders, and are saved unchanged." % [ filename.get_file(), "\n- ".join(missing) ]
+	dialog.min_size = dialog.get_contents_minimum_size() * content_scale_factor
+	dialog.connect("popup_hide", Callable(dialog, "queue_free"))
+	dialog.popup_centered()
 
 func load_from_data(filename, data) -> bool:
 	var test_json_conv = JSON.new()

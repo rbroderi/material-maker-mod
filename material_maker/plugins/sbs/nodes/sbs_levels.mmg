@@ -1,0 +1,48 @@
+{
+	"name": "sbs_levels",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"in_low": 0.0,
+		"in_mid": 0.5,
+		"in_high": 1.0,
+		"out_low": 0.0,
+		"out_high": 1.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4($uv.x, $uv.x, $uv.x, 1.0)",
+				"label": "",
+				"longdesc": "The input image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "rgba"
+			}
+		],
+		"instance": "vec4 $(name)_levels(vec4 c, float dummy) {\n\tvec3 x = clamp((c.rgb-vec3($in_low))/max($in_high-$in_low, 1e-6), 0.0, 1.0);\n\tfloat g = log(0.5)/log(clamp($in_mid, 0.001, 0.999));\n\tx = pow(x, vec3(1.0/g));\n\treturn vec4(mix(vec3($out_low), vec3($out_high), x), c.a);\n}\n",
+		"longdesc": "Example node of the sbs plugin skeleton (an approximation of Substance's Levels: sbsar2ptex installs the exact one)",
+		"name": "Levels (sbs)",
+		"outputs": [
+			{
+				"longdesc": "The adjusted image",
+				"rgba": "$(name)_levels($in($uv), 0.0)",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{ "default": 0.0, "label": "Level in low", "max": 1.0, "min": 0.0, "name": "in_low", "step": 0.001, "type": "float" },
+			{ "default": 0.5, "label": "Level in mid", "max": 1.0, "min": 0.0, "name": "in_mid", "step": 0.001, "type": "float" },
+			{ "default": 1.0, "label": "Level in high", "max": 1.0, "min": 0.0, "name": "in_high", "step": 0.001, "type": "float" },
+			{ "default": 0.0, "label": "Level out low", "max": 1.0, "min": 0.0, "name": "out_low", "step": 0.001, "type": "float" },
+			{ "default": 1.0, "label": "Level out high", "max": 1.0, "min": 0.0, "name": "out_high", "step": 0.001, "type": "float" }
+		],
+		"shortdesc": "Levels (sbs)"
+	},
+	"type": "shader"
+}

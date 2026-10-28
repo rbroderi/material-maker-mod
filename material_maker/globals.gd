@@ -61,6 +61,7 @@ const DEFAULT_CONFIG : Dictionary = {
 	auto_buffer_min_gain = 2.0,
 	auto_buffer_shader_budget = 4000.0,
 	gpu_memory_budget = 0,
+	release_buffers = 0,
 	auto_buffer_size = 10,
 	auto_size_comment = true,
 	graph_line_curvature = 0.5,

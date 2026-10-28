@@ -29,6 +29,10 @@ var render_time : int = 0
 
 var local_size : int = 32
 
+## GLSL that rounds outColor before it is stored (see get_store_rounding_code),
+## for templates with @STORE_ROUNDING
+var store_rounding : String = ""
+
 ## When positive, the time of all renders ($time in shaders), to render
 ## animation frames
 static var fixed_time : float = -1.0
@@ -97,21 +101,27 @@ func set_shader_from_shadercode_ext(shader_template : String, shader_code : MMGe
 	replaces["@DEFINITIONS"] = shader_code.defs
 	replaces["@CODE"] = shader_code.code
 	replaces["@OUTPUT_VALUE"] = shader_code.output_values.rgba
+	replaces["@STORE_ROUNDING"] = store_rounding
 
 	return await set_shader_ext(shader_template, output_textures_desc, replaces)
 
 func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits : bool = false, extra_parameters : Array[Dictionary] = [], is_8_bits : bool = false) -> bool:
+	var storage : int = STORAGE_32F if is_32_bits else (STORAGE_8 if is_8_bits else STORAGE_16F)
+	return await set_shader_from_shadercode_storage(shader_code, storage, false, ROUNDING_GPU, extra_parameters)
+
+## Sets the shader of a buffer, that stores the shader's output with a storage
+## format (STORAGE_*), as RG (2 channels) if rg is true, and rounds integer
+## stores (ROUNDING_*)
+func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, rounding : int = ROUNDING_GPU, extra_parameters : Array[Dictionary] = []) -> bool:
 	var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
-	
+
 	extra_parameters.append({ name="elapsed_time", type="float", value=0.0 })
-	
-	var output_texture_type : int = 0 if (shader_code.output_type == "f") else 1
-	if is_32_bits:
-		output_texture_type |= 2
-	elif is_8_bits:
-		output_texture_type = TEXTURE_TYPE_R8 if (shader_code.output_type == "f") else TEXTURE_TYPE_RGBA8
+
+	var channels : int = 1 if (shader_code.output_type == "f") else (2 if rg else 4)
+	var output_texture_type : int = get_texture_type(channels, storage)
+	store_rounding = get_store_rounding_code(rounding, storage)
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
-	
+
 	return await set_shader_from_shadercode_ext(shader_template, shader_code, output_textures, extra_parameters)
 
 func get_parameters() -> Dictionary:
@@ -178,12 +188,19 @@ func in_thread_render_ext(textures : Array[MMTexture], size : Vector2i, output_p
 	var rids : RIDs = RIDs.new()
 	var start_time = Time.get_ticks_msec()
 	set_parameter("elapsed_time", 0.001*float(start_time) if fixed_time < 0.0 else fixed_time, true)
+	# $pass_size in shaders
+	set_parameter("mm_pass_size_x", float(size.x), true)
+	set_parameter("mm_pass_size_y", float(size.y), true)
 	var status = render_2(rd, textures, output_parameters_values, size, rids)
 	rids.free_rids(rd)
 	render_time = Time.get_ticks_msec() - start_time
 	return status
 
 func render_ext(textures : Array[MMTexture], size : Vector2i, output_parameters_values = null) -> bool:
+	# Input textures whose buffers were released are rendered again
+	for t in input_textures:
+		if t.texture != null and t.texture.released_buffer != "":
+			await t.texture.restore()
 	return await mm_renderer.thread_run(self.in_thread_render_ext, [textures, size, output_parameters_values])
 
 func render_2(rd : RenderingDevice, textures : Array[MMTexture], output_parameters_values, size : Vector2i, rids : RIDs) -> bool:

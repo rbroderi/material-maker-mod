@@ -215,6 +215,12 @@ func api_load(params : Dictionary):
 		if not graph is MMGenGraph:
 			return fail("cannot load '%s'" % params.path)
 		set_headless_graph(graph)
+	# What the graph needs that is missing (unknown node types are placeholders)
+	var current_graph = await get_graph()
+	if current_graph != null and current_graph.has_meta("missing_requirements"):
+		var missing : PackedStringArray = current_graph.get_meta("missing_requirements")
+		if not missing.is_empty():
+			return { loaded=true, missing=Array(missing) }
 	return true
 
 func api_save(params : Dictionary):

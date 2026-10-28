@@ -923,6 +923,12 @@ func get_common_replace_variables(uv : String, rv : ShaderCode) -> Dictionary:
 	var variables : Dictionary = {}
 	variables.uv = uv
 	variables.time = "elapsed_time"
+	# Size of the rendered texture in pixels (set by compute renders, the
+	# material's size elsewhere)
+	variables.pass_size = "vec2(mm_pass_size_x, mm_pass_size_y)"
+	var pass_size : Vector2i = get_pass_size()
+	rv.add_uniform("mm_pass_size_x", "float", float(pass_size.x))
+	rv.add_uniform("mm_pass_size_y", "float", float(pass_size.y))
 	if ! mm_renderer.get_global_parameters().is_empty():
 		for gp in mm_renderer.get_global_parameters():
 			variables[gp] = "mm_global_"+gp
@@ -954,6 +960,13 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 	if output.is_empty():
 		return rv
 	var variables : Dictionary = get_common_replace_variables(uv, rv)
+	# $iteration: the iteration of the iterate buffer loop the code is generated for
+	var iteration_variable : String = context.get_iteration_variable()
+	if iteration_variable != "":
+		variables.iteration = "float(%s)" % iteration_variable
+		rv.add_uniform(iteration_variable, "int", 0)
+	else:
+		variables.iteration = "0.0"
 	process_parameters(rv, variables, generate_declarations)
 	process_inputs(rv, variables, context, generate_declarations)
 	# Add includes, globals and instance code

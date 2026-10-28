@@ -27,10 +27,27 @@ class_name MMPlugins
 # missing, too old, disabled, failed to load or depend on it is not loaded.
 # Their scripts can add menu items, import formats, RPC methods, command line
 # commands (material_maker --plugin <command> [arguments]) and modes, sections
-# of the 2D preview's export menu, export hooks and image file formats.
+# of the 2D preview's export menu, export hooks, image file formats and node
+# types implemented by scripts.
+#
+# Graphs can declare what they need (see check_requirements): a "requires"
+# dictionary, or a line of their long description such as
+#	sbsar2ptex-requires: {"material_maker_mod": ">=1.17", "plugins": {"sbs": ">=1.0"}}
 
 
 const CONFIG_SECTION : String = "plugins"
+
+## Version of this fork's features that graphs can require, increased when
+## features are added (see check_requirements)
+const MM_MOD_VERSION : String = "1.17"
+## Features of this fork that graphs can require
+const MM_MOD_FEATURES : PackedStringArray = [
+	"buffer_release", "buffer_size_relative_to_input", "buffer_size_expressions",
+	"pass_size", "iterate_buffer_v2", "iteration_variable", "unorm16", "rg_formats",
+	"store_rounding", "node_types", "missing_node_placeholders", "sbs_fxmap" ]
+## A line of a graph's long description that holds its requirements as JSON
+## (for files that are also loaded by versions that do not save "requires")
+const REQUIRES_LINE_PATTERN : String = "(?m)^\\s*[A-Za-z0-9_.-]*requires:\\s*(\\{.*\\})\\s*$"
 
 ## What plugin scripts can register (one API object per plugin)
 class API:
@@ -107,6 +124,13 @@ class API:
 	func add_layered_image_format(extension : String, description : String, callable : Callable) -> void:
 		MMPlugins.layered_image_formats[extension.to_lower()] = { plugin=plugin_id, description=description, callable=callable }
 
+	## Adds a node type (the "type" of nodes in graph files) implemented by a
+	## generator script (that extends MMGenBase), for nodes that shader
+	## definitions (.mmg files) cannot describe. Graphs with nodes of a type
+	## that is not available load them as placeholders (MMGenMissing).
+	func add_node_type(type : String, script : Script) -> void:
+		MMPlugins.node_types[type] = { plugin=plugin_id, script=script }
+
 static var plugins : Array[Dictionary] = []
 static var menu_items : Array[Dictionary] = []
 static var import_formats : Dictionary = {}
@@ -118,6 +142,7 @@ static var export_menu_sections : Array[Callable] = []
 static var export_hooks : Array[Callable] = []
 static var image_formats : Dictionary = {}
 static var layered_image_formats : Dictionary = {}
+static var node_types : Dictionary = {}
 static var loaded : bool = false
 static var discovered : bool = false
 static var configs : Dictionary = {}
@@ -380,6 +405,70 @@ static func load_plugin_file(plugin_id : String, file_name : String) -> Resource
 			return load(p.path.path_join(file_name))
 	return null
 
+## The requirements of a graph (its data, as in .ptex files): its "requires"
+## dictionary, or the JSON of a "...requires:" line of its long description
+static func get_graph_requirements(data : Dictionary) -> Dictionary:
+	if data.get("requires") is Dictionary:
+		return data.requires
+	var longdesc = data.get("longdesc", "")
+	if longdesc is String and longdesc.contains("requires:"):
+		var regex : RegEx = RegEx.create_from_string(REQUIRES_LINE_PATTERN)
+		var match_result : RegExMatch = regex.search(longdesc)
+		if match_result != null:
+			var parsed = JSON.parse_string(match_result.get_string(1))
+			if parsed is Dictionary:
+				return parsed
+	return {}
+
+## The minimum version of a requirement (">=1.2", "1.2"), or "" when there is
+## none or it cannot be compared (e.g. a commit hash)
+static func get_required_version(requirement) -> String:
+	if not requirement is String:
+		return ""
+	var version : String = requirement.strip_edges().trim_prefix(">=").strip_edges()
+	if RegEx.create_from_string("^[0-9]+(\\.[0-9]+)*$").search(version) == null:
+		return ""
+	return version
+
+## What a graph needs that is missing (empty if nothing): requires is
+##	{ "material_maker_mod": ">=1.17", "plugins": { "sbs": ">=1.0" },
+##	  "node_types": [ "sbs_fxmap" ], "features": [ "iterate_buffer_v2" ] }
+## (dashes in keys are accepted, e.g. "material-maker-mod")
+static func check_requirements(requires : Dictionary) -> PackedStringArray:
+	var missing : PackedStringArray = PackedStringArray()
+	for k in requires.keys():
+		var value = requires[k]
+		match str(k).replace("-", "_"):
+			"material_maker_mod":
+				var version : String = get_required_version(value)
+				if version != "" and compare_versions(MM_MOD_VERSION, version) < 0:
+					missing.append("Material Maker (mod) %s or later (this is %s)" % [ version, MM_MOD_VERSION ])
+			"plugins":
+				if not value is Dictionary:
+					continue
+				for id in value.keys():
+					var found : Array = plugins.filter(func(p): return p.id == id)
+					var version : String = get_required_version(value[id])
+					if found.is_empty():
+						missing.append("the %s plugin (not installed)" % id)
+					elif not found[0].get("loaded", false):
+						missing.append("the %s plugin (disabled)" % id)
+					elif found[0].error != "":
+						missing.append("the %s plugin (%s)" % [ id, found[0].error ])
+					elif version != "" and compare_versions(found[0].version, version) < 0:
+						missing.append("the %s plugin %s or later (installed: %s)" % [ id, version, found[0].version ])
+			"node_types":
+				if value is Array:
+					for t in value:
+						if not mm_loader.has_node_type(t):
+							missing.append("the %s node type" % t)
+			"features":
+				if value is Array:
+					for f in value:
+						if not f in MM_MOD_FEATURES:
+							missing.append("the %s feature" % f)
+	return missing
+
 static func unload_plugins() -> void:
 	for p in plugins:
 		if p.has("instance"):
@@ -397,5 +486,6 @@ static func clear_registrations() -> void:
 	export_hooks.clear()
 	image_formats.clear()
 	layered_image_formats.clear()
+	node_types.clear()
 	for p in plugins:
 		p.erase("instance")

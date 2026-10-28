@@ -5,6 +5,9 @@ class_name MMGenGraph
 var label : String = "Graph"
 var shortdesc = ""
 var longdesc = ""
+## What the graph needs (Material Maker version, plugins, node types,
+## features), see MMPlugins.check_requirements
+var requires : Dictionary = {}
 var connections = []
 
 var editable : bool = false
@@ -556,6 +559,8 @@ func _serialize(data: Dictionary) -> Dictionary:
 	data.label = label
 	data.shortdesc = shortdesc
 	data.longdesc = longdesc
+	if not requires.is_empty():
+		data.requires = requires.duplicate(true)
 	data.nodes = []
 	for c in get_children():
 		data.nodes.append(c.serialize())
@@ -572,6 +577,8 @@ func _deserialize(data : Dictionary) -> void:
 		shortdesc = data.shortdesc
 	if data.has("longdesc"):
 		longdesc = data.longdesc
+	if data.get("requires") is Dictionary:
+		requires = data.requires.duplicate(true)
 	var nodes = data.nodes if data.has("nodes") else []
 	var connection_array : Array = []
 	if data.has("connections"):

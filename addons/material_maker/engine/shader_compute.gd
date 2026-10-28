@@ -8,6 +8,11 @@ var compute_shader : MMComputeShader = MMComputeShader.new()
 func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits : bool = false, is_8_bits : bool = false) -> bool:
 	return await compute_shader.set_shader_from_shadercode(shader_code, is_32_bits, [], is_8_bits)
 
+## Sets the shader with a storage format (MMPipeline.STORAGE_*), as RG if rg
+## is true, and the rounding of integer stores (MMPipeline.ROUNDING_*)
+func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, rounding : int = MMPipeline.ROUNDING_GPU) -> bool:
+	return await compute_shader.set_shader_from_shadercode_storage(shader_code, storage, rg, rounding)
+
 func get_parameters() -> Dictionary:
 	return compute_shader.get_parameters()
 

@@ -7,6 +7,7 @@ Miscellaneous nodes
 	node_miscellaneous_material
 	node_miscellaneous_buffer
 	node_miscellaneous_iterate_buffer
+	node_miscellaneous_sbs_fxmap
 	node_miscellaneous_statistics
 	node_miscellaneous_histogram
 	node_miscellaneous_pixel_processor

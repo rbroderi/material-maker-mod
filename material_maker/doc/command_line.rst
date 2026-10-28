@@ -62,7 +62,17 @@ Options
 * **--size <size>** is the size of generated images. For **--render**, **--export-material** and
   **--export-mmr**, **<width>x<height>** (for example 2048x1024) generates non-square outputs:
   the graph is stretched to the image's shape, and buffers keep their sizes. Without a height,
-  exports use the Material node's aspect ratio
+  exports use the Material node's aspect ratio. **--export-material** uses the Material node's size
+  when **--size** is not given (2048 before), and a power of 2 **--size** also sets the Material
+  node's size, so buffers sized relative to the output follow it
+* **--gpu-budget <MB>** sets a GPU memory budget: the least recently used textures are moved to the
+  main memory above it (see the *GPU memory budget* preference)
+* **--low-memory** frees the texture of each buffer when all the buffers that read it are rendered (it is
+  rendered again if needed): large graphs need much less memory, for a little more time. The peak GPU
+  texture memory is printed after exports.
+* **--strict** fails when a graph has nodes of unknown types (by default, they are kept as magenta
+  placeholders with a warning). Graphs that declare requirements (plugins, version, features) that are
+  not met always fail, with exit code 2.
 * **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values)
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example

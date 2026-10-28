@@ -145,7 +145,9 @@ class MaterialMaker:
         return self.call("list_templates")
 
     def load(self, path):
-        """Loads a .ptex file"""
+        """Loads a .ptex file. Returns True, or { "loaded": True, "missing": [...] }
+        when the graph needs plugins, node types or features that are missing
+        (nodes of unknown types are kept as placeholders)"""
         return self.call("load", path=_path(path))
 
     def save(self, path):

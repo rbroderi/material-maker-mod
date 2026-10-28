@@ -4,6 +4,9 @@ extends Node
 
 var predefined_generators : Dictionary = {}
 var predefined_functions : Dictionary = {}
+## Node definitions of the graphs' own node folders (see load_local_node_definitions),
+## kept for the session
+var local_generators : Dictionary = {}
 
 var external_export_targets : Dictionary = {}
 
@@ -65,6 +68,7 @@ func update_predefined_generators()-> void:
 	predefined_functions = {}
 	for path in MMPaths.get_nodes_paths():
 		get_predefined_generators_from_dir(path)
+	predefined_generators.merge(local_generators, true)
 	if false:
 		var file : FileAccess = FileAccess.open("predefined_nodes.json", FileAccess.WRITE)
 		if file != null:
@@ -197,9 +201,20 @@ func load_gen(filename: String) -> MMGenBase:
 		var data = string_to_dict_tree(file.get_as_text())
 		if data != null:
 			current_project_path = filename.get_base_dir()
+			missing_node_types = PackedStringArray()
+			load_local_node_definitions(filename, data)
 			var generator = await create_gen(data)
 			if generator:
 				generator.set_meta("file_path", filename)
+				# What the graph needs that is missing (see MMPlugins.check_requirements)
+				var missing : PackedStringArray = MMPlugins.check_requirements(MMPlugins.get_graph_requirements(data))
+				for t in missing_node_types:
+					var description : String = "nodes of type %s (unknown)" % t
+					if not description in missing:
+						missing.append(description)
+				generator.set_meta("missing_requirements", missing)
+				for m in missing:
+					push_warning("%s needs %s" % [ filename.get_file(), m ])
 			current_project_path = ""
 			return generator
 	return null
@@ -227,6 +242,8 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 		if g != null:
 			g.orig_name = g.name
 			var orig_name = g.name
+			if g is MMGenMissing:
+				g.set_port_counts(connections)
 			if gen_graph.add_generator(g):
 				g.position += position
 				rv.generators.append(g)
@@ -245,6 +262,67 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 		else:
 			print("Cannot connect %s:%d to %s:%d" % [c.from, c.from_port, c.to, c.to_port])
 	return rv
+
+## Node types implemented by generator scripts (plugins add theirs, see
+## MMPlugins.API.add_node_type)
+var node_types : Dictionary = {
+	material_export = MMGenMaterial,
+	autoexport = MMGenAutoExport,
+	buffer = MMGenBuffer,
+	image = MMGenImage,
+	text = MMGenText,
+	svg = MMGenSVG,
+	paint_layer = MMGenPaintLayer,
+	iterate_buffer = MMGenIterateBuffer,
+	iterate_buffer_v2 = MMGenIterateBufferV2,
+	sbs_fxmap = MMGenSbsFxMap,
+	statistics = MMGenStatistics,
+	pixel_processor = MMGenPixelProcessor,
+	value_processor = MMGenValueProcessor,
+	histogram = MMGenHistogram,
+	fill_to_index = MMGenFillToIndex,
+	meshmap = MMGenMeshMap,
+	highpoly_bake = MMGenHighPolyBake,
+	sdf = MMGenSDF,
+	ios = MMGenIOs,
+	switch = MMGenSwitch,
+	export = MMGenExport,
+	comment = MMGenComment,
+	webcam = MMGenWebcam,
+	debug = MMGenDebug,
+	reroute = MMGenReroute,
+	comment_line = MMGenCommentLine,
+	portal = MMGenPortal,
+}
+
+## Loads the node definitions (.mmg files) of a graph's own folder: <graph>_nodes
+## next to the graph file, or the folder named by the graph's "nodes_dir"
+## (relative to the graph file). Their names are node types, that take
+## precedence over the other nodes.
+func load_local_node_definitions(filename : String, data : Dictionary) -> void:
+	var dirs : Array[String] = []
+	if data.get("nodes_dir") is String and data.nodes_dir != "":
+		var nodes_dir : String = data.nodes_dir
+		dirs.append(nodes_dir if nodes_dir.is_absolute_path() else filename.get_base_dir().path_join(nodes_dir))
+	dirs.append(filename.get_basename()+"_nodes")
+	for d in dirs:
+		var dir : DirAccess = DirAccess.open(d)
+		if dir == null:
+			continue
+		for file_name in dir.get_files():
+			if file_name.get_extension() != "mmg":
+				continue
+			var definition = string_to_dict_tree(FileAccess.get_file_as_string(d.path_join(file_name)))
+			if definition is Dictionary and not definition.is_empty():
+				local_generators[file_name.get_basename()] = definition
+				predefined_generators[file_name.get_basename()] = definition
+
+## Types of nodes that were not found while loading (they are placeholders)
+var missing_node_types : PackedStringArray = PackedStringArray()
+
+## Whether nodes of a type can be created (by a script or a node definition)
+func has_node_type(type : String) -> bool:
+	return node_types.has(type) or MMPlugins.node_types.has(type) or predefined_generators.has(type)
 
 func fix_data(data : Dictionary) -> Dictionary:
 	if data.has("nodes") and data.has("connections") and data.has("label") and data.label == "HBAO":
@@ -269,33 +347,6 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 		{ keyword="model_data", type=MMGenShader },
 		{ keyword="widgets", type=MMGenRemote }
 	]
-	var types = {
-		material_export = MMGenMaterial,
-		autoexport = MMGenAutoExport,
-		buffer = MMGenBuffer,
-		image = MMGenImage,
-		text = MMGenText,
-		svg = MMGenSVG,
-		paint_layer = MMGenPaintLayer,
-		iterate_buffer = MMGenIterateBuffer,
-		statistics = MMGenStatistics,
-		pixel_processor = MMGenPixelProcessor,
-		value_processor = MMGenValueProcessor,
-		histogram = MMGenHistogram,
-		fill_to_index = MMGenFillToIndex,
-		meshmap = MMGenMeshMap,
-		highpoly_bake = MMGenHighPolyBake,
-		sdf = MMGenSDF,
-		ios = MMGenIOs,
-		switch = MMGenSwitch,
-		export = MMGenExport,
-		comment = MMGenComment,
-		webcam = MMGenWebcam,
-		debug = MMGenDebug,
-		reroute = MMGenReroute,
-		comment_line = MMGenCommentLine,
-		portal = MMGenPortal,
-	}
 	var generator = null
 	for g in guess:
 		var guessed = true
@@ -309,8 +360,10 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 			generator = g.type.new()
 			break
 	if generator == null and data.has("type"):
-		if types.has(data.type):
-			generator = types[data.type].new()
+		if node_types.has(data.type):
+			generator = node_types[data.type].new()
+		elif MMPlugins.node_types.has(data.type):
+			generator = MMPlugins.node_types[data.type].script.new()
 		else:
 			if !predefined_generators.has(data.type) and data.type.left(8) == "website:":
 				var status = await get_node_from_website(data.type)
@@ -320,6 +373,12 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 					print("Cannot find description for "+data.type)
 				else:
 					generator.model = data.type
+		if generator == null and data.type is String and data.type != "":
+			# Unknown types (e.g. of a plugin that is not installed) are kept
+			push_warning("Unknown node type %s (a plugin may be missing)" % data.type)
+			if not data.type in missing_node_types:
+				missing_node_types.append(data.type)
+			generator = MMGenMissing.new()
 		if generator != null:
 			generator.name = data.type
 	if generator == null:
