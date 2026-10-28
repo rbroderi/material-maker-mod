@@ -25,3 +25,13 @@ Parameters
 * **Offset random**: The random offset of each pattern, relative to its area
 * **Value random**: The random darkening of each pattern
 * **Probability**: The probability that an area has a pattern
+
+Notes
++++++
+
+Patterns are rotated in texture space, so patterns stretched to non-square areas are rotated
+without shearing. Each pixel only shows its own area's pattern, so patterns larger than their
+area are cut at its borders, and outlines and areas of zero width or height are transparent.
+The position of an area is wrapped before choosing its random values, so areas get the same
+values in every tile, also with fill data that isn't wrapped (such as the **Bricks** node's
+*Brick Fill* output).
