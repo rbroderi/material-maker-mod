@@ -226,6 +226,10 @@ func _ready() -> void:
 			if mesh == null:
 				push_error("Cannot load mesh from '%s'" % mesh_filename)
 				continue
+			if mesh.get_surface_count() > 1:
+				# Show the New Paint Project dialog and its warning, and let the user decide
+				await new_paint_project(mesh_filename)
+				continue
 			var project_filename : String = mesh_filename.get_basename()+".mmpp"
 			create_paint_project(mesh, mesh_filename, 1024, project_filename)
 
