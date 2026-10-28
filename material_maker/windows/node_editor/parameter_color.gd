@@ -1,5 +1,8 @@
 extends HBoxContainer
 
+func _ready() -> void:
+	mm_globals.add_color_swatches_to_button($Default)
+
 func get_model_data() -> Dictionary:
 	var default_color = $Default.color
 

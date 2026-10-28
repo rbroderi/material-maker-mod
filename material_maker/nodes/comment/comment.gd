@@ -187,6 +187,7 @@ func _on_ColorChooser_gui_input(event: InputEvent) -> void:
 		$PopupSelector.get_window().position = get_screen_transform() * get_local_mouse_position()
 		var color_picker : ColorPicker = $PopupSelector/PanelContainer/ColorPicker
 		color_picker.get_window().borderless = not mm_globals.get_config("color_picker_floating")
+		mm_globals.add_color_swatches(color_picker)
 		$PopupSelector.about_to_popup.connect(func():
 			if mm_globals.has_config("color_picker_color_mode"):
 				color_picker.color_mode = mm_globals.get_config("color_picker_color_mode")

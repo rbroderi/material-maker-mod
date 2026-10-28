@@ -133,6 +133,7 @@ func _ready():
 	var content_scale_factor : float = mm_globals.ui_scale_factor()
 	%GuidesColor.get_popup().content_scale_factor = content_scale_factor
 	%GuidesColor.get_popup().min_size = %GuidesColor.get_popup().get_contents_minimum_size() * content_scale_factor
+	mm_globals.add_color_swatches_to_button(%GuidesColor)
 
 	%ResetViewButton.tooltip_text += " (%s)" % [ %ResetViewButton.shortcut.get_as_text() ]
 

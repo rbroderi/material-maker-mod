@@ -39,33 +39,11 @@ func on_picker_created():
 	get_popup().connect("about_to_popup", Callable(self, "on_about_to_show"))
 	previous_color = color
 	# Swatches are shared by all color pickers and saved in the configuration
-	get_picker().presets_visible = true
-	get_picker().preset_added.connect(func(_c): save_swatches())
-	get_picker().preset_removed.connect(func(_c): save_swatches())
-
-var loading_swatches : bool = false
-
-func save_swatches() -> void:
-	if loading_swatches:
-		return
-	mm_globals.set_config("color_swatches", Array(get_picker().get_presets()).map(func(c : Color): return c.to_html()))
-
-func load_swatches() -> void:
-	var picker : ColorPicker = get_picker()
-	var swatches : Array = mm_globals.get_config_or("color_swatches", [])
-	var current : Array = Array(picker.get_presets()).map(func(c : Color): return c.to_html())
-	if current == swatches:
-		return
-	loading_swatches = true
-	for c in picker.get_presets():
-		picker.erase_preset(c)
-	for c in swatches:
-		picker.add_preset(Color.from_string(c, Color.BLACK))
-	loading_swatches = false
+	mm_globals.add_color_swatches(get_picker())
 
 func on_about_to_show():
 	previous_color = color
-	load_swatches()
+	mm_globals.update_color_swatches(get_picker())
 	if mm_globals.has_config("color_picker_color_mode"):
 		get_picker().color_mode = mm_globals.get_config("color_picker_color_mode")
 	if mm_globals.has_config("color_picker_shape"):

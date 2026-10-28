@@ -24,6 +24,7 @@ func _ready():
 			var picker = color_picker.get_popup()
 			picker.content_scale_factor = content_scale_factor
 			picker.min_size = picker.get_contents_minimum_size() * content_scale_factor
+			mm_globals.add_color_swatches_to_button(color_picker)
 
 	# scroll bar padding / style
 	var v : VScrollBar = environment_list.get_v_scroll_bar()
