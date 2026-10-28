@@ -49,7 +49,7 @@ func set_source(generator, output):
 	divide_render.add_parameter_or_texture("mm_denoise_ksigma", "float", 1)
 	divide_render.add_parameter_or_texture("mm_denoise_threshold", "float", 1)
 	shader_template = load("res://material_maker/windows/export_taa/divide_compute.tres").text
-	divide_render.set_shader(shader_template, 3)
+	await divide_render.set_shader(shader_template, 3)
 	while true:
 		var new_size : Vector2i = Vector2i($VBoxContainer/Settings/Width.value, $VBoxContainer/Settings/Height.value)
 		if render_size != new_size:

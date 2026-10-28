@@ -364,5 +364,5 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 	dilate_pipeline.add_parameter_or_texture("tex", "sampler2D", texture)
 	dilate_pipeline.add_parameter_or_texture("pixels", "int", size/4)
 	dilate_pipeline.add_parameter_or_texture("seams_map", "sampler2D", seams)
-	dilate_pipeline.set_shader(load("res://addons/material_maker/map_generator/dilate_compute.tres").text, 3)
+	await dilate_pipeline.set_shader(load("res://addons/material_maker/map_generator/dilate_compute.tres").text, 3)
 	dilate_pipeline.in_thread_render_ext([texture], Vector2i(size, size))

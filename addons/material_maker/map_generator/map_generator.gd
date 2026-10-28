@@ -123,17 +123,17 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 	match map_definition.type:
 		"simple":
 			mesh_pipeline.mesh = mesh
-			mesh_pipeline.set_shader(vertex_shader, fragment_shader)
+			await mesh_pipeline.set_shader(vertex_shader, fragment_shader)
 			mesh_pipeline.in_thread_render(Vector2i(size, size), 3, texture)
 		"curvature":
 			var curvature_generator : MMCurvatureGenerator = MMCurvatureGenerator.new()
 			mesh_pipeline.mesh = curvature_generator.generate(mesh)
-			mesh_pipeline.set_shader(vertex_shader, fragment_shader)
+			await mesh_pipeline.set_shader(vertex_shader, fragment_shader)
 			mesh_pipeline.in_thread_render(Vector2i(size, size), 3, texture)
 		"adjacency":
 			var adjacency_generator : MMAdjacencyGenerator = MMAdjacencyGenerator.new()
 			mesh_pipeline.mesh = adjacency_generator.generate(mesh)
-			mesh_pipeline.set_shader(vertex_shader, fragment_shader)
+			await mesh_pipeline.set_shader(vertex_shader, fragment_shader)
 			mesh_pipeline.in_thread_render(Vector2i(size, size), 3, texture)
 		"bvh":
 			mesh_pipeline.mesh = mesh
@@ -162,7 +162,7 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 				var normalize_pipeline : MMComputeShader = MMComputeShader.new()
 				normalize_pipeline.clear()
 				normalize_pipeline.add_parameter_or_texture("tex", "sampler2D", texture)
-				normalize_pipeline.set_shader(load("res://addons/material_maker/map_generator/normalize_compute.tres").text, 3)
+				await normalize_pipeline.set_shader(load("res://addons/material_maker/map_generator/normalize_compute.tres").text, 3)
 				normalize_pipeline.in_thread_render_ext([texture], Vector2i(size, size))
 			
 			# Denoise
@@ -172,7 +172,7 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 				denoise_pipeline.clear()
 				denoise_pipeline.add_parameter_or_texture("tex", "sampler2D", texture)
 				denoise_pipeline.add_parameter_or_texture("radius", "int", 3)
-				denoise_pipeline.set_shader(load("res://addons/material_maker/map_generator/denoise_compute.tres").text, 3)
+				await denoise_pipeline.set_shader(load("res://addons/material_maker/map_generator/denoise_compute.tres").text, 3)
 				denoise_pipeline.in_thread_render_ext([texture], Vector2i(size, size))
 
 	# Extend the map past seams
@@ -190,7 +190,7 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 					var seams_map : MMTexture = mesh_maps[mesh]["seams:"+str(size)]
 					postprocess_pipeline.add_parameter_or_texture("seams_map", "sampler2D", seams_map)
 			var shader_string : String = load("res://addons/material_maker/map_generator/"+p+"_compute.tres").text
-			postprocess_pipeline.set_shader(shader_string, 3)
+			await postprocess_pipeline.set_shader(shader_string, 3)
 			postprocess_pipeline.in_thread_render_ext([texture], Vector2i(size, size))
 			#texture.save_to_file("d:/debug_%d.png" % debug_index)
 			debug_index += 1
