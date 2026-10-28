@@ -25,7 +25,7 @@ func get_description() -> String:
 	return "\n".join(desc_list)
 
 func get_output_defs(_show_hidden : bool = false) -> Array:
-	return [ { type="rgba", shortdesc="Histogram", longdesc="A 256x2 texture: cumulative distribution (bottom half) and histogram (top half) of each channel" } ]
+	return [ { type="rgba", shortdesc="Histogram", longdesc="A 256x2 texture: cumulative distribution (top half) and histogram (bottom half) of each channel" } ]
 
 func get_result_size() -> int:
 	return 4*BINS
