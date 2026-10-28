@@ -3815,7 +3815,7 @@
 							"TextureObject_0 = mat.add_node('TextureObject', -1200, -96)",
 							"TextureObject_0.set_editor_property('texture', mm.import_texture('$(path_prefix)_height.png', '/Game/Textures'))",
 							"Constant_0 = mat.add_node('Constant', -1200, 80)",
-							"Constant_0.set_editor_property('r', 0.05)",
+							"Constant_0.set_editor_property('r', $(expr:0.1*$(param:depth_scale)))",
 							"Constant_1 = mat.add_node('Constant', -1200, 160)",
 							"Constant_1.set_editor_property('r', 8.0)",
 							"Constant_2 = mat.add_node('Constant', -1200, 240)",

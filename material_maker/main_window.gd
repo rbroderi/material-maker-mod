@@ -605,6 +605,12 @@ func export_again() -> void:
 	if export_target == "":
 		return
 	var export_path : String = material_node.get_export_path(export_target)
+	if export_path == "" and material_node.has_method("get_export_profiles") and material_node.get_export_extension(export_target) != "":
+		# Not exported yet (e.g. a material created from a template): ask for a file
+		var profile_index : int = material_node.get_export_profiles().find(export_target)
+		if profile_index != -1:
+			_on_ExportMaterial_id_pressed(profile_index)
+		return
 	export_material(export_path, export_target, material_node.export_udim.get(export_target, false) if material_node is MMGenMaterial else false)
 
 func create_menu_export_material(menu : MMMenuManager.MenuBase, prefix : String = "",

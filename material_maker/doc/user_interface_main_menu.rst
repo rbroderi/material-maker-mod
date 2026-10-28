@@ -17,7 +17,8 @@ File menu
 * *New material from template* creates a new material set up for an engine (Godot 4,
   Unity HDRP or URP, Unreal Engine 5, glTF, MaterialX, USD or Blender): its export target
   is set, so *Export again* exports it for this engine, and the Material node is
-  configured for it (for example 4096x4096 textures and no parallax for Unreal Engine 5)
+  configured for it (for example 4096x4096 textures and no parallax, a depth scale of 0, for
+  Unreal Engine 5)
 
 * *New paint project* prompts for a 3D model to be painted and opens a tab in the center
   panel to paint it.
