@@ -310,16 +310,56 @@ func remove_configuration(widget_name : String, config_name : String) -> void:
 		widget.configurations.erase(config_name)
 		emit_signal("parameter_changed", "__update_all__", null)
 
+## Whether a linked parameter holds a file path
+func is_path_parameter(node_name : String, parameter_name : String) -> bool:
+	var parent = get_parent()
+	if parent == null:
+		return false
+	var node = parent.get_node_or_null(NodePath(node_name))
+	if node == null:
+		return false
+	var parameter_def : Dictionary = node.get_parameter_def(parameter_name)
+	return parameter_def.has("type") and parameter_def.type in PATH_PARAMETER_TYPES
+
 func _serialize(data: Dictionary) -> Dictionary:
 	data.type = "remote"
-	data.widgets = widgets
+	data.widgets = widgets.duplicate(true)
+	# File paths in parameters, configurations and presets are saved
+	# relative to the project, as in the nodes they control
+	encode_path_parameters(data)
+	for w in data.widgets:
+		if w.type == "config_control":
+			for c in w.configurations.keys():
+				for v in w.configurations[c]:
+					if v.value is String and is_path_parameter(v.node, v.widget):
+						v.value = MMPaths.encode_path(v.value)
 	if not presets.is_empty():
-		data.presets = presets
+		data.presets = presets.duplicate(true)
+		var path_parameters : Array = []
+		for p in get_parameter_defs():
+			if p.has("type") and p.type in PATH_PARAMETER_TYPES:
+				path_parameters.append(p.name)
+		for preset in data.presets.values():
+			for p in path_parameters:
+				if preset.get(p) is String:
+					preset[p] = MMPaths.encode_path(preset[p])
 	return data
 
 func _deserialize(data : Dictionary) -> void:
-	set_widgets(data.widgets.duplicate(true))
+	decode_path_parameters(data)
+	var new_widgets : Array = data.widgets.duplicate(true)
+	for w in new_widgets:
+		if w.type == "config_control" and w.has("configurations"):
+			for c in w.configurations.keys():
+				for v in w.configurations[c]:
+					if v.has("value"):
+						v.value = decode_path_value(v.value)
+	set_widgets(new_widgets)
 	presets = data.get("presets", {}).duplicate(true)
+	for preset in presets.values():
+		if preset is Dictionary:
+			for p in preset.keys():
+				preset[p] = decode_path_value(preset[p])
 
 # Presets
 

@@ -219,6 +219,9 @@ var library_source : Dictionary = {}
 
 const MAX_SEED : int = 4294967296
 
+## Types of the parameters that hold file paths
+const PATH_PARAMETER_TYPES : Array[String] = [ "file", "image_path" ]
+
 const BUFFERS_ALL     : int = 0
 const BUFFERS_PAUSED  : int = 1
 const BUFFERS_RUNNING : int = 2
@@ -755,6 +758,29 @@ static func get_glsl_declaration_name(s : String) -> String:
 		if split.size() > 1:
 			return split[0]
 	return ""
+
+## Replaces the project, user data and Material Maker directories in the
+## values of file parameters of serialized data (see MMPaths.encode_path)
+func encode_path_parameters(data : Dictionary) -> void:
+	if not data.has("parameters"):
+		return
+	for p in get_parameter_defs():
+		if p.has("type") and p.type in PATH_PARAMETER_TYPES and data.parameters.get(p.name) is String:
+			data.parameters[p.name] = MMPaths.encode_path(data.parameters[p.name])
+
+## Restores the file paths encoded by encode_path_parameters. Parameter types
+## may not be known yet while loading, so all values that start with a path
+## token are decoded
+static func decode_path_parameters(data : Dictionary) -> void:
+	if not data.has("parameters"):
+		return
+	for p in data.parameters.keys():
+		data.parameters[p] = decode_path_value(data.parameters[p])
+
+static func decode_path_value(value):
+	if value is String and value.begins_with("%"):
+		return MMPaths.decode_path(value)
+	return value
 
 func _serialize(data: Dictionary) -> Dictionary:
 	print("cannot save "+str(name))

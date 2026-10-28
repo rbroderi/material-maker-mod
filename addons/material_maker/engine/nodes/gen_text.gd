@@ -92,3 +92,11 @@ func update_buffer() -> void:
 
 func _serialize(data: Dictionary) -> Dictionary:
 	return data
+
+func _serialize_data(data: Dictionary) -> Dictionary:
+	encode_path_parameters(data)
+	return data
+
+func _deserialize(data : Dictionary) -> void:
+	if data.has("parameters") and data.parameters.has("font"):
+		data.parameters.font = decode_path_value(data.parameters.font)
