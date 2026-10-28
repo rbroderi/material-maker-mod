@@ -93,7 +93,10 @@ func set_value(v: Variant, notify := false, merge_undos := false) -> void:
 		v = min_value
 
 	if v is float:
-		v = clampf(v, hard_min, hard_max)
+		# Values entered by the user are kept in the hard range, values set by
+		# code (loaded files) are shown as they are
+		if notify:
+			v = clampf(v, hard_min, hard_max)
 		float_value = v
 		if get_decimal_places(v) < _step_decimals:
 			$Edit.text = str(v).pad_decimals(_step_decimals)
@@ -270,7 +273,7 @@ func _on_edit_text_submitted(new_text: String) -> void:
 	self_reference.compile("\\$\\b%s\\b" % name)
 
 	if new_text.is_valid_float():
-		var new_value: float = new_text.to_float()
+		var new_value: float = clampf(new_text.to_float(), hard_min, hard_max)
 		if abs(float_value-new_value) > 0.00001:
 			float_value = new_value
 			set_value(float_value, true)

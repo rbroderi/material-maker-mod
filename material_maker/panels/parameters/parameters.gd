@@ -7,6 +7,9 @@ const GENERIC = preload("res://material_maker/nodes/generic/generic.gd")
 var controls : Dictionary = {}
 var generator = null
 var ignore_parameter_change = ""
+## Names of the parameter groups the user collapsed (kept when the panel is
+## rebuilt)
+var collapsed_groups : Dictionary = {}
 
 func _ready():
 	set_generator(generator)
@@ -31,42 +34,52 @@ func set_generator(g):
 			if p.has("label"):
 				parameter_labels[p.label] = p
 		for p in generator.get_parameter_defs():
+			# The controls of a row of the grid (a label or a placeholder, and the
+			# parameter's control), hidden together when their group is collapsed
+			var row_controls : Array = []
 			if p.has("label"):
+				# "Group::Label" parameters are shown under a collapsible header
+				var label_text : String = p.label
+				var parameter_group : String = ""
+				if label_text.contains("::"):
+					parameter_group = label_text.left(label_text.rfind("::"))
+					label_text = label_text.get_slice("::", label_text.get_slice_count("::")-1)
 				if p.label.left(6) == "Paint " and parameter_labels.has(p.label.right(-6)):
 					continue
-				elif parameter_labels.has("Paint "+p.label):
+				if parameter_group != group:
+					group = parameter_group
+					group_controls = []
+					if group != "":
+						add_group_header(group, group_controls)
+				if parameter_labels.has("Paint "+p.label):
 					var paint_parameter = parameter_labels["Paint "+p.label]
 					var channel_control = GENERIC.create_parameter_control(paint_parameter, false)
 					channel_control.name = paint_parameter.name
 					if channel_control is CheckBox:
-						channel_control.text = p.label
-					parameters.add_child(channel_control)
+						channel_control.text = label_text
+					row_controls.append(channel_control)
 					controls[paint_parameter.name] = channel_control
 				else:
-					var label_text : String = p.label
-					# "Group::Label" parameters are shown under a collapsible header
-					var parameter_group : String = ""
-					if label_text.contains("::"):
-						parameter_group = label_text.left(label_text.rfind("::"))
-						label_text = label_text.get_slice("::", label_text.get_slice_count("::")-1)
-					if parameter_group != group:
-						group = parameter_group
-						group_controls = []
-						if group != "":
-							add_group_header(group, group_controls)
 					var label : Label = Label.new()
 					label.text = label_text
 					label.size_flags_horizontal = SIZE_EXPAND_FILL
-					parameters.add_child(label)
-					group_controls.append(label)
+					if group != "":
+						var indent : StyleBoxEmpty = StyleBoxEmpty.new()
+						indent.content_margin_left = 16
+						label.add_theme_stylebox_override("normal", indent)
+					row_controls.append(label)
 			else:
-				p.add_child(Control.new())
+				# Keeps the grid's two columns aligned
+				row_controls.append(Control.new())
 			var control = GENERIC.create_parameter_control(p, false)
 			control.name = p.name
 			control.size_flags_horizontal = SIZE_FILL
-			parameters.add_child(control)
+			row_controls.append(control)
 			controls[p.name] = control
-			group_controls.append(control)
+			for c in row_controls:
+				c.visible = group == "" or not collapsed_groups.has(group)
+				parameters.add_child(c)
+			group_controls.append_array(row_controls)
 		GENERIC.initialize_controls_from_generator(controls, generator, self)
 	set_size(get_size()-Vector2(1.0, 1.0))
 	set_size(get_size())
@@ -74,12 +87,17 @@ func set_generator(g):
 ## Adds a header that shows or hides the controls of a group
 func add_group_header(group_name : String, group_controls : Array) -> void:
 	var header : Button = Button.new()
-	header.text = "\u25bc "+group_name
 	header.flat = true
 	header.toggle_mode = true
 	header.alignment = HORIZONTAL_ALIGNMENT_LEFT
+	header.button_pressed = collapsed_groups.has(group_name)
+	header.text = ("\u25b6 " if header.button_pressed else "\u25bc ")+group_name
 	header.toggled.connect(func(collapsed : bool):
 		header.text = ("\u25b6 " if collapsed else "\u25bc ")+group_name
+		if collapsed:
+			collapsed_groups[group_name] = true
+		else:
+			collapsed_groups.erase(group_name)
 		for c in group_controls:
 			c.visible = not collapsed)
 	parameters.add_child(header)
