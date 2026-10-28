@@ -82,33 +82,38 @@ func get_texture() -> Texture2D:
 	return texture
 
 func set_texture(new_texture : ImageTexture) -> void:
-	texture = new_texture
-	texture_size = texture.get_size()
-	var image : Image = texture.get_image()
+	var format : RenderingDevice.DataFormat = texture_format
+	var size : Vector2i = new_texture.get_size()
+	var image : Image = new_texture.get_image()
 	if image:
 		match image.get_format():
 			Image.FORMAT_RF:
-				texture_format = RenderingDevice.DATA_FORMAT_R32_SFLOAT
+				format = RenderingDevice.DATA_FORMAT_R32_SFLOAT
 			Image.FORMAT_RGBAF:
-				texture_format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
+				format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 			Image.FORMAT_RH:
-				texture_format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
+				format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
 			Image.FORMAT_RGBAH:
-				texture_format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
+				format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
 			Image.FORMAT_DXT1:
-				texture_format = RenderingDevice.DATA_FORMAT_BC1_RGBA_SRGB_BLOCK
+				format = RenderingDevice.DATA_FORMAT_BC1_RGBA_SRGB_BLOCK
 			Image.FORMAT_DXT3:
-				texture_format = RenderingDevice.DATA_FORMAT_BC2_SRGB_BLOCK
+				format = RenderingDevice.DATA_FORMAT_BC2_SRGB_BLOCK
 			Image.FORMAT_DXT5:
-				texture_format = RenderingDevice.DATA_FORMAT_BC3_SRGB_BLOCK
+				format = RenderingDevice.DATA_FORMAT_BC3_SRGB_BLOCK
 			#Image.FORMAT_RGBA8:
-			#	texture_format = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
+			#	format = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
 			_:
 				print("Unsupported texture format "+str(image.get_format()))
 				image.convert(Image.FORMAT_RGBAH)
-				texture.set_image(image)
-				texture_format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
-		texture_size = image.get_size()
+				new_texture.set_image(image)
+				format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
+		size = image.get_size()
+	# The rendering thread may create the RD texture from this one at any time
+	# (when it has none): only use the new texture once its image is converted
+	texture_format = format
+	texture_size = size
+	texture = new_texture
 	if rid.is_valid():
 		rd.free_rid(rid)
 	rid = RID()
