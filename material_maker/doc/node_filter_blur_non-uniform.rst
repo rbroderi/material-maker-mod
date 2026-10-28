@@ -49,9 +49,9 @@ The **Non-Uniform Blur** node has the following parameters:
 * The *jitter* rotates the sample pattern by a different angle for each pixel. With
   large radii and few samples, this turns the ring-like artifacts of the fixed pattern
   into fine noise. The angles only depend on the pixel position, so the result is the
-  same on every render and still tiles. Set it to 0 to use the same pattern everywhere,
-  which is faster for large radii, since neighbouring pixels then read the input at
-  nearby places.
+  same on every render and still tiles. It is 0 by default, which uses the same pattern
+  everywhere: jitter makes large blurs slower (up to about 5 times for large radii),
+  since neighbouring pixels no longer read the input at nearby places.
 
 * The number of *blades* of the aperture: 0 gives a round blur, and 3 or more a polygonal
   (bokeh) shape, whose orientation is the *blade rotation*. Note that Substance Designer

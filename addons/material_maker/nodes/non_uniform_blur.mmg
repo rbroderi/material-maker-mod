@@ -49,7 +49,7 @@
 				"param6": 0.0,
 				"param7": 0.0,
 				"param8": 0.0,
-				"param9": 1.0
+				"param9": 0.0
 			},
 			"seed": 343.0,
 			"type": "remote",
@@ -251,7 +251,7 @@
 				"samples": 32.0,
 				"blades": 0.0,
 				"blade_rotation": 0.0,
-				"jitter": 1.0
+				"jitter": 0.0
 			},
 			"seed": -47470.0,
 			"seed_locked": true,
@@ -390,7 +390,7 @@
 					},
 					{
 						"control": "None",
-						"default": 1.0,
+						"default": 0.0,
 						"label": "Jitter",
 						"max": 1.0,
 						"min": 0.0,
@@ -449,7 +449,7 @@
 		"param6": 0.0,
 		"param7": 0.0,
 		"param8": 0.0,
-		"param9": 1.0
+		"param9": 0.0
 	},
 	"scroll_offset": {
 		"x": -868.152221679688,
