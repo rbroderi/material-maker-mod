@@ -10,7 +10,7 @@ Inputs
 ++++++
 
 The **Fill to Index** node accepts fill data, to be connected to the output of a **Fill**
-node.
+node (or a compatible output of another node).
 
 Outputs
 +++++++
@@ -21,7 +21,8 @@ Parameters
 ++++++++++
 
 The *Size* parameter is the resolution at which the fill data is analyzed. It should be at
-least the resolution of the **Fill** node.
+least the resolution of the **Fill** node, otherwise areas whose bounding boxes start in
+the same pixel at this resolution get the same index.
 
 Notes
 +++++

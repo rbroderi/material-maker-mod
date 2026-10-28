@@ -53,7 +53,10 @@ func set_parameter(n : String, v) -> void:
 func process_results(results : PackedInt32Array, size : int) -> Image:
 	var image : Image = Image.create(size, size, false, Image.FORMAT_RF)
 	var rank : int = 0
-	for word_index in results.size():
+	# After a size change, results may come from the previous shader (that is
+	# being replaced), so never read past the image
+	@warning_ignore("integer_division")
+	for word_index in mini(results.size(), size*size/32):
 		var word : int = results[word_index] & 0xFFFFFFFF
 		if word == 0:
 			continue
@@ -90,7 +93,8 @@ func _get_shader_code(uv : String, _output_index : int, context : MMGenContext) 
 		rv.add_uniform(get_count_parameter_name(), "float", float(cell_count))
 		rv.add_uniform(get_size_parameter_name(), "float", float(get_image_size()))
 		var bb : String = "%s_%d_bb" % [ genname, variant_index ]
-		rv.code += "vec4 %s = %s;\n" % [ bb, source_code.output_values.fill ]
+		var fill : String = source_code.output_values.get("fill", source_code.output_values.get("rgba", "vec4(0.0)"))
+		rv.code += "vec4 %s = %s;\n" % [ bb, fill ]
 		rv.code += "float %s_%d_index = (dot(%s.zw, vec2(1.0)) > 0.0000001) ? textureLod(%s_tex, (floor(fract(%s.xy)*%s+vec2(0.001))+vec2(0.5))/%s, 0.0).r/max(%s-1.0, 1.0) : 0.0;\n" % [ genname, variant_index, bb, genname, bb, get_size_parameter_name(), get_size_parameter_name(), get_count_parameter_name() ]
 	rv.output_values.f = "%s_%d_index" % [ genname, variant_index ]
 	return rv
