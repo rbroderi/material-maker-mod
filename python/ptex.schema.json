@@ -39,7 +39,8 @@
 					"properties": {
 						"item": { "type": "string" },
 						"hash": { "type": "string" },
-						"instance_hash": { "type": "string" }
+						"instance_hash": { "type": "string" },
+						"version": { "type": "number" }
 					}
 				},
 				"nodes": { "type": "array", "items": { "$ref": "#/$defs/node" } },

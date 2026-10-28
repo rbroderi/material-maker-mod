@@ -311,6 +311,8 @@ func api_create_node(params : Dictionary):
 	if params.has("name"):
 		data.name = params.name
 	var position : Vector2 = Vector2(params.position[0], params.position[1]) if params.get("position") is Array else Vector2()
+	# (the hash of a library item is computed before a node is created from it)
+	var library_hash : String = MMLibraryInstances.definition_hash(data) if data.has("tree_item") and data.has("type") and MMLibraryInstances.embeds_definition(data) else ""
 	return await change_graph("Create node", func(graph : MMGenGraph):
 		# Items with a type are a single node (graph nodes also have nodes)
 		var nodes : Dictionary
@@ -321,8 +323,8 @@ func api_create_node(params : Dictionary):
 		if nodes.generators.is_empty():
 			return fail("cannot create node of type '%s'" % data.get("type", ""))
 		var generator : MMGenBase = nodes.generators[0]
-		if data.has("tree_item") and MMLibraryInstances.embeds_definition(data):
-			MMLibraryInstances.tag(generator, data)
+		if library_hash != "":
+			MMLibraryInstances.tag(generator, data, library_hash)
 		for p in params.get("parameters", {}).keys():
 			generator.set_parameter(p, MMType.deserialize_value(params.parameters[p]))
 		return generator.name)

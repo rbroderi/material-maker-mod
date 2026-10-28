@@ -45,7 +45,7 @@ func refresh() -> void:
 		var status : Dictionary = MMLibraryInstances.get_status(g, library_manager)
 		var item : TreeItem = tree.create_item(root)
 		item.set_text(0, "%s (%s)" % [ g.get_hier_name(), g.get_type_name() ])
-		item.set_text(1, g.library_source.item)
+		item.set_text(1, g.library_source.get("item", ""))
 		item.set_text(2, status.status)
 		if status.status.begins_with("outdated"):
 			item.set_custom_color(2, Color(1.0, 0.75, 0.3))
@@ -55,11 +55,16 @@ func refresh() -> void:
 		item.set_metadata(0, i)
 	summary.text = "%d instance(s), %d outdated" % [ instances.size(), outdated ] if not instances.is_empty() else "This graph has no nodes created from library graphs or custom shaders"
 
+## Updates instances (a single undoable step)
 func update_instances(selected : Array) -> void:
+	graph_edit.undoredo.start_group()
 	for g in selected:
+		if not is_instance_valid(g) or not g.is_inside_tree():
+			continue
 		var status : Dictionary = MMLibraryInstances.get_status(g, library_manager)
 		if status.item != null:
 			await MMLibraryInstances.update_instance(g, status.item, graph_edit)
+	graph_edit.undoredo.end_group()
 	refresh()
 
 func update_selected() -> void:
