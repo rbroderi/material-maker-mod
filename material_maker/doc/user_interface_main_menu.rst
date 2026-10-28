@@ -136,6 +136,15 @@ Tools menu
   on the disk and save a screenshot of the whole current graph (it will automatically
   pan the graph to create the screenshot).
 
+* *Library instances* lists the nodes that were created from library items that embed their
+  definition (graphs and custom shaders saved in a library), including those inside groups,
+  and shows which ones are outdated (their library item changed since they were created),
+  modified locally, or missing (their library item was renamed, deleted or its library is
+  not loaded). Outdated nodes can be updated to the current version of their library item:
+  their name, position, seed, parameter values and connections are kept (new parameters get
+  their default value, and connections to ports that were removed are dropped). Updating
+  can be undone.
+
 * *Add current brush to library* is only visible when the current
   project is a paint project. It first prompts for an item name. If a name is entered and
   confirmed, the current brush will be added to the user brush library under

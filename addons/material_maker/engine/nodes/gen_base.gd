@@ -207,6 +207,10 @@ var rendering_time : int = 0
 var preview : int = -1
 var minimized : bool = false
 
+# Library item this node was created from, if it embeds its definition (see
+# material_maker/tools/library_manager/library_instances.gd)
+var library_source : Dictionary = {}
+
 
 const MAX_SEED : int = 4294967296
 
@@ -735,6 +739,8 @@ func serialize() -> Dictionary:
 	else:
 		rv = _serialize(rv)
 	rv = _serialize_data(rv)
+	if not library_source.is_empty():
+		rv.library_source = library_source.duplicate(true)
 	return rv
 
 func _deserialize(_data : Dictionary) -> void:
@@ -742,6 +748,8 @@ func _deserialize(_data : Dictionary) -> void:
 
 func deserialize(data : Dictionary) -> void:
 	await _deserialize(data)
+	if data.has("library_source") and data.library_source is Dictionary:
+		library_source = data.library_source.duplicate(true)
 	if data.has("name"):
 		name = data.name
 	if data.has("node_position"):
