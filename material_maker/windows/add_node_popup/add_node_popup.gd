@@ -167,6 +167,14 @@ func update_list(filter_text : String = "") -> void:
 	var idx : int = 0
 
 	var items : Array = library_manager.get_items(filter_text, true)
+	# Recently created items come first among equally good matches, and first
+	# of all when there is no filter (the bonus is smaller than the gap between
+	# match qualities)
+	var recent_items : Array = library_manager.get_recent_items()
+	for i in items:
+		var recent_index : int = recent_items.find(i.name)
+		if recent_index != -1:
+			i.quality += 0.05*(1.0-float(recent_index)/recent_items.size())
 	items.sort_custom(SortMenu.sort_function(item_sort_mode, library_manager.item_usage))
 
 	# Add sub-node items

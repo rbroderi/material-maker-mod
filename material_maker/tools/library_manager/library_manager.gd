@@ -308,7 +308,19 @@ func init_usage() -> void:
 		if json.parse(file.get_as_text()) == OK:
 			item_usage = json.get_data()
 
+## Library items created most recently, most recent first
+const RECENT_ITEMS_COUNT : int = 8
+
+func get_recent_items() -> Array:
+	if mm_globals.config.has_section_key(config_section, "recent_items"):
+		return mm_globals.config.get_value(config_section, "recent_items")
+	return []
+
 func item_created(item : String) -> void:
+	var recent_items : Array = get_recent_items().duplicate()
+	recent_items.erase(item)
+	recent_items.push_front(item)
+	mm_globals.config.set_value(config_section, "recent_items", recent_items.slice(0, RECENT_ITEMS_COUNT))
 	if item_usage.has(item):
 		item_usage[item] += 1
 	else:
