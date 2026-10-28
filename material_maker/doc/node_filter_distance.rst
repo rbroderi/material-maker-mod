@@ -36,11 +36,14 @@ Parameters
 
 * *Distance* is the distance function (Euclidean, Manhattan or Chebyshev)
 
-* *Max distance* is the distance at which the gradient reaches 0 and colors stop
-  propagating
+* *Max distance* is the distance (in UV space, 1.0 is the width of the image) at which the
+  gradient reaches 0 and colors stop propagating
 
 Notes
 +++++
 
-The distance is computed with the jump flooding algorithm. Distances are measured to the
-outline of the mask's white areas, so they are accurate to one or two pixels.
+The distance is computed with the jump flooding algorithm, from each pixel to the center of
+the nearest pixel of the mask that is above 0.5. It is accurate to about a pixel.
+
+To get a single output that combines the propagated colors with the distance gradient,
+multiply the *Color* output by the *Distance* output.

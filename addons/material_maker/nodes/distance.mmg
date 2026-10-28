@@ -1,7 +1,7 @@
 {
 	"connections": [
 		{
-			"from": "edge_detect",
+			"from": "buffer_2",
 			"from_port": 0,
 			"to": "1823",
 			"to_port": 0
@@ -17,18 +17,6 @@
 			"from_port": 0,
 			"to": "distance_output",
 			"to_port": 1
-		},
-		{
-			"from": "buffer_2",
-			"from_port": 0,
-			"to": "tones_step",
-			"to_port": 0
-		},
-		{
-			"from": "tones_step",
-			"from_port": 0,
-			"to": "edge_detect",
-			"to_port": 0
 		},
 		{
 			"from": "1823",
@@ -101,7 +89,7 @@
 			},
 			"parameters": {
 				"autostop": false,
-				"f32": false,
+				"f32": true,
 				"filter": false,
 				"iterations": 12.0,
 				"mipmap": false,
@@ -228,7 +216,7 @@
 					}
 				],
 				"instance": "",
-				"name": "Mask to UV Mask",
+				"name": "Mask to Seeds",
 				"outputs": [
 					{
 						"rgb": "$in($uv) < .5 ? vec3(0.0) : vec3($uv, 0.0)",
@@ -238,20 +226,6 @@
 				"parameters": []
 			},
 			"type": "shader"
-		},
-		{
-			"name": "edge_detect",
-			"node_position": {
-				"x": -286.951446533203,
-				"y": -137.078964233398
-			},
-			"parameters": {
-				"size": 10.0,
-				"threshold": 0.4,
-				"width": 1.0
-			},
-			"seed": 50217.0,
-			"type": "edge_detect"
 		},
 		{
 			"name": "gen_inputs",
@@ -335,14 +309,6 @@
 						{
 							"node": "buffer_2",
 							"widget": "size"
-						},
-						{
-							"node": "edge_detect",
-							"widget": "size"
-						},
-						{
-							"node": "distance_output",
-							"widget": "size"
 						}
 					],
 					"longdesc": "The resolution used for the operation",
@@ -425,20 +391,6 @@
 			"seed": 7085.0,
 			"type": "buffer",
 			"version": 1
-		},
-		{
-			"name": "tones_step",
-			"node_position": {
-				"x": -294.947967529297,
-				"y": -258.845489501953
-			},
-			"parameters": {
-				"invert": false,
-				"value": 0.5,
-				"width": 0.0
-			},
-			"seed": 48280.0,
-			"type": "tones_step"
 		},
 		{
 			"name": "24282_2",
@@ -536,8 +488,7 @@
 			"parameters": {
 				"distance": 0.0,
 				"tiled": true,
-				"max_distance": 0.1,
-				"size": 10.0
+				"max_distance": 0.1
 			},
 			"seed": -16657.0,
 			"shader_model": {
@@ -567,7 +518,7 @@
 					}
 				],
 				"instance": [
-					"// Returns the nearest point of the mask's outline (xy) and the distance to it (z)",
+					"// Returns the center of the nearest white pixel of the mask (xy) and the distance to it (z)",
 					"vec3 $(name)_nearest(vec2 uv, bool tiled) {",
 					"\tif (tiled) {",
 					"\t\tuv = fract(uv);",
@@ -595,9 +546,7 @@
 					"\tif (nearest.z > $max_distance) {",
 					"\t\treturn vec4(0.0, 0.0, 0.0, 1.0);",
 					"\t}",
-					"\t// Sample the source slightly inside the white area",
-					"\tvec2 inside = nearest.xy+normalize(nearest.xy-mask_uv+vec2(0.000001))*1.5/$size;",
-					"\treturn $source(inside);",
+					"\treturn $source(tiled ? fract(nearest.xy) : nearest.xy);",
 					"}"
 				],
 				"name": "Distance",
@@ -653,14 +602,6 @@
 						"shortdesc": "Max distance",
 						"step": 0.001,
 						"type": "float"
-					},
-					{
-						"default": 10.0,
-						"first": 4.0,
-						"label": "Size",
-						"last": 13.0,
-						"name": "size",
-						"type": "size"
 					}
 				]
 			},
