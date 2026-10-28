@@ -89,8 +89,9 @@ static func _add_triangle(st : SurfaceTool, mesh : TriMesh, triangle : Triangle,
 		st.set_color(mesh.colors[triangle.id_2])
 	st.add_vertex(mesh.vertices[triangle.id_2])
 
-static func _obj_rel_indice(indice : Vector3, cur_vArr_size : int) -> Vector3:
-	var output := Vector3.ZERO
+# Indices are kept in Vector3i: Vector3 is float32 and can't represent indices past 2^24
+static func _obj_rel_indice(indice : Vector3i, cur_vArr_size : int) -> Vector3i:
+	var output := Vector3i.ZERO
 	var indSign := indice.sign()
 	output.x = indice.x - 1 if (indSign.x >= 0) else cur_vArr_size + indice.x
 	output.y = indice.y - 1 if (indSign.y >= 0) else cur_vArr_size + indice.y
@@ -164,23 +165,23 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					var tArr_size : int = newMsh.uvs.size()
 					var nArr_size : int = newMsh.normals.size()
 
-					var faceIndices = Vector3(
+					var faceIndices := Vector3i(
 					int(misc[intVar][0]),
 					int(misc[intVar-1][0]),
 					int(misc[0][0]))
 					faceIndices = _obj_rel_indice(faceIndices, vArr_size)
 
-					var uvIndices : Vector3
+					var uvIndices : Vector3i
 					if num >= 2:
-						uvIndices = Vector3(
+						uvIndices = Vector3i(
 						int(misc[intVar][1]),
 						int(misc[intVar-1][1]),
 						int(misc[0][1]))
 					uvIndices = _obj_rel_indice(uvIndices, tArr_size)
 
-					var normIndices : Vector3
+					var normIndices : Vector3i
 					if num == 3:
-						normIndices = Vector3(
+						normIndices = Vector3i(
 						int(misc[intVar][2]),
 						int(misc[intVar-1][2]),
 						int(misc[0][2]))
