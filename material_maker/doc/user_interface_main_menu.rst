@@ -143,7 +143,9 @@ Tools menu
   not loaded). Outdated nodes can be updated to the current version of their library item:
   their name, position, seed, parameter values and connections are kept (new parameters get
   their default value, and connections to ports that were removed are dropped). Updating
-  can be undone.
+  can be undone. *Show changes* (or a double click) shows what updating the selected node
+  would change: its output before and after the update, and the parameters, inputs, outputs,
+  shader code and inner nodes that were added, removed or changed.
 
 * *Add current brush to library* is only visible when the current
   project is a paint project. It first prompts for an item name. If a name is entered and
