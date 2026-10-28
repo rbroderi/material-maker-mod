@@ -1,0 +1,182 @@
+{
+	"name": "atlas_creator",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"layout": 0,
+		"padding": 0.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 1 of the atlas (index 0)",
+				"name": "in1",
+				"shortdesc": "Image 1",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 2 of the atlas (index 1)",
+				"name": "in2",
+				"shortdesc": "Image 2",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 3 of the atlas (index 2)",
+				"name": "in3",
+				"shortdesc": "Image 3",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 4 of the atlas (index 3)",
+				"name": "in4",
+				"shortdesc": "Image 4",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 5 of the atlas (index 4)",
+				"name": "in5",
+				"shortdesc": "Image 5",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 6 of the atlas (index 5)",
+				"name": "in6",
+				"shortdesc": "Image 6",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 7 of the atlas (index 6)",
+				"name": "in7",
+				"shortdesc": "Image 7",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "Image 8 of the atlas (index 7)",
+				"name": "in8",
+				"shortdesc": "Image 8",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_create(vec2 uv) {",
+			"\tvec2 grid = $layout;",
+			"\tvec2 p = fract(uv)*grid;",
+			"\tvec2 cell = min(floor(p), grid-vec2(1.0));",
+			"\tvec2 local = (p-cell-vec2(0.5))/max(1.0-2.0*$padding, 0.0001)+vec2(0.5);",
+			"\tif (any(lessThan(local, vec2(0.0))) || any(greaterThan(local, vec2(1.0)))) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\tint index = int(cell.x+grid.x*cell.y);",
+			"\tif (index == 0) {",
+			"\t\treturn $in1(local);",
+			"\t} else if (index == 1) {",
+			"\t\treturn $in2(local);",
+			"\t} else if (index == 2) {",
+			"\t\treturn $in3(local);",
+			"\t} else if (index == 3) {",
+			"\t\treturn $in4(local);",
+			"\t} else if (index == 4) {",
+			"\t\treturn $in5(local);",
+			"\t} else if (index == 5) {",
+			"\t\treturn $in6(local);",
+			"\t} else if (index == 6) {",
+			"\t\treturn $in7(local);",
+			"\t}",
+			"\treturn $in8(local);",
+			"}"
+		],
+		"longdesc": "Creates an atlas from up to 8 images, on a grid (images are placed from the top left corner, row by row), with optional padding around each image",
+		"name": "Atlas Creator",
+		"outputs": [
+			{
+				"longdesc": "The atlas",
+				"rgba": "$(name)_create($uv)",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"default": 0,
+				"label": "Layout",
+				"longdesc": "The layout of the atlas: columns x rows (images that don't fit are not used)",
+				"name": "layout",
+				"shortdesc": "Layout",
+				"type": "enum",
+				"values": [
+					{
+						"name": "2x2",
+						"value": "vec2(2.0, 2.0)"
+					},
+					{
+						"name": "4x1",
+						"value": "vec2(4.0, 1.0)"
+					},
+					{
+						"name": "1x4",
+						"value": "vec2(1.0, 4.0)"
+					},
+					{
+						"name": "4x2",
+						"value": "vec2(4.0, 2.0)"
+					},
+					{
+						"name": "2x4",
+						"value": "vec2(2.0, 4.0)"
+					},
+					{
+						"name": "8x1",
+						"value": "vec2(8.0, 1.0)"
+					},
+					{
+						"name": "1x8",
+						"value": "vec2(1.0, 8.0)"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Padding",
+				"longdesc": "The empty margin around each image, relative to its cell",
+				"max": 0.25,
+				"min": 0.0,
+				"name": "padding",
+				"shortdesc": "Padding",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Atlas Creator"
+	},
+	"type": "shader"
+}

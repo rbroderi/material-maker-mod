@@ -1,0 +1,151 @@
+{
+	"name": "atlas_islands",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"margin": 0.05,
+		"pick_x": 0.25,
+		"pick_y": 0.25,
+		"rotate": 1
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": [
+			"// Shared by the atlas island nodes (Atlas Islands, Atlas Island Scatter)",
+			"",
+			"// Maps uv in a square to the bounding box bb of an island (corner and size,",
+			"// from a Fill node), keeping its aspect ratio, and rotated by a quarter turn",
+			"// if rotate is true. Returns vec2(-1.0) outside of the box",
+			"vec2 mm_atlas_island_fit(vec2 uv, vec4 bb, bool rotate) {",
+			"\tvec2 size = rotate ? bb.wz : bb.zw;",
+			"\tvec2 q = uv;",
+			"\tif (size.x > size.y) {",
+			"\t\tq.y = (q.y-0.5)*size.x/size.y+0.5;",
+			"\t} else {",
+			"\t\tq.x = (q.x-0.5)*size.y/size.x+0.5;",
+			"\t}",
+			"\tif (any(lessThan(q, vec2(0.0))) || any(greaterThan(q, vec2(1.0)))) {",
+			"\t\treturn vec2(-1.0);",
+			"\t}",
+			"\tif (rotate) {",
+			"\t\tq = vec2(q.y, 1.0-q.x);",
+			"\t}",
+			"\treturn fract(bb.xy+q*bb.zw);",
+			"}",
+			"",
+			"// True if a Fill node's output f at a point is the island bb",
+			"bool mm_atlas_is_island(vec4 f, vec4 bb) {",
+			"\treturn all(lessThan(abs(f-bb), vec4(0.0001)));",
+			"}"
+		],
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length(fract($uv*2.0)-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "The atlas: separate items on a transparent or uniform background",
+				"name": "atlas",
+				"shortdesc": "Atlas",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The output of a Fill node that finds the atlas items: its input must be white between the items (for example the atlas's inverted alpha)",
+				"name": "fill",
+				"shortdesc": "Fill",
+				"type": "fill"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_extract(vec2 uv) {",
+			"\tvec4 bb = $fill(fract(vec2($pick_x, $pick_y)));",
+			"\tif (bb.z <= 0.0 || bb.w <= 0.0) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\tbool rotate = $rotate == 2 || ($rotate == 1 && bb.w > bb.z);",
+			"\tvec2 q = mm_atlas_island_fit((fract(uv)-vec2(0.5))/max(1.0-2.0*$margin, 0.0001)+vec2(0.5), bb, rotate);",
+			"\tif (q.x < 0.0 || ! mm_atlas_is_island($fill(q), bb)) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\treturn $atlas(q);",
+			"}"
+		],
+		"longdesc": "Extracts one item of an atlas whose items are not on a grid (items found by a Fill node), scaled to fit the output",
+		"name": "Atlas Islands",
+		"outputs": [
+			{
+				"longdesc": "The extracted item, on a transparent background",
+				"rgba": "$(name)_extract($uv)",
+				"shortdesc": "Output",
+				"type": "rgba"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.25,
+				"label": "Pick X",
+				"longdesc": "The X coordinate of a point of the item to extract",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "pick_x",
+				"shortdesc": "Pick X",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.25,
+				"label": "Pick Y",
+				"longdesc": "The Y coordinate of a point of the item to extract",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "pick_y",
+				"shortdesc": "Pick Y",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Margin",
+				"longdesc": "The margin around the item",
+				"max": 0.25,
+				"min": 0.0,
+				"name": "margin",
+				"shortdesc": "Margin",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 1,
+				"label": "Rotate to fit",
+				"longdesc": "Rotates items by a quarter turn so they fit their square better",
+				"name": "rotate",
+				"shortdesc": "Rotate to fit",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Never",
+						"value": "0"
+					},
+					{
+						"name": "If taller than wide",
+						"value": "1"
+					},
+					{
+						"name": "Always",
+						"value": "2"
+					}
+				]
+			}
+		],
+		"shortdesc": "Atlas Islands"
+	},
+	"type": "shader"
+}

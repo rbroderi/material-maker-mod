@@ -1,0 +1,282 @@
+{
+	"name": "atlas_island_scatter",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"blend": 0,
+		"count": 6.0,
+		"drop": 0.0,
+		"offset_random": 0.3,
+		"rotate": 1,
+		"rotation_random": 0.0,
+		"scale": 0.9,
+		"scale_random": 0.2,
+		"value_random": 0.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "float $(name_uv)_id;\nvec4 $(name_uv)_s = $(name)_scatter($uv, $(name_uv)_id);",
+		"global": "",
+		"includes": [
+			"atlas_scatter",
+			"atlas_islands"
+		],
+		"inputs": [
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length(fract($uv*2.0)-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "The atlas: separate items on a transparent or uniform background",
+				"name": "atlas",
+				"shortdesc": "Atlas",
+				"type": "rgba"
+			},
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The output of a Fill node that finds the atlas items: its input must be white between the items (for example the atlas's inverted alpha)",
+				"name": "fill",
+				"shortdesc": "Fill",
+				"type": "fill"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_scatter(vec2 uv, out float instance) {",
+			"\tfloat count = max(floor($count), 1.0);",
+			"\tvec2 p = uv*count;",
+			"\tvec2 cell = floor(p);",
+			"\tint reach = mm_atlas_reach($scale, $rotation_random > 0.0, $offset_random);",
+			"\t// Instances covering this point, sorted by their random depth",
+			"\tfloat depths[25];",
+			"\tvec4 colors[25];",
+			"\tfloat ids[25];",
+			"\tint n = 0;",
+			"\tfor (int dy = -reach; dy <= reach; ++dy) {",
+			"\t\tfor (int dx = -reach; dx <= reach; ++dx) {",
+			"\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\tvec3 r1 = mm_atlas_rand3(c, count, $seed, 1u);",
+			"\t\t\tvec3 r2 = mm_atlas_rand3(c, count, $seed, 2u);",
+			"\t\t\tvec3 r3 = mm_atlas_rand3(c, count, $seed, 3u);",
+			"\t\t\tif (r3.x < $drop) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat s = $scale*(1.0-$scale_random*r1.z);",
+			"\t\t\tif (s <= 0.0) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tvec2 center = c+vec2(0.5)+(r1.xy-vec2(0.5))*$offset_random;",
+			"\t\t\tfloat a = radians($rotation_random*(2.0*r2.x-1.0));",
+			"\t\t\tvec2 local = mat2(vec2(cos(a), sin(a)), vec2(-sin(a), cos(a)))*(p-center)/s+vec2(0.5);",
+			"\t\t\tif (any(lessThan(local, vec2(0.0))) || any(greaterThanEqual(local, vec2(1.0)))) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\t// The item: the island under a random point of the atlas",
+			"\t\t\tvec4 bb = vec4(0.0);",
+			"\t\t\tfor (int k = 0; k < 8; ++k) {",
+			"\t\t\t\tvec3 rk = mm_atlas_rand3(c, count, $seed, 16u+uint(k));",
+			"\t\t\t\tbb = $fill(rk.xy);",
+			"\t\t\t\tif (bb.z > 0.0 && bb.w > 0.0) {",
+			"\t\t\t\t\tbreak;",
+			"\t\t\t\t}",
+			"\t\t\t}",
+			"\t\t\tif (bb.z <= 0.0 || bb.w <= 0.0) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tbool rotate = $rotate == 2 || ($rotate == 1 && bb.w > bb.z);",
+			"\t\t\tvec2 q = mm_atlas_island_fit(local, bb, rotate);",
+			"\t\t\tif (q.x < 0.0 || ! mm_atlas_is_island($fill(q), bb)) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tvec4 color = $atlas(q);",
+			"\t\t\tif (color.a <= 0.0) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tcolor.rgb *= 1.0-$value_random*r2.z;",
+			"\t\t\tint i = n;",
+			"\t\t\twhile (i > 0 && depths[i-1] > r3.y) {",
+			"\t\t\t\tdepths[i] = depths[i-1];",
+			"\t\t\t\tcolors[i] = colors[i-1];",
+			"\t\t\t\tids[i] = ids[i-1];",
+			"\t\t\t\t--i;",
+			"\t\t\t}",
+			"\t\t\tdepths[i] = r3.y;",
+			"\t\t\tcolors[i] = color;",
+			"\t\t\tids[i] = r3.z;",
+			"\t\t\t++n;",
+			"\t\t}",
+			"\t}",
+			"\tvec4 result = vec4(0.0);",
+			"\tinstance = 0.0;",
+			"\tfloat best = -1.0;",
+			"\tfor (int i = 0; i < n; ++i) {",
+			"\t\tif ($blend == 0) {",
+			"\t\t\tresult = mm_atlas_over(result, colors[i]);",
+			"\t\t\tinstance = ids[i];",
+			"\t\t} else {",
+			"\t\t\tvec4 premultiplied = vec4(colors[i].rgb*colors[i].a, colors[i].a);",
+			"\t\t\tfloat v = dot(premultiplied.rgb, vec3(1.0/3.0));",
+			"\t\t\tif (v > best) {",
+			"\t\t\t\tbest = v;",
+			"\t\t\t\tinstance = ids[i];",
+			"\t\t\t}",
+			"\t\t\tresult = max(result, premultiplied);",
+			"\t\t}",
+			"\t}",
+			"\treturn result;",
+			"}"
+		],
+		"longdesc": "Scatters random items of an atlas whose items are not on a grid (items found by a Fill node), at most one per cell of a grid, with random offset, scale, rotation and value",
+		"name": "Atlas Island Scatter",
+		"outputs": [
+			{
+				"longdesc": "The scattered instances",
+				"rgba": "$(name_uv)_s",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name_uv)_s.a",
+				"longdesc": "The coverage of the instances (the output's alpha)",
+				"shortdesc": "Mask",
+				"type": "f"
+			},
+			{
+				"f": "$(name_uv)_id",
+				"longdesc": "A random value for each instance (of the one on top), 0 where there is none",
+				"shortdesc": "Instance",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 6.0,
+				"label": "Count",
+				"longdesc": "The number of cells of the grid on each side (at most one instance per cell)",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "count",
+				"shortdesc": "Count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.9,
+				"label": "Scale",
+				"longdesc": "The size of instances (their longest side), relative to their cell",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.2,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the size of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each instance (up to this angle either way, in degrees)",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Offset random",
+				"longdesc": "The random offset of each instance from its cell's center, relative to the cell",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "offset_random",
+				"shortdesc": "Offset random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Value random",
+				"longdesc": "The random darkening of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "value_random",
+				"shortdesc": "Value random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Drop",
+				"longdesc": "The proportion of cells left empty",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "drop",
+				"shortdesc": "Drop",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 1,
+				"label": "Rotate to fit",
+				"longdesc": "Rotates items by a quarter turn so they fit their square better",
+				"name": "rotate",
+				"shortdesc": "Rotate to fit",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Never",
+						"value": "0"
+					},
+					{
+						"name": "If taller than wide",
+						"value": "1"
+					},
+					{
+						"name": "Always",
+						"value": "2"
+					}
+				]
+			},
+			{
+				"default": 0,
+				"label": "Blend",
+				"longdesc": "How overlapping instances are combined:\n- Normal: alpha blending, in a random order\n- Max: the maximum of the instances (premultiplied by their alpha), for height maps",
+				"name": "blend",
+				"shortdesc": "Blend",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Normal",
+						"value": "0"
+					},
+					{
+						"name": "Max",
+						"value": "1"
+					}
+				]
+			}
+		],
+		"shortdesc": "Atlas Island Scatter"
+	},
+	"type": "shader"
+}

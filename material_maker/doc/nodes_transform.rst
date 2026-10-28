@@ -17,6 +17,11 @@ The transform nodes are nodes that affect the geometry of their input.
 	node_transform_circle_map
 	node_transform_custom_uv
 	node_transform_tile_2x2
+	node_transform_atlas_creator
+	node_transform_atlas_splitter
+	node_transform_atlas_scatter
+	node_transform_atlas_islands
+	node_transform_atlas_island_scatter
 	node_transform_splatter
 	node_transform_tiler
 	node_transform_tiler_advanced
