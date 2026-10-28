@@ -1,0 +1,277 @@
+{
+	"name": "shape_splatter",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"blend": 0,
+		"count": 8.0,
+		"distribution": 0,
+		"height_random": 0.3,
+		"rotation": 0.0,
+		"rotation_random": 180.0,
+		"scale": 1.0,
+		"scale_random": 0.3
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "vec4 $(name_uv)_splat = $(name)_splat($uv);",
+		"global": "",
+		"inputs": [
+			{
+				"default": "1.0-2.0*length($uv-vec2(0.5))",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern (a height map) that is splatted",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "The probability that an instance is kept, sampled at its position",
+				"name": "density",
+				"shortdesc": "Density map",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Multiplies the scale of each instance (0 to 1), sampled at its position",
+				"name": "scale_map",
+				"shortdesc": "Scale map",
+				"type": "f"
+			},
+			{
+				"default": "0.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Rotation of each instance (1 is a full turn), sampled at its position",
+				"name": "rotation_map",
+				"shortdesc": "Rotation map",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"// Integer hash (exact on every GPU, so a seed always gives the same layout)",
+			"uint $(name)_hash(uint x) {",
+			"\tx ^= x >> 16u;",
+			"\tx *= 0x7feb352du;",
+			"\tx ^= x >> 15u;",
+			"\tx *= 0x846ca68bu;",
+			"\tx ^= x >> 16u;",
+			"\treturn x;",
+			"}",
+			"",
+			"// A random value in [0, 1) for an instance key and an index",
+			"float $(name)_rand(uint key, uint i) {",
+			"\treturn float($(name)_hash(key+i*0x9e3779b9u) >> 8u)/16777216.0;",
+			"}",
+			"",
+			"// Wraps a cell index into [0, n) (% is undefined for negative values in GLSL)",
+			"int $(name)_wrap(int i, int n) {",
+			"\treturn (i >= 0) ? (i % n) : (n-1-((-i-1) % n));",
+			"}",
+			"",
+			"// One instance per cell of a count x count grid. Each pixel only checks the",
+			"// cells whose instance can reach it, so instances larger than a cell are never cut.",
+			"vec4 $(name)_splat(vec2 uv) {",
+			"\tint n = int(max(1.0, floor($count)));",
+			"\tfloat cells = float(n);",
+			"\tvec2 cell = floor(uv*cells);",
+			"\tfloat max_size = clamp($scale, 0.0, 2.0);",
+			"\t// Half diagonal of the largest instance plus the largest jitter, in cells",
+			"\tint r = int(ceil(0.70711*max_size+0.5*$distribution+0.5))-1;",
+			"\tuint seed_key = $(name)_hash(floatBitsToUint($seed));",
+			"\tfloat best = 0.0;",
+			"\tfloat best_id = 0.0;",
+			"\tvec2 best_position = vec2(0.0);",
+			"\tfor (int dx = -r; dx <= r; ++dx) {",
+			"\t\tfor (int dy = -r; dy <= r; ++dy) {",
+			"\t\t\tvec2 c = cell+vec2(float(dx), float(dy));",
+			"\t\t\t// Random values depend on the wrapped cell, so the result tiles",
+			"\t\t\tint wx = $(name)_wrap(int(c.x), n);",
+			"\t\t\tint wy = $(name)_wrap(int(c.y), n);",
+			"\t\t\tuint key = $(name)_hash(uint(wy)+seed_key);",
+			"\t\t\tkey = $(name)_hash(uint(wx)+key);",
+			"\t\t\tvec2 jitter = vec2($(name)_rand(key, 1u), $(name)_rand(key, 2u))-vec2(0.5);",
+			"\t\t\tvec2 p = (c+vec2(0.5)+jitter*$distribution)/cells;",
+			"\t\t\tvec2 wrapped_p = fract(p);",
+			"\t\t\tif ($(name)_rand(key, 3u) >= $density(wrapped_p)) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat s = max_size*(1.0-$scale_random*$(name)_rand(key, 4u))*clamp($scale_map(wrapped_p), 0.0, 1.0)/cells;",
+			"\t\t\tfloat a = radians($rotation+$rotation_random*(2.0*$(name)_rand(key, 5u)-1.0))+6.28318530718*$rotation_map(wrapped_p);",
+			"\t\t\tvec2 local = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*(uv-p)/max(s, 0.00001);",
+			"\t\t\tif (abs(local.x) > 0.5 || abs(local.y) > 0.5) {",
+			"\t\t\t\tcontinue;",
+			"\t\t\t}",
+			"\t\t\tfloat h = max($in(local+vec2(0.5)), 0.0)*(1.0-$height_random*$(name)_rand(key, 6u));",
+			"\t\t\tfloat id = $(name)_rand(key, 7u);",
+			"\t\t\tif ($blend == 1) {",
+			"\t\t\t\tbest += h;",
+			"\t\t\t\tif (h > 0.0) {",
+			"\t\t\t\t\tbest_id = id;",
+			"\t\t\t\t\tbest_position = wrapped_p;",
+			"\t\t\t\t}",
+			"\t\t\t} else if (h > best) {",
+			"\t\t\t\t// Height-ordered blending: the highest instance wins",
+			"\t\t\t\tbest = h;",
+			"\t\t\t\tbest_id = id;",
+			"\t\t\t\tbest_position = wrapped_p;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn vec4(best, best_id, best_position);",
+			"}"
+		],
+		"longdesc": "Splats instances of a pattern on a grid (one instance per cell), with a Poisson-like, uniform or grid distribution, a density map, random scale, rotation and height, and height-ordered blending. It also outputs data maps of the instances. Instances can be up to twice as large as a cell, and the result tiles.",
+		"name": "Shape Splatter",
+		"outputs": [
+			{
+				"f": "$(name_uv)_splat.x",
+				"longdesc": "The splatted patterns",
+				"shortdesc": "Output",
+				"type": "f"
+			},
+			{
+				"f": "$(name_uv)_splat.y",
+				"longdesc": "A random value for each instance",
+				"shortdesc": "Instance ID",
+				"type": "f"
+			},
+			{
+				"longdesc": "The position of each instance (red: x, green: y)",
+				"rgb": "vec3($(name_uv)_splat.zw, 0.0)",
+				"shortdesc": "Position",
+				"type": "rgb"
+			},
+			{
+				"f": "step(0.00001, $(name_uv)_splat.x)",
+				"longdesc": "White where an instance is visible",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 8.0,
+				"label": "Count",
+				"longdesc": "The number of cells of the grid on each side (one instance per cell)",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "count",
+				"shortdesc": "Count",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Distribution",
+				"longdesc": "Poisson-like moves instances a little in their cell so they stay apart, uniform places them anywhere in their cell, grid centers them",
+				"name": "distribution",
+				"shortdesc": "Distribution",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Poisson-like",
+						"value": "0.6"
+					},
+					{
+						"name": "Uniform",
+						"value": "1.0"
+					},
+					{
+						"name": "Grid",
+						"value": "0.0"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Scale",
+				"longdesc": "The size of the largest instances, relative to the cell size",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the scale of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation",
+				"longdesc": "The rotation of all instances, in degrees",
+				"max": 180.0,
+				"min": -180.0,
+				"name": "rotation",
+				"shortdesc": "Rotation",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 180.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each instance, in degrees",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Height random",
+				"longdesc": "The random reduction of the height of each instance",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "height_random",
+				"shortdesc": "Height random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Blend",
+				"longdesc": "Max keeps the highest instance (height-ordered), Add sums them",
+				"name": "blend",
+				"shortdesc": "Blend",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Max",
+						"value": "0"
+					},
+					{
+						"name": "Add",
+						"value": "1"
+					}
+				]
+			}
+		],
+		"shortdesc": "Shape Splatter"
+	},
+	"type": "shader"
+}

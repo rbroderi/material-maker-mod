@@ -83,6 +83,7 @@
 	"Transform/Rotate": "turn",
 	"Transform/Scale": "size",
 	"Transform/Shear": "skew",
+	"Transform/Shape Splatter": "scatter,duplicate,copy,clone,repeat,poisson",
 	"Transform/Splatter": "duplicate,copy,clone,repeat",
 	"Transform/Splatter/Color": "duplicate,copy,clone,repeat,colour",
 	"Transform/Tile 2x2": "input,multiple,several",
