@@ -23,44 +23,71 @@ static func load_obj_file(path : String, split_materials : bool = false, split_o
 	var hasTex := newTriMsh.uvs.size() > 0
 	var hasNrm := newTriMsh.normals.size() > 0
 	# Vertex colors ("v x y z r g b", as exported by ZBrush and others)
-	var hasCol := newTriMsh.colors.size() == newTriMsh.vertices.size()
+	var hasCol := newTriMsh.has_colors
+
+	# Triangles of each surface, in file order, bucketed in a single pass.
+	# Surfaces are sorted by object, then by material.
+	var material_count : int = maxi(1, newTriMsh.materials.size()) if split_materials else 1
+	var surfaces : Dictionary = {}
+	if split_materials or split_objects:
+		for triangle : Triangle in newTriMsh.indices:
+			var surface : int = 0
+			if split_objects:
+				surface = triangle.object*material_count
+			if split_materials:
+				surface += triangle.material
+			if not surfaces.has(surface):
+				surfaces[surface] = []
+			surfaces[surface].push_back(triangle)
+	else:
+		surfaces[0] = newTriMsh.indices
+	var surface_ids : Array = surfaces.keys()
+	surface_ids.sort()
+	var object_names : Array = newTriMsh.objects.keys()
 
 	var mdl : ArrayMesh = ArrayMesh.new()
-	var material_count : int = max(1, newTriMsh.material_count) if split_materials else 1
-	var object_names : Array = newTriMsh.objects.keys()
-	var object_count : int = max(1, object_names.size()) if split_objects else 1
-	for surface in material_count*object_count:
-		var material : int = surface%material_count
-		var object : int = surface/material_count
+	for surface : int in surface_ids:
+		if surfaces[surface].is_empty():
+			continue
 		var st := SurfaceTool.new()
 		st.begin(Mesh.PRIMITIVE_TRIANGLES)
-		var empty : bool = true
-		for i in newTriMsh.indices.size():
-			var triangle : Triangle = newTriMsh.indices[i]
-			if split_materials and triangle.material != material:
-				continue
-			if split_objects and triangle.object != object:
-				continue
-			empty = false
-			for v in 3:
-				if hasTex:
-					st.set_uv(newTriMsh.uvs[triangle.get("uv_id_%d" % v)])
-				if hasNrm:
-					st.set_normal(newTriMsh.normals[triangle.get("nrm_id_%d" % v)])
-				if hasCol:
-					st.set_color(newTriMsh.colors[triangle.get("id_%d" % v)])
-				st.add_vertex(newTriMsh.vertices[triangle.get("id_%d" % v)])
-		if empty:
-			continue
+		for triangle : Triangle in surfaces[surface]:
+			_add_triangle(st, newTriMsh, triangle, hasTex, hasNrm, hasCol)
 		if !hasNrm:
 			st.generate_normals()
 		if hasTex:
 			st.generate_tangents()
 		st.commit(mdl)
 		if split_objects and not object_names.is_empty():
-			mdl.surface_set_name(mdl.get_surface_count()-1, object_names[object])
+			@warning_ignore("integer_division")
+			mdl.surface_set_name(mdl.get_surface_count()-1, object_names[surface/material_count])
 
 	return mdl
+
+static func _add_triangle(st : SurfaceTool, mesh : TriMesh, triangle : Triangle, hasTex : bool, hasNrm : bool, hasCol : bool) -> void:
+	if hasTex:
+		st.set_uv(mesh.uvs[triangle.uv_id_0])
+	if hasNrm:
+		st.set_normal(mesh.normals[triangle.nrm_id_0])
+	if hasCol:
+		st.set_color(mesh.colors[triangle.id_0])
+	st.add_vertex(mesh.vertices[triangle.id_0])
+
+	if hasTex:
+		st.set_uv(mesh.uvs[triangle.uv_id_1])
+	if hasNrm:
+		st.set_normal(mesh.normals[triangle.nrm_id_1])
+	if hasCol:
+		st.set_color(mesh.colors[triangle.id_1])
+	st.add_vertex(mesh.vertices[triangle.id_1])
+
+	if hasTex:
+		st.set_uv(mesh.uvs[triangle.uv_id_2])
+	if hasNrm:
+		st.set_normal(mesh.normals[triangle.nrm_id_2])
+	if hasCol:
+		st.set_color(mesh.colors[triangle.id_2])
+	st.add_vertex(mesh.vertices[triangle.id_2])
 
 static func _obj_rel_indice(indice : Vector3, cur_vArr_size : int) -> Vector3:
 	var output := Vector3.ZERO
@@ -90,8 +117,15 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 					float(lineData[3])
 				)
 				newMsh.vertices.push_back(vertex)
+				# Vertex colors, white for vertices that have none
 				if lineData.size() >= 7:
-					newMsh.colors.push_back(Color(float(lineData[4]), float(lineData[5]), float(lineData[6])))
+					if not newMsh.has_colors:
+						newMsh.has_colors = true
+						newMsh.colors.resize(newMsh.vertices.size()-1)
+						newMsh.colors.fill(Color(1.0, 1.0, 1.0))
+					newMsh.colors.push_back(Color(float(lineData[4]), float(lineData[5]), float(lineData[6]), float(lineData[7]) if lineData.size() >= 8 else 1.0))
+				elif newMsh.has_colors:
+					newMsh.colors.push_back(Color(1.0, 1.0, 1.0))
 			"vt":
 				var uv := Vector2(
 					float(lineData[1]),
@@ -175,7 +209,8 @@ static func _import_obj(mdlFile : FileAccess) -> TriMesh:
 
 class TriMesh:
 	var vertices : Array
-	var colors : Array
+	var colors : PackedColorArray
+	var has_colors : bool = false
 	var materials : Dictionary = {}
 	var current_material : int = 0
 	var material_count : int = 0

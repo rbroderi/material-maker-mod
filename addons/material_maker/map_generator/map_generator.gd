@@ -198,7 +198,15 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 
 static var busy : bool = false
 
+## Meshes with several surfaces, merged into one (map generators use a
+## single surface)
+static var merged_meshes : Dictionary = {}
+
 static func get_map(mesh : Mesh, map : String, size : int = 2048, force_generate : bool = false) -> MMTexture:
+	if mesh != null and mesh.get_surface_count() > 1:
+		if not merged_meshes.has(mesh):
+			merged_meshes[mesh] = MMMeshLoader.merge_surfaces(mesh)
+		mesh = merged_meshes[mesh]
 	if mesh == null or size <= 0 or mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV] == null:
 		if error_texture == null:
 			error_texture = MMTexture.new()

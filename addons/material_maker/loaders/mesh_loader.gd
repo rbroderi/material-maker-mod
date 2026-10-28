@@ -56,6 +56,20 @@ static func load_fbx_mesh(file_path) -> ArrayMesh:
 
 ## All meshes of a scene in a single mesh, in the scene's space, with a
 ## surface per mesh (and material) named after its node
+## A copy of a mesh with all its triangle surfaces merged into one (the mesh
+## itself if it has a single surface)
+static func merge_surfaces(mesh : Mesh) -> Mesh:
+	if mesh == null or mesh.get_surface_count() < 2:
+		return mesh
+	var surface_tool : SurfaceTool = SurfaceTool.new()
+	for s in mesh.get_surface_count():
+		if mesh.surface_get_primitive_type(s) == Mesh.PRIMITIVE_TRIANGLES:
+			surface_tool.append_from(mesh, s, Transform3D.IDENTITY)
+	var merged : ArrayMesh = surface_tool.commit()
+	if mesh.has_meta("file_path"):
+		merged.set_meta("file_path", mesh.get_meta("file_path"))
+	return merged
+
 static func merge_mesh_instances(node : Node) -> ArrayMesh:
 	var instances : Array[Node] = node.find_children("*", "MeshInstance3D", true, false)
 	if node is MeshInstance3D:

@@ -18,9 +18,11 @@ func on_right_click():
 	$TextureRect.size = size
 	$TextureRect.visible = true
 	# Setup local position rendering
-	var material_save = current_object.get_surface_override_material(0)
+	var material_save : Array[Material] = []
+	for s in current_object.get_surface_override_material_count():
+		material_save.push_back(current_object.get_surface_override_material(s))
+		current_object.set_surface_override_material(s, click_material)
 	var aabb = current_object.get_aabb()
-	current_object.set_surface_override_material(0, click_material)
 	click_material.set_shader_parameter("aabb_position", aabb.position)
 	click_material.set_shader_parameter("aabb_size", aabb.size)
 	# Render
@@ -37,7 +39,8 @@ func on_right_click():
 	pos *= aabb.size
 	new_pivot_position = -pos
 	# Reset normal rendering
-	current_object.set_surface_override_material(0, material_save)
+	for s in material_save.size():
+		current_object.set_surface_override_material(s, material_save[s])
 	$TextureRect.visible = false
 	mm_globals.popup_menu($PopupMenu, self)
 

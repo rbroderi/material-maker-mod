@@ -32,8 +32,9 @@ func _ready():
 			parameter_values[p.name] = p.default_value
 
 func get_material() -> Material:
-	if get_surface_override_material_count() > 0:
-		set_surface_override_material(0, material)
+	# Custom meshes can have several surfaces
+	for s in get_surface_override_material_count():
+		set_surface_override_material(s, material)
 	return material
 
 func set_uv_scale(s : Vector2) -> void:
