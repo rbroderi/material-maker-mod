@@ -556,7 +556,11 @@ func render(object: Object, output_index : int, size : int, preview : bool = fal
 
 func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
 	var context : MMGenContext = MMGenContext.new()
+	var created_buffers : int = mm_deps.created_buffers
 	var source : ShaderCode = get_shader_code("uv", output_index, context)
+	# Generating the shader can create automatic buffers, that must be
+	# rendered first
+	await mm_deps.wait_for_buffers_created_after(created_buffers)
 	if source.output_type == "f":
 		source.output_type = "rgba"
 	if not source.output_values.has("rgba"):

@@ -11,6 +11,10 @@ var generic_size : int = 1
 
 var editable : bool = false
 
+# Automatic buffers, indexed by input
+const AUTO_BUFFER_TYPES : Array[String] = [ "f", "rgb", "rgba" ]
+var auto_buffers : Dictionary = {}
+
 
 func toggle_editable() -> bool:
 	editable = !editable
@@ -65,6 +69,10 @@ func set_parameter(n : String, v) -> void:
 			uses_seed_updated = true
 			params_use_seed = new_params_use_seed
 	super.set_parameter(n, v)
+	# Automatic buffers follow the node's size parameter
+	for b in auto_buffers.values():
+		if int(b.get_parameter("size")) != get_auto_buffer_size():
+			b.set_parameter("size", get_auto_buffer_size())
 	var had_rnd : bool = false
 	if old_value is String and (old_value.find("$rnd(") != -1 or old_value.find("$rndi(") != -1):
 		had_rnd = true
@@ -483,9 +491,173 @@ func generate_parameter_declarations(rv : ShaderCode) -> void:
 				rv.defs += "uniform float %s = %.9f;\n" % [ sp, params[sp] ]
 			rv.defs += g.get_shader(genname+"_"+p.name)
 
+#
+# Automatic buffers
+#
+# When enabled in the preferences, function inputs (that are sampled at
+# arbitrary positions, for example by blur, warp or edge detect nodes) whose
+# source would inline many nodes are sampled through a hidden buffer, so the
+# source is rendered once instead of being evaluated for each sample.
+#
+
+## Counts the generators that would be inlined when evaluating port, stopping
+## at textures (buffers, images...) and at limit
+static func count_inlined_generators(port : OutputPort, visited : Dictionary, limit : int) -> int:
+	if port == null or visited.size() >= limit:
+		return visited.size()
+	var generator : MMGenBase = port.generator
+	if generator is MMGenTexture or visited.has(generator):
+		return visited.size()
+	visited[generator] = true
+	for i in generator.get_input_defs().size():
+		count_inlined_generators(generator.get_source(i), visited, limit)
+	return visited.size()
+
+## Returns all the code of the node's shader model (global and instance code,
+## code, outputs and enum parameter values)
+func get_shader_model_code() -> String:
+	var code : PackedStringArray = PackedStringArray()
+	for f in [ "global", "instance", "code" ]:
+		if shader_model_preprocessed.get(f) is String:
+			code.append(shader_model_preprocessed[f])
+	for o in shader_model_preprocessed.get("outputs", []):
+		for f in mm_io_types.types.keys():
+			if o.get(f) is String:
+				code.append(o[f])
+	for p in shader_model_preprocessed.get("parameters", []):
+		if p.type == "enum":
+			for v in p.values:
+				code.append(v.value)
+	return "\n".join(code)
+
+## Returns true if the node's code samples an input with variations
+## ($in.variation(...))
+func input_uses_variations(index : int) -> bool:
+	var inputs : Array = shader_model_preprocessed.get("inputs", [])
+	if index >= inputs.size():
+		return false
+	return get_shader_model_code().contains("$%s.variation(" % inputs[index].name)
+
+## Returns true if the node's code samples an input only once, outside of
+## loops: a buffer would not save any evaluation of its source
+func input_sampled_once(index : int) -> bool:
+	var inputs : Array = shader_model_preprocessed.get("inputs", [])
+	if index >= inputs.size():
+		return false
+	var code : String = get_shader_model_code()
+	if RegEx.create_from_string("\\bfor\\s*\\(").search(code) != null:
+		return false
+	return code.count("$%s(" % inputs[index].name) <= 1
+
+## Returns true if port is sampled (directly or through other nodes) by a node
+## that evaluates its input with variations: a buffer would only hold one of
+## them
+static func is_sampled_with_variations(port : OutputPort, visited : Dictionary) -> bool:
+	var key : String = "%d:%d" % [ port.generator.get_instance_id(), port.output_index ]
+	if visited.has(key):
+		return false
+	visited[key] = true
+	for target in port.generator.get_targets(port.output_index):
+		var generator : MMGenBase = target.generator
+		var next_ports : Array = []
+		if generator is MMGenTexture:
+			# Buffers sample a single variation of their input
+			continue
+		elif generator is MMGenShader and generator.input_uses_variations(target.input_index):
+			return true
+		elif generator is MMGenGraph:
+			if generator.has_node("gen_inputs"):
+				next_ports.append(OutputPort.new(generator.get_node("gen_inputs"), target.input_index))
+		elif generator.name == "gen_outputs" and generator.get_parent() is MMGenGraph:
+			next_ports.append(OutputPort.new(generator.get_parent(), target.input_index))
+		else:
+			next_ports = generator.follow_input(target.input_index)
+		for p in next_ports:
+			if is_sampled_with_variations(p, visited):
+				return true
+	return false
+
+## Returns true if a function input should be sampled through an automatic
+## buffer
+func should_auto_buffer(index : int, input : Dictionary, source : OutputPort) -> bool:
+	if source == null or not mm_globals.get_config("auto_buffer") or not input.type in AUTO_BUFFER_TYPES:
+		return false
+	var threshold : int = int(mm_globals.get_config("auto_buffer_threshold"))
+	if count_inlined_generators(source, {}, threshold) < threshold:
+		return false
+	if input_sampled_once(index):
+		return false
+	# A buffer holds a single variation of its source
+	if input_uses_variations(index):
+		return false
+	var visited : Dictionary = {}
+	for o in get_output_defs().size():
+		if is_sampled_with_variations(OutputPort.new(self, o), visited):
+			return false
+	return true
+
+## Returns the resolution (as log2) of automatic buffers: the node's own size
+## parameter if it has one (the resolution it samples its inputs at), or the
+## size set in the preferences
+func get_auto_buffer_size() -> int:
+	for p in shader_model_preprocessed.get("parameters", []):
+		if p.type == "size" and parameters.has(p.name):
+			return int(parameters[p.name])
+	return int(mm_globals.get_config("auto_buffer_size"))
+
+## Returns the source to use for a function input: either source itself, or
+## an automatic buffer that samples it
+func get_function_input_source(index : int, input : Dictionary, source : OutputPort) -> OutputPort:
+	if not should_auto_buffer(index, input, source):
+		if auto_buffers.has(index):
+			auto_buffers[index].queue_free()
+			auto_buffers.erase(index)
+			auto_buffers_changed.call_deferred()
+		return source
+	if auto_buffers.has(index):
+		auto_buffers[index].set_source(source)
+		if int(auto_buffers[index].get_parameter("size")) != get_auto_buffer_size():
+			auto_buffers[index].set_parameter("size", get_auto_buffer_size())
+	else:
+		var auto_buffer : MMGenAutoBuffer = MMGenAutoBuffer.new()
+		auto_buffer.name = "auto_buffer_%s" % input.name
+		auto_buffer.consumer_input = index
+		auto_buffer.parameters.size = get_auto_buffer_size()
+		auto_buffer.set_source(source)
+		add_child(auto_buffer)
+		auto_buffers[index] = auto_buffer
+		auto_buffers_changed.call_deferred()
+	return OutputPort.new(auto_buffers[index], 0)
+
+func get_buffers(flags : int = BUFFERS_ALL) -> Array:
+	var rv : Array = []
+	for b in auto_buffers.values():
+		rv.append_array(b.get_buffers(flags))
+	return rv
+
+## Updates the buffer icons of the node and of the groups that contain it
+func auto_buffers_changed() -> void:
+	if not is_inside_tree():
+		return
+	var generator : Node = self
+	while generator is MMGenBase:
+		get_tree().call_group("generator_node", "on_generator_changed", generator)
+		generator = generator.get_parent()
+
+func source_changed(input_index : int) -> void:
+	# Structural changes upstream must regenerate the automatic buffer's shader
+	if auto_buffers.has(input_index):
+		auto_buffers[input_index].update_shader()
+	super.source_changed(input_index)
+
+## Called by automatic buffers when their output changes (e.g. when they
+## become greyscale), so the code that samples them is regenerated
+func auto_buffer_output_changed(input_index : int) -> void:
+	super.source_changed(input_index)
+
 func generate_input_function(index : int, input: Dictionary, rv : ShaderCode, context : MMGenContext) -> void:
 	var genname = "o"+str(get_instance_id())
-	var source = get_source(index)
+	var source = get_function_input_source(index, input, get_source(index))
 	if source == null:
 		return
 	var local_context = MMGenContext.new(context)

@@ -664,6 +664,64 @@ options = PackedStringArray("Filter/Math", "Filter/Math/Vec3", "Filter/Blend", "
 button_name = "Edit List (#)"
 metadata/_custom_type_script = "uid://kac4whp71a8"
 
+[node name="Spacer5" type="Control" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1460217735]
+custom_minimum_size = Vector2(0, 10)
+layout_mode = 2
+
+[node name="AutoBuffer" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1764363091]
+layout_mode = 2
+
+[node name="LabelAutoBuffer" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBuffer" unique_id=322739184]
+layout_mode = 2
+text = "Automatic Buffers (experimental)"
+
+[node name="auto_buffer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBuffer" unique_id=1809378518 instance=ExtResource("1")]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Insert buffers automatically in front of inputs that are sampled at several positions (blur, warp...) and depend on many nodes. Applies to shaders generated afterwards."
+text = "On"
+flat = false
+config_variable = "auto_buffer"
+
+[node name="AutoBufferThreshold" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1854577820]
+layout_mode = 2
+
+[node name="LabelAutoBufferThreshold" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferThreshold" unique_id=2019444164]
+layout_mode = 2
+text = "Automatic Buffer Node Count"
+
+[node name="auto_buffer_threshold" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferThreshold" unique_id=1210030245 instance=ExtResource("3")]
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Minimum number of nodes an input must depend on to be buffered automatically."
+config_variable = "auto_buffer_threshold"
+value = 4.0
+min_value = 2.0
+max_value = 32.0
+step = 1.0
+float_only = true
+
+[node name="AutoBufferSize" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=859498607]
+layout_mode = 2
+
+[node name="LabelAutoBufferSize" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferSize" unique_id=575972347]
+layout_mode = 2
+text = "Automatic Buffer Size (2^n)"
+
+[node name="auto_buffer_size" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferSize" unique_id=373811601 instance=ExtResource("3")]
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Resolution of automatic buffers, as a power of 2 (10 is 1024x1024), for nodes that have no size parameter."
+config_variable = "auto_buffer_size"
+value = 10.0
+min_value = 6.0
+max_value = 13.0
+step = 1.0
+float_only = true
+
 [node name="Export" type="ScrollContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer" unique_id=848471352]
 visible = false
 layout_mode = 2

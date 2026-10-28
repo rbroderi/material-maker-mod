@@ -40,3 +40,19 @@ The **Advanced Buffer** node has 3 parameters:
 * the *filter* property; if set, the buffer output will be filtered
 
 * the *mipmap* property; if set, mipmaps will be generated for this buffer
+
+Automatic buffers
++++++++++++++++++
+
+When *Automatic Buffers* are enabled in the preferences (Graph tab), Material Maker inserts
+buffers by itself in front of node inputs that are sampled at arbitrary positions (such as
+blur, warp and edge detect inputs) when they depend on at least the configured number
+of nodes. The source is then rendered once into a texture, instead of being evaluated again
+for each sample. Its resolution is the node's *size* parameter if it has one, and the
+configured size otherwise. Inputs that are sampled only once, and inputs whose node
+creates variations of them (such as the Tiler and Splatter nodes), are never buffered
+automatically.
+
+Automatic buffers are not saved with the graph. They are shown by the buffer icon of the
+node that uses them, and can be paused from its menu. This feature is experimental and
+disabled by default.

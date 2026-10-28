@@ -19,6 +19,7 @@ class Buffer:
 	var status : int
 	var renders : int
 	var shader_generations : int
+	var creation_index : int = 0
 	
 	const STATUS = ["Invalidated","Updating","UpdatingInvalidated","Updated","Error"]
 	
@@ -48,6 +49,8 @@ func create_buffer(buffer_name : String, object : Object = null):
 		assert(buffers[buffer_name].object == object)
 		return
 	buffers[buffer_name] = Buffer.new(buffer_name, object)
+	created_buffers += 1
+	buffers[buffer_name].creation_index = created_buffers
 	buffer_invalidate(buffer_name)
 	if object is Node and not object.is_connected("tree_exiting", self.delete_buffers_from_object.bind(object)):
 		object.connect("tree_exiting", self.delete_buffers_from_object.bind(object))
@@ -283,3 +286,24 @@ func print_stats(object = null):
 			var count = buffers[b].object.on_dep_shader_generations(b)
 	for s in Buffer.STATUS:
 		print("%s: %s" % [ s, ", ".join(statuses[s]) ])
+
+## Number of buffers created so far, used to find the buffers created while
+## generating a shader (automatic buffers)
+var created_buffers : int = 0
+
+## Waits until the buffers created after the given value of created_buffers
+## are rendered (or failed to render)
+func wait_for_buffers_created_after(creation_count : int, timeout_msec : int = 60000) -> void:
+	var start_time : int = Time.get_ticks_msec()
+	while created_buffers != creation_count:
+		var pending : bool = false
+		for b in buffers.values():
+			if b.creation_index > creation_count and b.status != Buffer.Updated and b.status != Buffer.Error:
+				pending = true
+				break
+		if not pending:
+			return
+		if Time.get_ticks_msec()-start_time > timeout_msec:
+			push_warning("Timeout while waiting for new buffers to be rendered")
+			return
+		await get_tree().process_frame
