@@ -1,4 +1,4 @@
-[gd_scene load_steps=30 format=3 uid="uid://b7x7yqgsurxhv"]
+[gd_scene load_steps=31 format=3 uid="uid://b7x7yqgsurxhv"]
 
 [ext_resource type="Texture2D" uid="uid://c0j4px4n72di5" path="res://material_maker/icons/icons.tres" id="1"]
 [ext_resource type="PackedScene" uid="uid://est6pi7xbptp" path="res://material_maker/panels/preview_2d/control_point.tscn" id="2"]
@@ -95,6 +95,13 @@ keycode = 69
 [sub_resource type="Shortcut" id="Shortcut_llf02"]
 events = [SubResource("InputEventKey_rhw4u")]
 
+[sub_resource type="StyleBoxFlat" id="StyleBoxFlat_pixel"]
+content_margin_left = 4.0
+content_margin_top = 4.0
+content_margin_right = 4.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0.6)
+
 [node name="Preview2D" node_paths=PackedStringArray("shortcut_context") instance=ExtResource("3")]
 material = SubResource("2")
 custom_minimum_size = Vector2(100, 100)
@@ -147,17 +154,33 @@ uniform vec4 background_color = vec4(0.0);
 uniform vec4 background_color_1 = vec4(0.0);
 uniform vec4 background_color_2 = vec4(1.0);
 uniform float checker_size = 32.0;
+uniform int channel = 0;
+uniform bool compare_enabled = false;
+uniform float compare_split = 0.5;
+uniform sampler2D compare_texture : filter_linear, repeat_enable;
 
 void fragment() {
 	vec2 ratio = preview_2d_size;
 	vec2 uv = preview_2d_center+(UV-0.5)*preview_2d_scale*ratio/min(ratio.x, ratio.y);
-	if (mode == 2 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
+	if (compare_enabled && abs(UV.x-compare_split)*preview_2d_size.x < 1.0) {
+		COLOR = vec4(1.0, 0.8, 0.2, 1.0);
+	} else if (mode == 2 && (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)) {
 		COLOR = background_color;
 	} else {
 		if (mode == 1) {
 			uv = fract(uv);
 		}
-		vec4 image = preview_2d_postprocessed(uv);
+		vec4 image;
+		if (compare_enabled && UV.x < compare_split) {
+			image = textureLod(compare_texture, uv, 0.0);
+		} else {
+			image = preview_2d_postprocessed(uv);
+		}
+		if (channel >= 1 && channel <= 4) {
+			image = vec4(vec3(image[channel-1]), 1.0);
+		} else if (channel == 5) {
+			image = vec4(vec3(dot(image.rgb, vec3(0.2126, 0.7152, 0.0722))), 1.0);
+		}
 		float checkerboard = mod(floor(uv.x*checker_size)+floor(uv.y*checker_size), 2.0);
 		vec3 image_with_background = mix(mix(background_color_1, background_color_2, checkerboard).rgb, image.rgb, image.a);
 		COLOR = vec4(image_with_background, 1.0);
@@ -568,6 +591,57 @@ popup/item_1/id = 1
 popup/item_2/text = "Large"
 popup/item_2/id = 2
 
+[node name="ChannelLabel" type="Label" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox" index="9"]
+layout_mode = 2
+theme_type_variation = &"MM_PanelMenuSubPanelLabel"
+text = "Channel"
+
+[node name="Channel" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox" index="10" instance=ExtResource("12_4017l")]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Show one channel of the image as grayscale"
+selected = 0
+item_count = 6
+popup/item_0/text = "RGBA"
+popup/item_0/id = 0
+popup/item_1/text = "Red"
+popup/item_1/id = 1
+popup/item_2/text = "Green"
+popup/item_2/id = 2
+popup/item_3/text = "Blue"
+popup/item_3/id = 3
+popup/item_4/text = "Alpha"
+popup/item_4/id = 4
+popup/item_5/text = "Luminance"
+popup/item_5/id = 5
+
+[node name="InspectLabel" type="Label" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox" index="11"]
+layout_mode = 2
+theme_type_variation = &"MM_PanelMenuSubPanelLabel"
+text = "Inspect"
+
+[node name="BoxContainer3" type="BoxContainer" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox" index="12"]
+layout_mode = 2
+
+[node name="PixelValues" type="CheckBox" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer3" index="0"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Show the values of the pixel under the mouse"
+text = "Values"
+
+[node name="TakeSnapshot" type="Button" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer3" index="1"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Keep the current image, to compare it with later changes or with another node"
+text = "Snapshot"
+
+[node name="CompareSnapshot" type="CheckBox" parent="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer3" index="2"]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "Show the snapshot left of a split that can be dragged"
+disabled = true
+text = "Compare"
+
 [node name="ExportMenu" type="Button" parent="MenuBar/HBox/MainMenu/HBox" index="2" node_paths=PackedStringArray("shortcut_context")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(40, 25)
@@ -785,6 +859,17 @@ unique_name_in_owner = true
 visible = false
 layout_mode = 2
 
+[node name="PixelReadout" type="Label" parent="." index="22"]
+unique_name_in_owner = true
+visible = false
+layout_mode = 1
+anchors_preset = 2
+anchor_top = 1.0
+anchor_bottom = 1.0
+grow_vertical = 0
+mouse_filter = 2
+theme_override_styles/normal = SubResource("StyleBoxFlat_pixel")
+
 [connection signal="gui_input" from="." to="." method="_on_gui_input"]
 [connection signal="mouse_entered" from="." to="." method="_on_Preview2D_mouse_entered"]
 [connection signal="unhandled_event" from="PolygonEditor" to="." method="_on_gui_input"]
@@ -800,6 +885,10 @@ layout_mode = 2
 [connection signal="color_changed" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer/GuidesColor" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_guides_color_color_changed"]
 [connection signal="item_selected" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer2/CheckerBrightness" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_checker_brightness_item_selected"]
 [connection signal="item_selected" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer2/CheckerSize" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_checker_size_item_selected"]
+[connection signal="item_selected" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/Channel" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_channel_item_selected"]
+[connection signal="toggled" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer3/PixelValues" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_pixel_values_toggled"]
+[connection signal="pressed" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer3/TakeSnapshot" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_take_snapshot_pressed"]
+[connection signal="toggled" from="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel/VBox/BoxContainer3/CompareSnapshot" to="MenuBar/HBox/MainMenu/HBox/ViewMenu/ViewMenuPanel" method="_on_compare_snapshot_toggled"]
 [connection signal="text_changed" from="MenuBar/HBox/MainMenu/HBox/ExportMenu/ExportMenuPanel/VBox/Grid/ExportFolder/ExportFolder" to="MenuBar/HBox/MainMenu/HBox/ExportMenu/ExportMenuPanel" method="_on_export_folder_text_changed"]
 [connection signal="pressed" from="MenuBar/HBox/MainMenu/HBox/ExportMenu/ExportMenuPanel/VBox/Grid/ExportFolder/ExportFolderButton" to="MenuBar/HBox/MainMenu/HBox/ExportMenu/ExportMenuPanel" method="_on_export_folder_button_pressed"]
 [connection signal="text_changed" from="MenuBar/HBox/MainMenu/HBox/ExportMenu/ExportMenuPanel/VBox/Grid/ExportFile/BoxContainer/ExportFile" to="MenuBar/HBox/MainMenu/HBox/ExportMenu/ExportMenuPanel" method="_on_export_file_text_changed"]

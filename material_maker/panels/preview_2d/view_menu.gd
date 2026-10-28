@@ -5,6 +5,9 @@ const GUIDES_GRID := 3
 func _open() -> void:
 	%ViewMode.selected = owner.view_mode
 	%PostProcessing.selected = owner.view_filter
+	%Channel.selected = owner.channel
+	%PixelValues.set_pressed_no_signal(owner.show_pixel_values)
+	update_compare_snapshot()
 
 	%Guides.selected = owner.get_node("Guides").style
 	%CustomGridSize.visible = %Guides.selected == GUIDES_GRID
@@ -47,3 +50,25 @@ func _on_checker_size_item_selected(index: int) -> void:
 
 func _on_checker_brightness_item_selected(index: int) -> void:
 	owner.checker_brightness = index
+
+
+func _on_channel_item_selected(index: int) -> void:
+	owner.channel = index
+
+
+func _on_pixel_values_toggled(toggled_on: bool) -> void:
+	owner.show_pixel_values = toggled_on
+
+
+func _on_take_snapshot_pressed() -> void:
+	await owner.take_snapshot()
+	update_compare_snapshot()
+
+
+func _on_compare_snapshot_toggled(toggled_on: bool) -> void:
+	owner.compare_enabled = toggled_on
+
+
+func update_compare_snapshot() -> void:
+	%CompareSnapshot.disabled = owner.snapshot == null
+	%CompareSnapshot.set_pressed_no_signal(owner.compare_enabled)
