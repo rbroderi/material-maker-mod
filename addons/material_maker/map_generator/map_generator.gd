@@ -117,6 +117,8 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 	var pixels : int = size/4
 	var map_definition : Dictionary = MAP_DEFINITIONS[map]
 	var mesh_pipeline : MMMeshRenderingPipeline = MMMeshRenderingPipeline.new()
+	# Maps are rendered in UV space, where mirrored UV islands are back faces
+	mesh_pipeline.cull_mode = RenderingDevice.POLYGON_CULL_DISABLED
 	var vertex_shader : String = load(SHADERS_PATH+"/"+map_definition.vertex+".tres").text
 	var fragment_shader : String = load(SHADERS_PATH+"/"+map_definition.fragment+".tres").text
 	match map_definition.type:
