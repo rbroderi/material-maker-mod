@@ -19,7 +19,7 @@ The image node provides a single color texture.
 Parameters
 ++++++++++
 
-The **Image** node has four parameters:
+The **Image** node has the following parameters:
 
 * The first parameter defines the image file the node provides.
   It can be modified by clicking the thumbnail and selecting a new image file.
@@ -30,5 +30,10 @@ The **Image** node has four parameters:
   Useful when dealing with non-square images as they cannot easily be clamped further down the graph.
 
 * **Filter** toggles between linear or nearest filtering.
+
+* **Color space** defines how colors are read. Material Maker works with sRGB encoded colors,
+  so **As is** (the default) should be used for most images and for data such as normal maps.
+  **Linear** converts linear colors (such as most EXR and HDR images) to sRGB, and **Auto**
+  converts EXR and HDR images only. Alpha is never converted.
 
 The supported formats are BMP, EXR, HDR, JPEG, PNG, SVG, TGA, WebP and DDS.
