@@ -3720,7 +3720,7 @@
 				"rotation_random": 0.0,
 				"position_random": 0.0,
 				"row_offset": 0.0,
-				"displacement": 0.1,
+				"displacement": 0.0,
 				"drop": 0.0,
 				"value_random": 0.0,
 				"pattern_count": 1.0,
