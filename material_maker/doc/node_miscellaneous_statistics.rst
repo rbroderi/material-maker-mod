@@ -4,7 +4,7 @@ Statistics node
 The **Statistics** node computes the minimum, maximum and mean value of each channel of
 its input on the GPU, in a single pass. Its outputs are constant over the whole image, so they
 can be connected to any input that should depend on the overall content of an image (for
-example to normalize it).
+example to normalize it, as the **Auto Tones** node does).
 
 Inputs
 ++++++
