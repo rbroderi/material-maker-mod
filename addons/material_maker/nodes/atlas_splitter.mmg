@@ -28,9 +28,14 @@
 		"instance": [
 			"vec4 $(name)_split(vec2 uv) {",
 			"\tvec2 grid = max(floor(vec2($columns, $rows)), vec2(1.0));",
-			"\tfloat index = mod(floor($index), grid.x*grid.y);",
-			"\tvec2 cell = vec2(mod(index, grid.x), floor(index/grid.x));",
-			"\treturn $atlas((cell+clamp(uv, 0.0, 1.0))/grid);",
+			"\t// Integer divisions use (i+0.5)/n: an exact division can round down on GPUs",
+			"\t// (with 3 columns, index 3 gave the last image of the first row)",
+			"\tfloat images = grid.x*grid.y;",
+			"\tfloat index = floor($index);",
+			"\tindex -= images*floor((index+0.5)/images);",
+			"\tfloat row = floor((index+0.5)/grid.x);",
+			"\tvec2 cell = vec2(index-row*grid.x, row);",
+			"\treturn $atlas((cell+fract(uv))/grid);",
 			"}"
 		],
 		"longdesc": "Extracts an image of an atlas, by index (from the top left corner, row by row)",
