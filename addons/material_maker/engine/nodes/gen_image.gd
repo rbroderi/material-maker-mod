@@ -91,12 +91,37 @@ func _serialize(data: Dictionary) -> Dictionary:
 	return data
 
 func _serialize_data(data: Dictionary) -> Dictionary:
-	var image_path : String = data.parameters.image
-	image_path = image_path.replace(mm_loader.current_project_path, "%PROJECT_PATH%")
-	image_path = image_path.replace(OS.get_user_data_dir(), "%USER_DATA_PATH%")
-	image_path = image_path.replace(MMPaths.get_resource_dir(), "%MATERIAL_MAKER_PATH%")
-	data.parameters.image = image_path
+	data.parameters.image = encode_path(data.parameters.image)
 	return data
+
+## The image path as saved in graphs: the project, user data and Material
+## Maker directories are replaced by tokens. A directory is only replaced at
+## the start of the path, and only if it is the whole path or is followed by
+## a slash (so a project in C:/x/proj does not match C:/x/proj2/a.png). Both
+## slash styles are accepted, and the case is ignored on Windows. The first
+## directory that matches is used, in the order above
+static func encode_path(path : String) -> String:
+	var tokens : Array = []
+	if mm_loader.current_project_path != "":
+		tokens.append([ mm_loader.current_project_path, "%PROJECT_PATH%" ])
+	tokens.append([ OS.get_user_data_dir(), "%USER_DATA_PATH%" ])
+	tokens.append([ MMPaths.get_resource_dir(), "%MATERIAL_MAKER_PATH%" ])
+	var normalized_path : String = path.replace("\\", "/")
+	var compared_path : String = normalized_path
+	if OS.get_name() == "Windows":
+		compared_path = compared_path.to_lower()
+	for t in tokens:
+		var dir : String = t[0].replace("\\", "/")
+		while dir.ends_with("/"):
+			dir = dir.left(-1)
+		if dir == "":
+			continue
+		var compared_dir : String = dir.to_lower() if OS.get_name() == "Windows" else dir
+		if compared_path == compared_dir:
+			return t[1]
+		if compared_path.begins_with(compared_dir + "/"):
+			return t[1] + normalized_path.substr(dir.length())
+	return path
 
 func _deserialize(data : Dictionary) -> void:
 	if data.has("parameters") and data.parameters.has("image"):
