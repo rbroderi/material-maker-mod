@@ -52,8 +52,22 @@ const RECENTS_MENU_CLEAR = 1001
 const MENU_SAVE_PRESET : int = 1002
 const MENU_MANAGE_PRESETS : int = 1003
 
+## Material templates: new materials set up for an engine (export target
+## and Material node parameters). Only those whose export target exists
+## are shown.
+const MATERIAL_TEMPLATES : Array[Dictionary] = [
+	{ name="Godot 4", export="Godot/Godot 4 Standard", parameters={} },
+	{ name="Godot 4 (ORM)", export="Godot/Godot 4 ORM", parameters={} },
+	{ name="Unity HDRP", export="Unity/HDRP", parameters={} },
+	{ name="Unity URP", export="Unity/URP", parameters={} },
+	{ name="Unreal Engine 5", export="Unreal/Unreal Engine 5", parameters={ size=12 } },
+	{ name="glTF", export="GLTF/Plane", parameters={} },
+	{ name="Blender", export="Blender", parameters={} },
+]
+
 const MENU : Array[Dictionary] = [
 	{ menu="File/New material", command="new_material", shortcut="Control+N" },
+	{ menu="File/New material from template", submenu="new_material_template" },
 	{ menu="File/New paint project (Experimental)", command="new_paint_project", shortcut="Control+Shift+N", not_in_ports=["HTML5"] },
 	{ menu="File/Load", command="load_project", shortcut="Control+O" },
 	{ menu="File/Load material from website", command="load_material_from_website" },
@@ -390,6 +404,26 @@ func create_menu_load_recent(menu) -> void:
 		menu.add_separator()
 		menu.add_item("Clear recent files", RECENTS_MENU_CLEAR)
 
+## The material templates whose export target exists (export targets can
+## also be added by the user)
+func get_material_templates() -> Array[Dictionary]:
+	var material : Dictionary = mm_loader.predefined_generators.get("material", {})
+	var targets : Array = material.get("shader_model", {}).get("exports", {}).keys()
+	targets.append_array(mm_loader.get_external_export_targets("material").keys())
+	return MATERIAL_TEMPLATES.filter(func(t): return t.export in targets)
+
+func create_menu_new_material_template(menu : MMMenuManager.MenuBase) -> void:
+	menu.clear()
+	var templates : Array[Dictionary] = get_material_templates()
+	for i in templates.size():
+		menu.add_item(templates[i].name, i)
+	menu.connect_id_pressed(self._on_NewMaterialTemplate_id_pressed)
+
+func _on_NewMaterialTemplate_id_pressed(id : int) -> void:
+	var templates : Array[Dictionary] = get_material_templates()
+	if id >= 0 and id < templates.size():
+		new_material(templates[id])
+
 func _on_LoadRecent_id_pressed(id) -> void:
 	match id:
 		RECENTS_MENU_CLEAR:
@@ -547,6 +581,12 @@ func export_again() -> void:
 	if export_target == "":
 		return
 	var export_path : String = material_node.get_export_path(export_target)
+	if export_path == "" and material_node.get_export_extension(export_target) != "":
+		# Not exported yet (e.g. a material created from a template): ask for a file
+		var profile_index : int = material_node.get_export_profiles().find(export_target)
+		if profile_index != -1:
+			_on_ExportMaterial_id_pressed(profile_index)
+		return
 	export_material(export_path, export_target)
 
 func create_menu_export_material(menu : MMMenuManager.MenuBase, prefix : String = "",
@@ -754,9 +794,16 @@ func new_graph_panel() -> GraphEdit:
 	projects_panel.get_projects().current_tab = graph_edit.get_index()
 	return graph_edit
 
-func new_material() -> void:
+## Creates a new material, optionally from a material template (see
+## MATERIAL_TEMPLATES) that sets its export target and parameters
+func new_material(template : Dictionary = {}) -> void:
 	var graph_edit = new_graph_panel()
-	graph_edit.new_material()
+	if template.is_empty():
+		graph_edit.new_material()
+	else:
+		var parameters : Dictionary = { size=11 }
+		parameters.merge(template.parameters, true)
+		graph_edit.new_material({ nodes=[ { name="Material", type="material", parameters=parameters, export_last_target=template.export } ], connections=[] })
 	graph_edit.top_generator.set_current_mesh(current_mesh)
 	graph_edit.update_tab_title()
 	hierarchy.update_from_graph_edit(get_current_graph_edit())
