@@ -1,0 +1,266 @@
+{
+	"name": "spline_ribbon",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"curve": {
+			"points": [
+				{
+					"x": 0.1,
+					"y": 0.5
+				},
+				{
+					"x": 0.3,
+					"y": 0.2
+				},
+				{
+					"x": 0.6,
+					"y": 0.8
+				},
+				{
+					"x": 0.9,
+					"y": 0.5
+				}
+			],
+			"type": "Polygon"
+		},
+		"repeat": 4.0,
+		"taper_end": 0.0,
+		"taper_start": 0.0,
+		"twist": 0.0,
+		"width": 0.05
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "vec4 $(name_uv)_r = $(name)_ribbon($uv);",
+		"global": "",
+		"includes": [
+			"polycurve"
+		],
+		"inputs": [
+			{
+				"default": "vec4(vec3(0.6+0.4*step(0.5, fract($uv.x*2.0)))*(1.0-0.6*abs(2.0*$uv.y-1.0)), 1.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern mapped along the ribbon (x along it, y across it)",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "rgba"
+			},
+			{
+				"default": "1.0",
+				"function": true,
+				"label": "",
+				"longdesc": "Multiplies the width along the ribbon (its x coordinate goes from 0 at the start to 1 at the end)",
+				"name": "width_map",
+				"shortdesc": "Width map",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"// (u along the ribbon, v across it, mask, length)",
+			"vec4 $(name)_ribbon(vec2 uv) {",
+			"\tvec2 v[] = $curve;",
+			"\tint l = v.length();",
+			"\tconst int SUBDIVISIONS = 12;",
+			"\t// Length of the curve, and closest chord of its subdivision",
+			"\tfloat total = 0.0;",
+			"\tfloat best_distance = 1000000.0;",
+			"\tint best_segment = 0;",
+			"\tfloat best_t = 0.0;",
+			"\tfloat best_segment_start = 0.0;",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\tvec2 pa = v[max(i-1, 0)];",
+			"\t\tvec2 pd = v[min(i+2, l-1)];",
+			"\t\tfloat segment_start = total;",
+			"\t\tvec2 previous = v[i];",
+			"\t\tfor (int j = 1; j <= SUBDIVISIONS; ++j) {",
+			"\t\t\tvec2 p = curve(float(j)/float(SUBDIVISIONS), pa, v[i], v[i+1], pd);",
+			"\t\t\tvec2 chord = p-previous;",
+			"\t\t\tfloat s = clamp(dot(uv-previous, chord)/max(dot(chord, chord), 0.00000001), 0.0, 1.0);",
+			"\t\t\tfloat distance = length(uv-previous-s*chord);",
+			"\t\t\tif (distance < best_distance) {",
+			"\t\t\t\tbest_distance = distance;",
+			"\t\t\t\tbest_segment = i;",
+			"\t\t\t\tbest_t = (float(j-1)+s)/float(SUBDIVISIONS);",
+			"\t\t\t\tbest_segment_start = segment_start;",
+			"\t\t\t}",
+			"\t\t\ttotal += length(chord);",
+			"\t\t\tprevious = p;",
+			"\t\t}",
+			"\t}",
+			"\t// Closest point of the curve, near the closest chord",
+			"\tvec2 pa = v[max(best_segment-1, 0)];",
+			"\tvec2 pb = v[best_segment];",
+			"\tvec2 pc = v[best_segment+1];",
+			"\tvec2 pd = v[min(best_segment+2, l-1)];",
+			"\tfloat t0 = max(best_t-1.0/float(SUBDIVISIONS), 0.0);",
+			"\tfloat t1 = min(best_t+1.0/float(SUBDIVISIONS), 1.0);",
+			"\tfor (int k = 0; k < 24; ++k) {",
+			"\t\tfloat ta = mix(t0, t1, 1.0/3.0);",
+			"\t\tfloat tb = mix(t0, t1, 2.0/3.0);",
+			"\t\tvec2 da = curve(ta, pa, pb, pc, pd)-uv;",
+			"\t\tvec2 db = curve(tb, pa, pb, pc, pd)-uv;",
+			"\t\tif (dot(da, da) < dot(db, db)) {",
+			"\t\t\tt1 = tb;",
+			"\t\t} else {",
+			"\t\t\tt0 = ta;",
+			"\t\t}",
+			"\t}",
+			"\tfloat t = 0.5*(t0+t1);",
+			"\tvec2 point = curve(t, pa, pb, pc, pd);",
+			"\tvec2 tangent = dcurve(t, pa, pb, pc, pd);",
+			"\ttangent = (dot(tangent, tangent) > 0.0) ? normalize(tangent) : normalize(pc-pb+vec2(0.000001));",
+			"\tvec2 to_uv = uv-point;",
+			"\tfloat along_offset = dot(to_uv, tangent);",
+			"\t// Signed distance to the curve (the distance, not the projection on the normal, which is",
+			"\t// wrong where the curve turns back on itself)",
+			"\tfloat across_distance = ((dot(to_uv, vec2(-tangent.y, tangent.x)) < 0.0) ? -1.0 : 1.0)*length(to_uv);",
+			"\t// Distance along the curve",
+			"\tfloat along = best_segment_start;",
+			"\tvec2 previous = pb;",
+			"\tfor (int j = 1; j <= SUBDIVISIONS; ++j) {",
+			"\t\tfloat tj = float(j)/float(SUBDIVISIONS);",
+			"\t\tvec2 p = curve(min(tj, t), pa, pb, pc, pd);",
+			"\t\talong += length(p-previous);",
+			"\t\tprevious = p;",
+			"\t\tif (tj >= t) {",
+			"\t\t\tbreak;",
+			"\t\t}",
+			"\t}",
+			"\tfloat u = clamp(along/max(total, 0.00000001), 0.0, 1.0);",
+			"\t// Pixels beyond the ends of the curve are not part of the ribbon",
+			"\tbool beyond_end = (u < 0.001 && along_offset < -0.00001) || (u > 0.999 && along_offset > 0.00001);",
+			"\tfloat twist = cos(3.14159265*$twist*u);",
+			"\tfloat taper = (1.0-$taper_start*max(1.0-2.0*u, 0.0))*(1.0-$taper_end*max(2.0*u-1.0, 0.0));",
+			"\tfloat width = $width*$width_map(vec2(u, 0.5))*taper*abs(twist);",
+			"\tfloat across = across_distance/max(width, 0.00001)*((twist < 0.0) ? -1.0 : 1.0);",
+			"\tfloat mask = (beyond_end || abs(across) > 1.0) ? 0.0 : 1.0;",
+			"\treturn vec4(u, clamp(0.5+0.5*across, 0.0, 1.0), mask, total);",
+			"}",
+			"",
+			"vec4 $(name)_output(vec2 uv) {",
+			"\tvec4 r = $(name)_ribbon(uv);",
+			"\tvec2 pattern_uv = vec2(fract(r.x*$repeat), clamp(r.y, 0.0, 1.0));",
+			"\tvec4 c = $in(pattern_uv);",
+			"\treturn vec4(c.rgb, c.a*r.z);",
+			"}"
+		],
+		"longdesc": "Draws a ribbon along a smooth curve, with tapering and twisting, and maps a pattern along it (which also warps an image along the curve)",
+		"name": "Ribbon",
+		"outputs": [
+			{
+				"longdesc": "The ribbon",
+				"rgba": "$(name)_output($uv)",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"longdesc": "The ribbon's coordinates (red along it, green across) and its mask (blue)",
+				"rgb": "$(name_uv)_r.xyz",
+				"shortdesc": "UV",
+				"type": "rgb"
+			},
+			{
+				"f": "$(name_uv)_r.z",
+				"longdesc": "The ribbon's mask",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"points": [
+						{
+							"x": 0.1,
+							"y": 0.5
+						},
+						{
+							"x": 0.3,
+							"y": 0.2
+						},
+						{
+							"x": 0.6,
+							"y": 0.8
+						},
+						{
+							"x": 0.9,
+							"y": 0.5
+						}
+					],
+					"type": "Polygon"
+				},
+				"label": "Curve",
+				"longdesc": "The curve, edited in the 2D preview. It goes smoothly through its points, like the Poly Curve node's",
+				"name": "curve",
+				"shortdesc": "Curve",
+				"type": "polyline"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Width",
+				"longdesc": "The half width of the ribbon",
+				"max": 0.5,
+				"min": 0.0,
+				"name": "width",
+				"shortdesc": "Width",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Taper start",
+				"longdesc": "How much the ribbon narrows towards its start, over its first half",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "taper_start",
+				"shortdesc": "Taper start",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Taper end",
+				"longdesc": "How much the ribbon narrows towards its end, over its second half",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "taper_end",
+				"shortdesc": "Taper end",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Twist",
+				"longdesc": "The number of half turns of the ribbon along the curve",
+				"max": 16.0,
+				"min": 0.0,
+				"name": "twist",
+				"shortdesc": "Twist",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 4.0,
+				"label": "Repeat",
+				"longdesc": "The number of repetitions of the pattern along the ribbon",
+				"max": 64.0,
+				"min": 1.0,
+				"name": "repeat",
+				"shortdesc": "Repeat",
+				"step": 1.0,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Ribbon"
+	},
+	"type": "shader"
+}
