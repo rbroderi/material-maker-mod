@@ -171,11 +171,7 @@ func _serialize(data: Dictionary) -> Dictionary:
 	return data
 
 func _serialize_data(data: Dictionary) -> Dictionary:
-	var image_path : String = data.parameters.image
-	image_path = image_path.replace(mm_loader.current_project_path, "%PROJECT_PATH%")
-	image_path = image_path.replace(OS.get_user_data_dir(), "%USER_DATA_PATH%")
-	image_path = image_path.replace(MMPaths.get_resource_dir(), "%MATERIAL_MAKER_PATH%")
-	data.parameters.image = image_path
+	data.parameters.image = MMPaths.encode_path(data.parameters.image)
 	return data
 
 func _deserialize(data : Dictionary) -> void:
