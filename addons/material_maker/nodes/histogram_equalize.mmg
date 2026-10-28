@@ -139,7 +139,7 @@
 				"name": "Equalize",
 				"outputs": [
 					{
-						"f": "$cdf(vec2((clamp($in($uv), 0.0, 1.0)*255.0+0.5)/256.0, 0.25)).r",
+						"f": "$cdf(vec2((min(floor(clamp($in($uv), 0.0, 1.0)*256.0), 255.0)+0.5)/256.0, 0.25)).r",
 						"longdesc": "The output image",
 						"shortdesc": "Output",
 						"type": "f"

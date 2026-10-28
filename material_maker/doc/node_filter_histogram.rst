@@ -26,8 +26,8 @@ The **Histogram Range** node compresses the values around a position:
 Histogram Shift
 +++++++++++++++
 
-The **Histogram Shift** node adds its *Position* to the input, wrapping values so they stay
-between 0 and 1.
+The **Histogram Shift** node adds its *Position* to the input, wrapping values around so
+they stay between 0 and 1 (a position of 1 is a full rotation and leaves the input unchanged).
 
 Histogram Select
 ++++++++++++++++
@@ -43,9 +43,10 @@ The **Histogram Select** node outputs white where the input is close to a value:
 Histogram Equalize
 ++++++++++++++++++
 
-The **Histogram Equalize** node computes the histogram of its input on the GPU and maps
-each value to its rank, so the output values are evenly distributed between 0 and 1.
-Its *Size* parameter is the resolution at which the input is analyzed.
+The **Histogram Equalize** node computes the histogram of its input on the GPU (using a
+Histogram node) and maps each value to its rank, so the output values are evenly
+distributed between 0 and 1. Its *Size* parameter is the resolution at which the input
+is analyzed.
 
 Values are counted in 256 bins, so inputs whose values are concentrated in a very small
 range (less than 1/256) are not separated.
