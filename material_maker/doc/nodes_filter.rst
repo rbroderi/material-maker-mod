@@ -73,3 +73,8 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_symmetric_nearest_neighbor
 	node_filter_set_alpha
 	node_filter_blur_hq
+	node_filter_photo_scan_photometric_stereo
+	node_filter_photo_scan_delight
+	node_filter_photo_scan_clone_patch
+	node_filter_photo_scan_patch_tiling
+	node_filter_photo_scan_photo_to_material

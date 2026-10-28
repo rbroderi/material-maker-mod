@@ -1,0 +1,295 @@
+{
+	"name": "photometric_stereo",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"azimuth1": 0.0,
+		"azimuth2": 90.0,
+		"azimuth3": 180.0,
+		"azimuth4": 270.0,
+		"elevation1": 45.0,
+		"elevation2": 45.0,
+		"elevation3": 45.0,
+		"elevation4": 45.0,
+		"lights": 1,
+		"shadows": 0.1,
+		"srgb": true,
+		"strength": 1.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "vec4 $(name_uv)_ps = $(name)_solve($uv);",
+		"global": "// A demo surface (a few bumps) lit by a light, used when inputs are not connected\nfloat mm_photometric_stereo_demo(vec2 uv, float azimuth) {\n\tvec2 p = 2.0*fract(2.0*uv)-vec2(1.0);\n\tfloat r2 = dot(p, p);\n\t// Height 0.5*(1-r2)^2 on each of 2x2 bumps; its gradient:\n\tvec2 g = r2 < 1.0 ? -2.0*(1.0-r2)*p*4.0 : vec2(0.0);\n\tvec3 n = normalize(vec3(-g, 1.0));\n\tfloat a = radians(azimuth);\n\tvec3 l = vec3(cos(a)*0.70710678, -sin(a)*0.70710678, 0.70710678);\n\treturn max(dot(n, l), 0.0)*0.8;\n}\n",
+		"inputs": [
+			{
+				"default": "mm_photometric_stereo_demo($uv, 0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "A photo of the surface lit by light 1 (by default from the right)",
+				"name": "photo1",
+				"shortdesc": "Photo 1",
+				"type": "f"
+			},
+			{
+				"default": "mm_photometric_stereo_demo($uv, 90.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "A photo of the surface lit by light 2 (by default from the top)",
+				"name": "photo2",
+				"shortdesc": "Photo 2",
+				"type": "f"
+			},
+			{
+				"default": "mm_photometric_stereo_demo($uv, 180.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "A photo of the surface lit by light 3 (by default from the left)",
+				"name": "photo3",
+				"shortdesc": "Photo 3",
+				"type": "f"
+			},
+			{
+				"default": "mm_photometric_stereo_demo($uv, 270.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "A photo of the surface lit by light 4 (by default from the bottom)",
+				"name": "photo4",
+				"shortdesc": "Photo 4",
+				"type": "f"
+			}
+		],
+		"instance": [
+			"// The direction towards a light (x right, y down, z towards the camera), from its",
+			"// azimuth (0 is right, 90 is top of the image) and elevation (90 is in front)",
+			"vec3 $(name)_light(float azimuth, float elevation) {",
+			"\tfloat a = radians(azimuth);",
+			"\tfloat e = radians(clamp(elevation, 1.0, 90.0));",
+			"\treturn vec3(cos(a)*cos(e), -sin(a)*cos(e), sin(e));",
+			"}",
+			"",
+			"float $(name)_to_linear(float c) {",
+			"\tc = max(c, 0.0);",
+			"\treturn $srgb ? (c <= 0.04045 ? c/12.92 : pow((c+0.055)/1.055, 2.4)) : c;",
+			"}",
+			"",
+			"float $(name)_from_linear(float c) {",
+			"\tc = max(c, 0.0);",
+			"\treturn $srgb ? (c <= 0.0031308 ? 12.92*c : 1.055*pow(c, 1.0/2.4)-0.055) : c;",
+			"}",
+			"",
+			"// Lambertian photometric stereo: the least squares solution of l_i.g = I_i for",
+			"// g = albedo*normal, with one equation per photo. With 4 photos, the darkest one",
+			"// can be ignored where it is much darker than the others (shadows).",
+			"vec4 $(name)_solve(vec2 uv) {",
+			"\tvec3 l[4] = vec3[4]($(name)_light($azimuth1, $elevation1), $(name)_light($azimuth2, $elevation2),",
+			"\t                    $(name)_light($azimuth3, $elevation3), $(name)_light($azimuth4, $elevation4));",
+			"\tfloat i[4] = float[4]($(name)_to_linear($photo1(uv)), $(name)_to_linear($photo2(uv)),",
+			"\t                      $(name)_to_linear($photo3(uv)), $(name)_to_linear($photo4(uv)));",
+			"\tint count = $lights;",
+			"\tint skip = -1;",
+			"\tif (count == 4 && $shadows > 0.0) {",
+			"\t\tfloat i_max = max(max(i[0], i[1]), max(i[2], i[3]));",
+			"\t\tint darkest = 0;",
+			"\t\tfor (int k = 1; k < 4; ++k) {",
+			"\t\t\tif (i[k] < i[darkest]) {",
+			"\t\t\t\tdarkest = k;",
+			"\t\t\t}",
+			"\t\t}",
+			"\t\tif (i[darkest] < $shadows*i_max) {",
+			"\t\t\tskip = darkest;",
+			"\t\t}",
+			"\t}",
+			"\tvec3 g = vec3(0.0);",
+			"\tfor (int attempt = 0; attempt < 2; ++attempt) {",
+			"\t\tmat3 m = mat3(0.0);",
+			"\t\tvec3 b = vec3(0.0);",
+			"\t\tfor (int k = 0; k < count; ++k) {",
+			"\t\t\tif (k != skip) {",
+			"\t\t\t\tm += outerProduct(l[k], l[k]);",
+			"\t\t\t\tb += i[k]*l[k];",
+			"\t\t\t}",
+			"\t\t}",
+			"\t\tif (abs(determinant(m)) > 0.000001) {",
+			"\t\t\tg = inverse(m)*b;",
+			"\t\t\tbreak;",
+			"\t\t}",
+			"\t\t// The remaining lights do not define a normal, use all of them",
+			"\t\tskip = -1;",
+			"\t}",
+			"\tfloat albedo = length(g);",
+			"\tvec3 n = albedo > 0.00001 ? g/albedo : vec3(0.0, 0.0, 1.0);",
+			"\tn.z = max(n.z, 0.001);",
+			"\tn.xy *= $strength;",
+			"\treturn vec4(normalize(n), albedo);",
+			"}"
+		],
+		"longdesc": "Reconstructs a normal map and an albedo map from 3 or 4 photos of a surface taken from the same point of view, each lit by a single light from a known direction (photometric stereo)",
+		"name": "Photometric Stereo",
+		"outputs": [
+			{
+				"longdesc": "The normal map, in the Normal Map node's default format",
+				"rgb": "vec3(0.5)-0.5*$(name_uv)_ps.xyz",
+				"shortdesc": "Normal",
+				"type": "rgb"
+			},
+			{
+				"f": "$(name)_from_linear($(name_uv)_ps.w)",
+				"longdesc": "The albedo (diffuse reflectance), relative to the light's intensity",
+				"shortdesc": "Albedo",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": 1,
+				"label": "Lights",
+				"longdesc": "The number of photos (and lights)",
+				"name": "lights",
+				"shortdesc": "Lights",
+				"type": "enum",
+				"values": [
+					{
+						"name": "3",
+						"value": "3"
+					},
+					{
+						"name": "4",
+						"value": "4"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Azimuth 1",
+				"longdesc": "The direction of light 1 in the image, in degrees (0 is right, 90 is top)",
+				"max": 360.0,
+				"min": -180.0,
+				"name": "azimuth1",
+				"shortdesc": "Azimuth 1",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 45.0,
+				"label": "Elevation 1",
+				"longdesc": "The elevation of light 1 above the surface, in degrees (90 is in front of it)",
+				"max": 90.0,
+				"min": 1.0,
+				"name": "elevation1",
+				"shortdesc": "Elevation 1",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 90.0,
+				"label": "Azimuth 2",
+				"longdesc": "The direction of light 2 in the image, in degrees (0 is right, 90 is top)",
+				"max": 360.0,
+				"min": -180.0,
+				"name": "azimuth2",
+				"shortdesc": "Azimuth 2",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 45.0,
+				"label": "Elevation 2",
+				"longdesc": "The elevation of light 2 above the surface, in degrees (90 is in front of it)",
+				"max": 90.0,
+				"min": 1.0,
+				"name": "elevation2",
+				"shortdesc": "Elevation 2",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 180.0,
+				"label": "Azimuth 3",
+				"longdesc": "The direction of light 3 in the image, in degrees (0 is right, 90 is top)",
+				"max": 360.0,
+				"min": -180.0,
+				"name": "azimuth3",
+				"shortdesc": "Azimuth 3",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 45.0,
+				"label": "Elevation 3",
+				"longdesc": "The elevation of light 3 above the surface, in degrees (90 is in front of it)",
+				"max": 90.0,
+				"min": 1.0,
+				"name": "elevation3",
+				"shortdesc": "Elevation 3",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 270.0,
+				"label": "Azimuth 4",
+				"longdesc": "The direction of light 4 in the image, in degrees (0 is right, 90 is top)",
+				"max": 360.0,
+				"min": -180.0,
+				"name": "azimuth4",
+				"shortdesc": "Azimuth 4",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 45.0,
+				"label": "Elevation 4",
+				"longdesc": "The elevation of light 4 above the surface, in degrees (90 is in front of it)",
+				"max": 90.0,
+				"min": 1.0,
+				"name": "elevation4",
+				"shortdesc": "Elevation 4",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"default": true,
+				"label": "sRGB photos",
+				"longdesc": "The photos are sRGB encoded (as photos and most images are); they are converted to linear values, and the albedo back to sRGB",
+				"name": "srgb",
+				"shortdesc": "sRGB photos",
+				"type": "boolean"
+			},
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Shadow threshold",
+				"longdesc": "With 4 photos, ignores the darkest one where it is darker than this fraction of the brightest one (shadows); 0 disables it",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "shadows",
+				"shortdesc": "Shadow threshold",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Strength",
+				"longdesc": "Multiplies the slopes of the normal map",
+				"max": 4.0,
+				"min": 0.0,
+				"name": "strength",
+				"shortdesc": "Strength",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Photometric Stereo"
+	},
+	"type": "shader"
+}

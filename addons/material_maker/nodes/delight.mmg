@@ -1,0 +1,640 @@
+{
+	"connections": [
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "luminance",
+			"to_port": 0
+		},
+		{
+			"from": "luminance",
+			"from_port": 0,
+			"to": "luminance_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "luminance_buffer",
+			"from_port": 0,
+			"to": "blur_x",
+			"to_port": 0
+		},
+		{
+			"from": "blur_x",
+			"from_port": 0,
+			"to": "blur_bx",
+			"to_port": 0
+		},
+		{
+			"from": "blur_bx",
+			"from_port": 0,
+			"to": "blur_y",
+			"to_port": 0
+		},
+		{
+			"from": "blur_y",
+			"from_port": 0,
+			"to": "blur_by",
+			"to_port": 0
+		},
+		{
+			"from": "blur_by",
+			"from_port": 0,
+			"to": "mean",
+			"to_port": 0
+		},
+		{
+			"from": "mean",
+			"from_port": 0,
+			"to": "mean_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "delight",
+			"to_port": 0
+		},
+		{
+			"from": "blur_by",
+			"from_port": 0,
+			"to": "delight",
+			"to_port": 1
+		},
+		{
+			"from": "mean_buffer",
+			"from_port": 0,
+			"to": "delight",
+			"to_port": 2
+		},
+		{
+			"from": "delight",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
+		},
+		{
+			"from": "delight",
+			"from_port": 1,
+			"to": "gen_outputs",
+			"to_port": 1
+		}
+	],
+	"label": "Delight",
+	"longdesc": "Removes large scale lighting variations (shading, vignetting, light falloff) from a photo, by dividing it by its blurred luminance",
+	"name": "delight",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "gen_inputs",
+			"node_position": {
+				"x": -800,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The photo",
+					"name": "in",
+					"shortdesc": "Input",
+					"type": "rgba"
+				}
+			],
+			"seed_int": 0,
+			"type": "ios"
+		},
+		{
+			"name": "luminance",
+			"node_position": {
+				"x": -600,
+				"y": 100
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "vec4(0.0)",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "rgba"
+					}
+				],
+				"instance": "",
+				"longdesc": "Luminance",
+				"name": "Luminance",
+				"outputs": [
+					{
+						"f": "dot($in($uv).rgb, vec3(0.2126, 0.7152, 0.0722))",
+						"longdesc": "The luminance",
+						"shortdesc": "Luminance",
+						"type": "f"
+					}
+				],
+				"parameters": [],
+				"shortdesc": "Luminance"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "luminance_buffer",
+			"node_position": {
+				"x": -400,
+				"y": 100
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "blur_x",
+			"node_position": {
+				"x": -200,
+				"y": 100
+			},
+			"parameters": {
+				"factor": 1.0,
+				"radius": 0.1,
+				"tileable": false
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_blur(vec2 uv) {",
+					"\tfloat sigma = max(0.5*$radius*$factor, 0.0005);",
+					"\t// 65 taps over 3 sigmas each side",
+					"\tfloat step = 3.0*sigma/32.0;",
+					"\tfloat sum = 0.0;",
+					"\tfloat weight_sum = 0.0;",
+					"\tfor (int i = -32; i <= 32; ++i) {",
+					"\t\tfloat x = float(i)*step;",
+					"\t\tfloat w = exp(-0.5*x*x/(sigma*sigma));",
+					"\t\tvec2 p = uv+vec2(1.0, 0.0)*x;",
+					"\t\tp = $tileable ? fract(p) : vec2(1.0)-abs(vec2(1.0)-mod(p, vec2(2.0)));",
+					"\t\tsum += w*$in(p);",
+					"\t\tweight_sum += w;",
+					"\t}",
+					"\treturn sum/weight_sum;",
+					"}"
+				],
+				"longdesc": "Blur",
+				"name": "Blur",
+				"outputs": [
+					{
+						"f": "$(name)_blur($uv)",
+						"longdesc": "The blurred image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 0.1,
+						"label": "Radius",
+						"longdesc": "The blur radius",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "radius",
+						"shortdesc": "Radius",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Factor",
+						"longdesc": "Multiplies the radius",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "factor",
+						"shortdesc": "Factor",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Tileable",
+						"longdesc": "Wraps around the image's edges instead of mirroring",
+						"name": "tileable",
+						"shortdesc": "Tileable",
+						"type": "boolean"
+					}
+				],
+				"shortdesc": "Blur"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "blur_bx",
+			"node_position": {
+				"x": 0,
+				"y": 100
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "blur_y",
+			"node_position": {
+				"x": 200,
+				"y": 100
+			},
+			"parameters": {
+				"factor": 1.0,
+				"radius": 0.1,
+				"tileable": false
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_blur(vec2 uv) {",
+					"\tfloat sigma = max(0.5*$radius*$factor, 0.0005);",
+					"\t// 65 taps over 3 sigmas each side",
+					"\tfloat step = 3.0*sigma/32.0;",
+					"\tfloat sum = 0.0;",
+					"\tfloat weight_sum = 0.0;",
+					"\tfor (int i = -32; i <= 32; ++i) {",
+					"\t\tfloat x = float(i)*step;",
+					"\t\tfloat w = exp(-0.5*x*x/(sigma*sigma));",
+					"\t\tvec2 p = uv+vec2(0.0, 1.0)*x;",
+					"\t\tp = $tileable ? fract(p) : vec2(1.0)-abs(vec2(1.0)-mod(p, vec2(2.0)));",
+					"\t\tsum += w*$in(p);",
+					"\t\tweight_sum += w;",
+					"\t}",
+					"\treturn sum/weight_sum;",
+					"}"
+				],
+				"longdesc": "Blur",
+				"name": "Blur",
+				"outputs": [
+					{
+						"f": "$(name)_blur($uv)",
+						"longdesc": "The blurred image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 0.1,
+						"label": "Radius",
+						"longdesc": "The blur radius",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "radius",
+						"shortdesc": "Radius",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Factor",
+						"longdesc": "Multiplies the radius",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "factor",
+						"shortdesc": "Factor",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Tileable",
+						"longdesc": "Wraps around the image's edges instead of mirroring",
+						"name": "tileable",
+						"shortdesc": "Tileable",
+						"type": "boolean"
+					}
+				],
+				"shortdesc": "Blur"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "blur_by",
+			"node_position": {
+				"x": 400,
+				"y": 100
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "mean",
+			"node_position": {
+				"x": 600,
+				"y": 250
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_mean(vec2 uv) {",
+					"\tfloat sum = 0.0;",
+					"\tfor (int y = 0; y < 64; ++y) {",
+					"\t\tfor (int x = 0; x < 64; ++x) {",
+					"\t\t\tsum += $in((vec2(float(x), float(y))+vec2(0.5))/64.0);",
+					"\t\t}",
+					"\t}",
+					"\treturn sum/4096.0;",
+					"}"
+				],
+				"longdesc": "Mean",
+				"name": "Mean",
+				"outputs": [
+					{
+						"f": "$(name)_mean($uv)",
+						"longdesc": "The average of the image",
+						"shortdesc": "Mean",
+						"type": "f"
+					}
+				],
+				"parameters": [],
+				"shortdesc": "Mean"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "mean_buffer",
+			"node_position": {
+				"x": 800,
+				"y": 250
+			},
+			"parameters": {
+				"size": 4
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "delight",
+			"node_position": {
+				"x": 1000,
+				"y": 0
+			},
+			"parameters": {
+				"brightness": 1.0,
+				"strength": 1.0
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "vec4(0.5)",
+						"function": true,
+						"label": "",
+						"longdesc": "The photo",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "rgba"
+					},
+					{
+						"default": "1.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The lighting",
+						"name": "lighting",
+						"shortdesc": "Lighting",
+						"type": "f"
+					},
+					{
+						"default": "1.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The average lighting",
+						"name": "mean",
+						"shortdesc": "Mean",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"vec4 $(name)_delight(vec2 uv) {",
+					"\tvec4 c = $in(uv);",
+					"\tfloat gain = $brightness*$mean(vec2(0.5))/max($lighting(uv), 0.002);",
+					"\treturn vec4(c.rgb*mix(1.0, min(gain, 64.0), $strength), c.a);",
+					"}"
+				],
+				"longdesc": "Delight",
+				"name": "Delight",
+				"outputs": [
+					{
+						"longdesc": "The delit photo",
+						"rgba": "$(name)_delight($uv)",
+						"shortdesc": "Output",
+						"type": "rgba"
+					},
+					{
+						"f": "$lighting($uv)",
+						"longdesc": "The estimated lighting",
+						"shortdesc": "Lighting",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Strength",
+						"longdesc": "The strength of the correction",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "strength",
+						"shortdesc": "Strength",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Brightness",
+						"longdesc": "The brightness of the result, relative to the photo's average brightness",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "brightness",
+						"shortdesc": "Brightness",
+						"step": 0.01,
+						"type": "float"
+					}
+				],
+				"shortdesc": "Delight"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "gen_outputs",
+			"node_position": {
+				"x": 1250,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The delit photo",
+					"name": "out",
+					"shortdesc": "Output",
+					"type": "rgba"
+				},
+				{
+					"group_size": 0,
+					"longdesc": "The estimated lighting (the blurred luminance of the photo)",
+					"name": "lighting",
+					"shortdesc": "Lighting",
+					"type": "f"
+				}
+			],
+			"seed_int": 0,
+			"type": "ios"
+		},
+		{
+			"name": "gen_parameters",
+			"node_position": {
+				"x": 0,
+				"y": -300
+			},
+			"parameters": {
+				"brightness": 1.0,
+				"radius": 0.1,
+				"strength": 1.0,
+				"tileable": false
+			},
+			"seed_int": 0,
+			"type": "remote",
+			"widgets": [
+				{
+					"label": "Radius",
+					"linked_widgets": [
+						{
+							"node": "blur_x",
+							"widget": "radius"
+						},
+						{
+							"node": "blur_y",
+							"widget": "radius"
+						}
+					],
+					"longdesc": "The size of the lighting variations that are removed, relative to the image size",
+					"name": "radius",
+					"shortdesc": "Radius",
+					"type": "linked_control"
+				},
+				{
+					"label": "Tileable",
+					"linked_widgets": [
+						{
+							"node": "blur_x",
+							"widget": "tileable"
+						},
+						{
+							"node": "blur_y",
+							"widget": "tileable"
+						}
+					],
+					"longdesc": "Set it for tileable images, so the lighting is estimated across the edges",
+					"name": "tileable",
+					"shortdesc": "Tileable",
+					"type": "linked_control"
+				},
+				{
+					"label": "Strength",
+					"linked_widgets": [
+						{
+							"node": "delight",
+							"widget": "strength"
+						}
+					],
+					"longdesc": "The strength of the correction",
+					"name": "strength",
+					"shortdesc": "Strength",
+					"type": "linked_control"
+				},
+				{
+					"label": "Brightness",
+					"linked_widgets": [
+						{
+							"node": "delight",
+							"widget": "brightness"
+						}
+					],
+					"longdesc": "The brightness of the result, relative to the photo's average brightness",
+					"name": "brightness",
+					"shortdesc": "Brightness",
+					"type": "linked_control"
+				}
+			]
+		}
+	],
+	"parameters": {
+		"brightness": 1.0,
+		"radius": 0.1,
+		"strength": 1.0,
+		"tileable": false
+	},
+	"seed_int": 0,
+	"shortdesc": "Delight",
+	"type": "graph"
+}

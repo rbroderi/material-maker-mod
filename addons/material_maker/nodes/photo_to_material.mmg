@@ -1,0 +1,1208 @@
+{
+	"connections": [
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "luminance",
+			"to_port": 0
+		},
+		{
+			"from": "luminance",
+			"from_port": 0,
+			"to": "luminance_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "luminance_buffer",
+			"from_port": 0,
+			"to": "detail_x",
+			"to_port": 0
+		},
+		{
+			"from": "detail_x",
+			"from_port": 0,
+			"to": "detail_bx",
+			"to_port": 0
+		},
+		{
+			"from": "detail_bx",
+			"from_port": 0,
+			"to": "detail_y",
+			"to_port": 0
+		},
+		{
+			"from": "detail_y",
+			"from_port": 0,
+			"to": "detail_by",
+			"to_port": 0
+		},
+		{
+			"from": "detail_by",
+			"from_port": 0,
+			"to": "lighting_x",
+			"to_port": 0
+		},
+		{
+			"from": "lighting_x",
+			"from_port": 0,
+			"to": "lighting_bx",
+			"to_port": 0
+		},
+		{
+			"from": "lighting_bx",
+			"from_port": 0,
+			"to": "lighting_y",
+			"to_port": 0
+		},
+		{
+			"from": "lighting_y",
+			"from_port": 0,
+			"to": "lighting_by",
+			"to_port": 0
+		},
+		{
+			"from": "lighting_by",
+			"from_port": 0,
+			"to": "mean",
+			"to_port": 0
+		},
+		{
+			"from": "mean",
+			"from_port": 0,
+			"to": "mean_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "maps",
+			"to_port": 0
+		},
+		{
+			"from": "detail_by",
+			"from_port": 0,
+			"to": "maps",
+			"to_port": 1
+		},
+		{
+			"from": "lighting_by",
+			"from_port": 0,
+			"to": "maps",
+			"to_port": 2
+		},
+		{
+			"from": "mean_buffer",
+			"from_port": 0,
+			"to": "maps",
+			"to_port": 3
+		},
+		{
+			"from": "maps",
+			"from_port": 1,
+			"to": "height_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "height_buffer",
+			"from_port": 0,
+			"to": "normal",
+			"to_port": 0
+		},
+		{
+			"from": "maps",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
+		},
+		{
+			"from": "height_buffer",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 1
+		},
+		{
+			"from": "normal",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 2
+		},
+		{
+			"from": "maps",
+			"from_port": 2,
+			"to": "gen_outputs",
+			"to_port": 3
+		},
+		{
+			"from": "maps",
+			"from_port": 3,
+			"to": "gen_outputs",
+			"to_port": 4
+		}
+	],
+	"label": "Photo to Material",
+	"longdesc": "Generates material maps from a single photo: a delit albedo, and height, normal, roughness and ambient occlusion maps estimated from its details",
+	"name": "photo_to_material",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "gen_inputs",
+			"node_position": {
+				"x": -800,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The photo of a surface, ideally lit evenly from the front",
+					"name": "in",
+					"shortdesc": "Photo",
+					"type": "rgba"
+				}
+			],
+			"seed_int": 0,
+			"type": "ios"
+		},
+		{
+			"name": "luminance",
+			"node_position": {
+				"x": -600,
+				"y": 100
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "vec4(0.0)",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "rgba"
+					}
+				],
+				"instance": "",
+				"longdesc": "Luminance",
+				"name": "Luminance",
+				"outputs": [
+					{
+						"f": "dot($in($uv).rgb, vec3(0.2126, 0.7152, 0.0722))",
+						"longdesc": "The luminance",
+						"shortdesc": "Luminance",
+						"type": "f"
+					}
+				],
+				"parameters": [],
+				"shortdesc": "Luminance"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "luminance_buffer",
+			"node_position": {
+				"x": -400,
+				"y": 100
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "detail_x",
+			"node_position": {
+				"x": -200,
+				"y": 100
+			},
+			"parameters": {
+				"factor": 1.0,
+				"radius": 0.05,
+				"tileable": true
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_blur(vec2 uv) {",
+					"\tfloat sigma = max(0.5*$radius*$factor, 0.0005);",
+					"\t// 65 taps over 3 sigmas each side",
+					"\tfloat step = 3.0*sigma/32.0;",
+					"\tfloat sum = 0.0;",
+					"\tfloat weight_sum = 0.0;",
+					"\tfor (int i = -32; i <= 32; ++i) {",
+					"\t\tfloat x = float(i)*step;",
+					"\t\tfloat w = exp(-0.5*x*x/(sigma*sigma));",
+					"\t\tvec2 p = uv+vec2(1.0, 0.0)*x;",
+					"\t\tp = $tileable ? fract(p) : vec2(1.0)-abs(vec2(1.0)-mod(p, vec2(2.0)));",
+					"\t\tsum += w*$in(p);",
+					"\t\tweight_sum += w;",
+					"\t}",
+					"\treturn sum/weight_sum;",
+					"}"
+				],
+				"longdesc": "Blur",
+				"name": "Blur",
+				"outputs": [
+					{
+						"f": "$(name)_blur($uv)",
+						"longdesc": "The blurred image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 0.1,
+						"label": "Radius",
+						"longdesc": "The blur radius",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "radius",
+						"shortdesc": "Radius",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Factor",
+						"longdesc": "Multiplies the radius",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "factor",
+						"shortdesc": "Factor",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Tileable",
+						"longdesc": "Wraps around the image's edges instead of mirroring",
+						"name": "tileable",
+						"shortdesc": "Tileable",
+						"type": "boolean"
+					}
+				],
+				"shortdesc": "Blur"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "detail_bx",
+			"node_position": {
+				"x": 0,
+				"y": 100
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "detail_y",
+			"node_position": {
+				"x": 200,
+				"y": 100
+			},
+			"parameters": {
+				"factor": 1.0,
+				"radius": 0.05,
+				"tileable": true
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_blur(vec2 uv) {",
+					"\tfloat sigma = max(0.5*$radius*$factor, 0.0005);",
+					"\t// 65 taps over 3 sigmas each side",
+					"\tfloat step = 3.0*sigma/32.0;",
+					"\tfloat sum = 0.0;",
+					"\tfloat weight_sum = 0.0;",
+					"\tfor (int i = -32; i <= 32; ++i) {",
+					"\t\tfloat x = float(i)*step;",
+					"\t\tfloat w = exp(-0.5*x*x/(sigma*sigma));",
+					"\t\tvec2 p = uv+vec2(0.0, 1.0)*x;",
+					"\t\tp = $tileable ? fract(p) : vec2(1.0)-abs(vec2(1.0)-mod(p, vec2(2.0)));",
+					"\t\tsum += w*$in(p);",
+					"\t\tweight_sum += w;",
+					"\t}",
+					"\treturn sum/weight_sum;",
+					"}"
+				],
+				"longdesc": "Blur",
+				"name": "Blur",
+				"outputs": [
+					{
+						"f": "$(name)_blur($uv)",
+						"longdesc": "The blurred image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 0.1,
+						"label": "Radius",
+						"longdesc": "The blur radius",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "radius",
+						"shortdesc": "Radius",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Factor",
+						"longdesc": "Multiplies the radius",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "factor",
+						"shortdesc": "Factor",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Tileable",
+						"longdesc": "Wraps around the image's edges instead of mirroring",
+						"name": "tileable",
+						"shortdesc": "Tileable",
+						"type": "boolean"
+					}
+				],
+				"shortdesc": "Blur"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "detail_by",
+			"node_position": {
+				"x": 400,
+				"y": 100
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "lighting_x",
+			"node_position": {
+				"x": -200,
+				"y": 300
+			},
+			"parameters": {
+				"factor": 1.7320508075688772,
+				"radius": 0.05,
+				"tileable": true
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_blur(vec2 uv) {",
+					"\tfloat sigma = max(0.5*$radius*$factor, 0.0005);",
+					"\t// 65 taps over 3 sigmas each side",
+					"\tfloat step = 3.0*sigma/32.0;",
+					"\tfloat sum = 0.0;",
+					"\tfloat weight_sum = 0.0;",
+					"\tfor (int i = -32; i <= 32; ++i) {",
+					"\t\tfloat x = float(i)*step;",
+					"\t\tfloat w = exp(-0.5*x*x/(sigma*sigma));",
+					"\t\tvec2 p = uv+vec2(1.0, 0.0)*x;",
+					"\t\tp = $tileable ? fract(p) : vec2(1.0)-abs(vec2(1.0)-mod(p, vec2(2.0)));",
+					"\t\tsum += w*$in(p);",
+					"\t\tweight_sum += w;",
+					"\t}",
+					"\treturn sum/weight_sum;",
+					"}"
+				],
+				"longdesc": "Blur",
+				"name": "Blur",
+				"outputs": [
+					{
+						"f": "$(name)_blur($uv)",
+						"longdesc": "The blurred image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 0.1,
+						"label": "Radius",
+						"longdesc": "The blur radius",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "radius",
+						"shortdesc": "Radius",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.7320508075688772,
+						"label": "Factor",
+						"longdesc": "Multiplies the radius",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "factor",
+						"shortdesc": "Factor",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Tileable",
+						"longdesc": "Wraps around the image's edges instead of mirroring",
+						"name": "tileable",
+						"shortdesc": "Tileable",
+						"type": "boolean"
+					}
+				],
+				"shortdesc": "Blur"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "lighting_bx",
+			"node_position": {
+				"x": 0,
+				"y": 300
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "lighting_y",
+			"node_position": {
+				"x": 200,
+				"y": 300
+			},
+			"parameters": {
+				"factor": 1.7320508075688772,
+				"radius": 0.05,
+				"tileable": true
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_blur(vec2 uv) {",
+					"\tfloat sigma = max(0.5*$radius*$factor, 0.0005);",
+					"\t// 65 taps over 3 sigmas each side",
+					"\tfloat step = 3.0*sigma/32.0;",
+					"\tfloat sum = 0.0;",
+					"\tfloat weight_sum = 0.0;",
+					"\tfor (int i = -32; i <= 32; ++i) {",
+					"\t\tfloat x = float(i)*step;",
+					"\t\tfloat w = exp(-0.5*x*x/(sigma*sigma));",
+					"\t\tvec2 p = uv+vec2(0.0, 1.0)*x;",
+					"\t\tp = $tileable ? fract(p) : vec2(1.0)-abs(vec2(1.0)-mod(p, vec2(2.0)));",
+					"\t\tsum += w*$in(p);",
+					"\t\tweight_sum += w;",
+					"\t}",
+					"\treturn sum/weight_sum;",
+					"}"
+				],
+				"longdesc": "Blur",
+				"name": "Blur",
+				"outputs": [
+					{
+						"f": "$(name)_blur($uv)",
+						"longdesc": "The blurred image",
+						"shortdesc": "Output",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 0.1,
+						"label": "Radius",
+						"longdesc": "The blur radius",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "radius",
+						"shortdesc": "Radius",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.7320508075688772,
+						"label": "Factor",
+						"longdesc": "Multiplies the radius",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "factor",
+						"shortdesc": "Factor",
+						"step": 0.001,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Tileable",
+						"longdesc": "Wraps around the image's edges instead of mirroring",
+						"name": "tileable",
+						"shortdesc": "Tileable",
+						"type": "boolean"
+					}
+				],
+				"shortdesc": "Blur"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "lighting_by",
+			"node_position": {
+				"x": 400,
+				"y": 300
+			},
+			"parameters": {
+				"size": 9
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "mean",
+			"node_position": {
+				"x": 600,
+				"y": 450
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.0",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"float $(name)_mean(vec2 uv) {",
+					"\tfloat sum = 0.0;",
+					"\tfor (int y = 0; y < 64; ++y) {",
+					"\t\tfor (int x = 0; x < 64; ++x) {",
+					"\t\t\tsum += $in((vec2(float(x), float(y))+vec2(0.5))/64.0);",
+					"\t\t}",
+					"\t}",
+					"\treturn sum/4096.0;",
+					"}"
+				],
+				"longdesc": "Mean",
+				"name": "Mean",
+				"outputs": [
+					{
+						"f": "$(name)_mean($uv)",
+						"longdesc": "The average of the image",
+						"shortdesc": "Mean",
+						"type": "f"
+					}
+				],
+				"parameters": [],
+				"shortdesc": "Mean"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "mean_buffer",
+			"node_position": {
+				"x": 800,
+				"y": 450
+			},
+			"parameters": {
+				"size": 4
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "maps",
+			"node_position": {
+				"x": 1000,
+				"y": 0
+			},
+			"parameters": {
+				"ao": 1.0,
+				"delight": 1.0,
+				"height_contrast": 1.0,
+				"invert": false,
+				"roughness_max": 0.9,
+				"roughness_min": 0.4
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "vec4(0.5)",
+						"function": true,
+						"label": "",
+						"longdesc": "The photo",
+						"name": "in",
+						"shortdesc": "Photo",
+						"type": "rgba"
+					},
+					{
+						"default": "0.5",
+						"function": true,
+						"label": "",
+						"longdesc": "The luminance blurred by the detail radius",
+						"name": "detail",
+						"shortdesc": "Detail",
+						"type": "f"
+					},
+					{
+						"default": "0.5",
+						"function": true,
+						"label": "",
+						"longdesc": "The luminance blurred by twice the detail radius",
+						"name": "lighting",
+						"shortdesc": "Lighting",
+						"type": "f"
+					},
+					{
+						"default": "0.5",
+						"function": true,
+						"label": "",
+						"longdesc": "The average luminance",
+						"name": "mean",
+						"shortdesc": "Mean",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"vec3 $(name)_albedo(vec2 uv) {",
+					"\tvec3 c = $in(uv).rgb;",
+					"\tfloat gain = $mean(vec2(0.5))/max($lighting(uv), 0.002);",
+					"\treturn clamp(c*mix(1.0, min(gain, 64.0), $delight), vec3(0.0), vec3(1.0));",
+					"}",
+					"",
+					"// Details are the luminance minus its blur, relative to the local lighting,",
+					"// so their contrast does not depend on how bright the area is",
+					"float $(name)_height(vec2 uv) {",
+					"\tfloat detail = (dot($in(uv).rgb, vec3(0.2126, 0.7152, 0.0722))-$detail(uv))/max($lighting(uv), 0.002);",
+					"\tfloat h = clamp(0.5+$height_contrast*detail, 0.0, 1.0);",
+					"\treturn $invert ? 1.0-h : h;",
+					"}"
+				],
+				"longdesc": "Photo maps",
+				"name": "Photo maps",
+				"outputs": [
+					{
+						"longdesc": "The photo without large scale lighting variations",
+						"rgb": "$(name)_albedo($uv)",
+						"shortdesc": "Albedo",
+						"type": "rgb"
+					},
+					{
+						"f": "$(name)_height($uv)",
+						"longdesc": "The height",
+						"shortdesc": "Height",
+						"type": "f"
+					},
+					{
+						"f": "mix($roughness_min, $roughness_max, 1.0-clamp(dot($(name)_albedo($uv), vec3(0.2126, 0.7152, 0.0722)), 0.0, 1.0))",
+						"longdesc": "The roughness",
+						"shortdesc": "Roughness",
+						"type": "f"
+					},
+					{
+						"f": "clamp(1.0-2.0*$ao*max(0.5-$(name)_height($uv), 0.0), 0.0, 1.0)",
+						"longdesc": "The ambient occlusion",
+						"shortdesc": "Ambient occlusion",
+						"type": "f"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Delight",
+						"longdesc": "How much large scale lighting is removed from the albedo",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "delight",
+						"shortdesc": "Delight",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Height contrast",
+						"longdesc": "The contrast of the height map",
+						"max": 8.0,
+						"min": 0.0,
+						"name": "height_contrast",
+						"shortdesc": "Height contrast",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"default": false,
+						"label": "Invert height",
+						"longdesc": "Makes dark areas high instead of low",
+						"name": "invert",
+						"shortdesc": "Invert height",
+						"type": "boolean"
+					},
+					{
+						"control": "None",
+						"default": 0.4,
+						"label": "Roughness min",
+						"longdesc": "The roughness of the brightest areas",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "roughness_min",
+						"shortdesc": "Roughness min",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 0.9,
+						"label": "Roughness max",
+						"longdesc": "The roughness of the darkest areas",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "roughness_max",
+						"shortdesc": "Roughness max",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "AO strength",
+						"longdesc": "The strength of the ambient occlusion",
+						"max": 2.0,
+						"min": 0.0,
+						"name": "ao",
+						"shortdesc": "AO strength",
+						"step": 0.01,
+						"type": "float"
+					}
+				],
+				"shortdesc": "Photo maps"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "height_buffer",
+			"node_position": {
+				"x": 1250,
+				"y": 150
+			},
+			"parameters": {
+				"size": 10
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "normal",
+			"node_position": {
+				"x": 1450,
+				"y": 150
+			},
+			"parameters": {
+				"size": 10,
+				"strength": 0.2
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "0.5",
+						"function": true,
+						"label": "",
+						"longdesc": "The height map",
+						"name": "in",
+						"shortdesc": "Height",
+						"type": "f"
+					}
+				],
+				"instance": [
+					"vec3 $(name)_normal(vec2 uv) {",
+					"\tvec3 e = vec3(1.0/$size, -1.0/$size, 0.0);",
+					"\tvec2 rv = vec2(1.0, -1.0)*$in(uv+e.xy);",
+					"\trv += vec2(-1.0, 1.0)*$in(uv-e.xy);",
+					"\trv += vec2(1.0, 1.0)*$in(uv+e.xx);",
+					"\trv += vec2(-1.0, -1.0)*$in(uv-e.xx);",
+					"\trv += vec2(2.0, 0.0)*$in(uv+e.xz);",
+					"\trv += vec2(-2.0, 0.0)*$in(uv-e.xz);",
+					"\trv += vec2(0.0, 2.0)*$in(uv+e.zx);",
+					"\trv += vec2(0.0, -2.0)*$in(uv-e.zx);",
+					"\treturn 0.5*normalize(vec3(rv*$strength*$size/128.0, -1.0))+vec3(0.5);",
+					"}"
+				],
+				"longdesc": "Normal",
+				"name": "Normal",
+				"outputs": [
+					{
+						"longdesc": "The normal map",
+						"rgb": "$(name)_normal($uv)",
+						"shortdesc": "Normal",
+						"type": "rgb"
+					}
+				],
+				"parameters": [
+					{
+						"default": 10,
+						"first": 4,
+						"label": "Size",
+						"last": 13,
+						"longdesc": "The resolution of the height map",
+						"name": "size",
+						"shortdesc": "Size",
+						"type": "size"
+					},
+					{
+						"control": "None",
+						"default": 0.2,
+						"label": "Strength",
+						"longdesc": "The strength of the normal map",
+						"max": 4.0,
+						"min": 0.0,
+						"name": "strength",
+						"shortdesc": "Strength",
+						"step": 0.01,
+						"type": "float"
+					}
+				],
+				"shortdesc": "Normal"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "gen_outputs",
+			"node_position": {
+				"x": 1700,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The photo without large scale lighting variations",
+					"name": "albedo",
+					"shortdesc": "Albedo",
+					"type": "rgb"
+				},
+				{
+					"group_size": 0,
+					"longdesc": "The height estimated from the photo's details (bright is high)",
+					"name": "height",
+					"shortdesc": "Height",
+					"type": "f"
+				},
+				{
+					"group_size": 0,
+					"longdesc": "A normal map computed from the height",
+					"name": "normal",
+					"shortdesc": "Normal",
+					"type": "rgb"
+				},
+				{
+					"group_size": 0,
+					"longdesc": "The roughness estimated from the brightness (bright, shiny areas are smoother)",
+					"name": "roughness",
+					"shortdesc": "Roughness",
+					"type": "f"
+				},
+				{
+					"group_size": 0,
+					"longdesc": "The ambient occlusion estimated from the cavities of the height",
+					"name": "ao",
+					"shortdesc": "Ambient occlusion",
+					"type": "f"
+				}
+			],
+			"seed_int": 0,
+			"type": "ios"
+		},
+		{
+			"name": "gen_parameters",
+			"node_position": {
+				"x": 0,
+				"y": -300
+			},
+			"parameters": {
+				"ao": 1.0,
+				"delight": 1.0,
+				"height_contrast": 1.0,
+				"invert": false,
+				"normal_strength": 0.2,
+				"radius": 0.05,
+				"roughness_max": 0.9,
+				"roughness_min": 0.4,
+				"size": 10,
+				"tileable": true
+			},
+			"seed_int": 0,
+			"type": "remote",
+			"widgets": [
+				{
+					"label": "Size",
+					"linked_widgets": [
+						{
+							"node": "height_buffer",
+							"widget": "size"
+						},
+						{
+							"node": "normal",
+							"widget": "size"
+						}
+					],
+					"longdesc": "The resolution of the height and normal maps",
+					"name": "size",
+					"shortdesc": "Size",
+					"type": "linked_control"
+				},
+				{
+					"label": "Detail radius",
+					"linked_widgets": [
+						{
+							"node": "detail_x",
+							"widget": "radius"
+						},
+						{
+							"node": "detail_y",
+							"widget": "radius"
+						},
+						{
+							"node": "lighting_x",
+							"widget": "radius"
+						},
+						{
+							"node": "lighting_y",
+							"widget": "radius"
+						}
+					],
+					"longdesc": "The size of the details that make the height; larger variations are considered lighting",
+					"name": "radius",
+					"shortdesc": "Detail radius",
+					"type": "linked_control"
+				},
+				{
+					"label": "Tileable",
+					"linked_widgets": [
+						{
+							"node": "detail_x",
+							"widget": "tileable"
+						},
+						{
+							"node": "detail_y",
+							"widget": "tileable"
+						},
+						{
+							"node": "lighting_x",
+							"widget": "tileable"
+						},
+						{
+							"node": "lighting_y",
+							"widget": "tileable"
+						}
+					],
+					"longdesc": "Set it for tileable photos, so blurs wrap around the edges",
+					"name": "tileable",
+					"shortdesc": "Tileable",
+					"type": "linked_control"
+				},
+				{
+					"label": "Delight",
+					"linked_widgets": [
+						{
+							"node": "maps",
+							"widget": "delight"
+						}
+					],
+					"longdesc": "How much large scale lighting is removed from the albedo",
+					"name": "delight",
+					"shortdesc": "Delight",
+					"type": "linked_control"
+				},
+				{
+					"label": "Height contrast",
+					"linked_widgets": [
+						{
+							"node": "maps",
+							"widget": "height_contrast"
+						}
+					],
+					"longdesc": "The contrast of the height map",
+					"name": "height_contrast",
+					"shortdesc": "Height contrast",
+					"type": "linked_control"
+				},
+				{
+					"label": "Invert height",
+					"linked_widgets": [
+						{
+							"node": "maps",
+							"widget": "invert"
+						}
+					],
+					"longdesc": "Makes dark areas high instead of low",
+					"name": "invert",
+					"shortdesc": "Invert height",
+					"type": "linked_control"
+				},
+				{
+					"label": "Normal strength",
+					"linked_widgets": [
+						{
+							"node": "normal",
+							"widget": "strength"
+						}
+					],
+					"longdesc": "The strength of the normal map",
+					"name": "normal_strength",
+					"shortdesc": "Normal strength",
+					"type": "linked_control"
+				},
+				{
+					"label": "Roughness min",
+					"linked_widgets": [
+						{
+							"node": "maps",
+							"widget": "roughness_min"
+						}
+					],
+					"longdesc": "The roughness of the brightest areas",
+					"name": "roughness_min",
+					"shortdesc": "Roughness min",
+					"type": "linked_control"
+				},
+				{
+					"label": "Roughness max",
+					"linked_widgets": [
+						{
+							"node": "maps",
+							"widget": "roughness_max"
+						}
+					],
+					"longdesc": "The roughness of the darkest areas",
+					"name": "roughness_max",
+					"shortdesc": "Roughness max",
+					"type": "linked_control"
+				},
+				{
+					"label": "AO strength",
+					"linked_widgets": [
+						{
+							"node": "maps",
+							"widget": "ao"
+						}
+					],
+					"longdesc": "The strength of the ambient occlusion",
+					"name": "ao",
+					"shortdesc": "AO strength",
+					"type": "linked_control"
+				}
+			]
+		}
+	],
+	"parameters": {
+		"ao": 1.0,
+		"delight": 1.0,
+		"height_contrast": 1.0,
+		"invert": false,
+		"normal_strength": 0.2,
+		"radius": 0.05,
+		"roughness_max": 0.9,
+		"roughness_min": 0.4,
+		"size": 10,
+		"tileable": true
+	},
+	"seed_int": 0,
+	"shortdesc": "Photo to Material",
+	"type": "graph"
+}

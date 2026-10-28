@@ -1,0 +1,396 @@
+{
+	"connections": [
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "mean",
+			"to_port": 0
+		},
+		{
+			"from": "mean",
+			"from_port": 0,
+			"to": "mean_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "patches",
+			"to_port": 0
+		},
+		{
+			"from": "mean_buffer",
+			"from_port": 0,
+			"to": "patches",
+			"to_port": 1
+		},
+		{
+			"from": "patches",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
+		}
+	],
+	"label": "Patch Tiling",
+	"longdesc": "Makes an image tileable by recombining random patches of it, blended with soft edges while keeping its contrast (works best on stochastic textures such as gravel, grass or noise)",
+	"name": "make_tileable_patches",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "gen_inputs",
+			"node_position": {
+				"x": -600,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The image",
+					"name": "in",
+					"shortdesc": "Input",
+					"type": "rgba"
+				}
+			],
+			"seed_int": 0,
+			"type": "ios"
+		},
+		{
+			"name": "mean",
+			"node_position": {
+				"x": -400,
+				"y": 150
+			},
+			"parameters": {},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "",
+				"inputs": [
+					{
+						"default": "vec4(0.0)",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "rgba"
+					}
+				],
+				"instance": [
+					"vec4 $(name)_mean(vec2 uv) {",
+					"\tvec4 sum = vec4(0.0);",
+					"\tfor (int y = 0; y < 64; ++y) {",
+					"\t\tfor (int x = 0; x < 64; ++x) {",
+					"\t\t\tsum += $in((vec2(float(x), float(y))+vec2(0.5))/64.0);",
+					"\t\t}",
+					"\t}",
+					"\treturn sum/4096.0;",
+					"}"
+				],
+				"longdesc": "Mean",
+				"name": "Mean",
+				"outputs": [
+					{
+						"longdesc": "The average of the image",
+						"rgba": "$(name)_mean($uv)",
+						"shortdesc": "Mean",
+						"type": "rgba"
+					}
+				],
+				"parameters": [],
+				"shortdesc": "Mean"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "mean_buffer",
+			"node_position": {
+				"x": -200,
+				"y": 150
+			},
+			"parameters": {
+				"size": 4
+			},
+			"seed_int": 0,
+			"type": "buffer",
+			"version": 1
+		},
+		{
+			"name": "patches",
+			"node_position": {
+				"x": 0,
+				"y": 0
+			},
+			"parameters": {
+				"cells": 4.0,
+				"contrast": 1.0,
+				"jitter": 1.0,
+				"rotation": 0.0,
+				"softness": 0.3
+			},
+			"seed_int": 0,
+			"shader_model": {
+				"code": "",
+				"global": "// Integer hash (PCG3D, Jarzynski and Olano 2020): the same values on every GPU\nuvec3 mm_patch_tiling_hash(uvec3 v) {\n\tv = v*1664525u+1013904223u;\n\tv.x += v.y*v.z;\n\tv.y += v.z*v.x;\n\tv.z += v.x*v.y;\n\tv ^= v >> 16u;\n\tv.x += v.y*v.z;\n\tv.y += v.z*v.x;\n\tv.z += v.x*v.y;\n\treturn v;\n}\n\n// 3 random values in [0, 1) for a cell\nvec3 mm_patch_tiling_random(ivec2 cell, float seed) {\n\treturn vec3(mm_patch_tiling_hash(uvec3(uvec2(cell), floatBitsToUint(seed))) >> 8u)/16777216.0;\n}\n",
+				"inputs": [
+					{
+						"default": "vec4(0.5)",
+						"function": true,
+						"label": "",
+						"longdesc": "The image",
+						"name": "in",
+						"shortdesc": "Input",
+						"type": "rgba"
+					},
+					{
+						"default": "vec4(0.5)",
+						"function": true,
+						"label": "",
+						"longdesc": "The average of the image",
+						"name": "mean",
+						"shortdesc": "Mean",
+						"type": "rgba"
+					}
+				],
+				"instance": [
+					"// Each cell of a cells x cells grid (repeating, so the result tiles) has a patch",
+					"// centered near its center, that shows a random area of the image. Each pixel blends",
+					"// the patches of the 3x3 cells around it, with gaussian weights that fade out before",
+					"// the distance where a patch leaves the 3x3 neighborhood (so there are no seams)",
+					"vec4 $(name)_patches(vec2 uv) {",
+					"\tfloat cells = max(floor($cells+0.5), 1.0);",
+					"\tint n = int(cells);",
+					"\tvec2 p = uv*cells;",
+					"\tvec2 cell = floor(p);",
+					"\t// Patches show areas away from the edges of the image",
+					"\tfloat margin = clamp(1.0/cells, 0.1, 0.4);",
+					"\tfloat inv_2s2 = 0.5/($softness*$softness);",
+					"\tvec2 d[9];",
+					"\tvec3 r[9];",
+					"\tfloat d2min = 1e9;",
+					"\tfor (int i = 0; i < 9; ++i) {",
+					"\t\tvec2 c = cell+vec2(float(i%3-1), float(i/3-1));",
+					"\t\t// An integer modulo: a float mod() can return cells instead of 0",
+					"\t\tivec2 wrapped = ((ivec2(c)%n)+ivec2(n))%n;",
+					"\t\tr[i] = mm_patch_tiling_random(wrapped, $seed);",
+					"\t\tvec2 j = mm_patch_tiling_random(wrapped+ivec2(7919, 104729), $seed).xy;",
+					"\t\td[i] = p-(c+vec2(0.5)+0.5*$jitter*(j-vec2(0.5)));",
+					"\t\td2min = min(d2min, dot(d[i], d[i]));",
+					"\t}",
+					"\tvec4 sum = vec4(0.0);",
+					"\tfloat weight_sum = 0.0;",
+					"\tfloat weight2_sum = 0.0;",
+					"\tfor (int i = 0; i < 9; ++i) {",
+					"\t\tfloat d2 = dot(d[i], d[i]);",
+					"\t\t// Relative to the nearest patch, so weights never all underflow",
+					"\t\tfloat w = exp(-(d2-d2min)*inv_2s2)*(1.0-smoothstep(1.0, 1.25, sqrt(d2)));",
+					"\t\tfloat a = 6.28318530718*$rotation*(r[i].z-0.5);",
+					"\t\tvec2 rd = mat2(vec2(cos(a), sin(a)), vec2(-sin(a), cos(a)))*d[i];",
+					"\t\tvec2 source = mix(vec2(margin), vec2(1.0-margin), r[i].xy)+rd/cells;",
+					"\t\t// Mirror out of the image",
+					"\t\tsource = vec2(1.0)-abs(vec2(1.0)-mod(source, vec2(2.0)));",
+					"\t\tsum += w*$in(source);",
+					"\t\tweight_sum += w;",
+					"\t\tweight2_sum += w*w;",
+					"\t}",
+					"\tvec4 average = sum/weight_sum;",
+					"\tvec4 mean = $mean(vec2(0.5));",
+					"\t// Histogram preserving blending (Heitz and Neyret 2018)",
+					"\tvec4 preserving = mean+(sum-weight_sum*mean)/sqrt(weight2_sum);",
+					"\treturn clamp(mix(average, preserving, $contrast), vec4(0.0), vec4(1.0));",
+					"}"
+				],
+				"longdesc": "Patch Tiling",
+				"name": "Patch Tiling",
+				"outputs": [
+					{
+						"longdesc": "The tileable image",
+						"rgba": "$(name)_patches($uv)",
+						"shortdesc": "Output",
+						"type": "rgba"
+					}
+				],
+				"parameters": [
+					{
+						"control": "None",
+						"default": 4.0,
+						"label": "Patches",
+						"longdesc": "The number of patches in each direction",
+						"max": 16.0,
+						"min": 1.0,
+						"name": "cells",
+						"shortdesc": "Patches",
+						"step": 1.0,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 0.3,
+						"label": "Softness",
+						"longdesc": "The softness of the transitions between patches",
+						"max": 1.0,
+						"min": 0.05,
+						"name": "softness",
+						"shortdesc": "Softness",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Jitter",
+						"longdesc": "How much the patches' centers are moved randomly",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "jitter",
+						"shortdesc": "Jitter",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 0.0,
+						"label": "Rotation",
+						"longdesc": "The random rotation of the patches (1 is any angle); keep it at 0 for directional images",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "rotation",
+						"shortdesc": "Rotation",
+						"step": 0.01,
+						"type": "float"
+					},
+					{
+						"control": "None",
+						"default": 1.0,
+						"label": "Keep contrast",
+						"longdesc": "Keeps the contrast of the image where patches are blended (histogram preserving blending), instead of averaging them",
+						"max": 1.0,
+						"min": 0.0,
+						"name": "contrast",
+						"shortdesc": "Keep contrast",
+						"step": 0.01,
+						"type": "float"
+					}
+				],
+				"shortdesc": "Patch Tiling"
+			},
+			"type": "shader"
+		},
+		{
+			"name": "gen_outputs",
+			"node_position": {
+				"x": 250,
+				"y": 0
+			},
+			"parameters": {},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The tileable image",
+					"name": "out",
+					"shortdesc": "Output",
+					"type": "rgba"
+				}
+			],
+			"seed_int": 0,
+			"type": "ios"
+		},
+		{
+			"name": "gen_parameters",
+			"node_position": {
+				"x": 0,
+				"y": -300
+			},
+			"parameters": {
+				"cells": 4.0,
+				"contrast": 1.0,
+				"jitter": 1.0,
+				"rotation": 0.0,
+				"softness": 0.3
+			},
+			"seed_int": 0,
+			"type": "remote",
+			"widgets": [
+				{
+					"label": "Patches",
+					"linked_widgets": [
+						{
+							"node": "patches",
+							"widget": "cells"
+						}
+					],
+					"longdesc": "The number of patches in each direction",
+					"name": "cells",
+					"shortdesc": "Patches",
+					"type": "linked_control"
+				},
+				{
+					"label": "Softness",
+					"linked_widgets": [
+						{
+							"node": "patches",
+							"widget": "softness"
+						}
+					],
+					"longdesc": "The softness of the transitions between patches",
+					"name": "softness",
+					"shortdesc": "Softness",
+					"type": "linked_control"
+				},
+				{
+					"label": "Jitter",
+					"linked_widgets": [
+						{
+							"node": "patches",
+							"widget": "jitter"
+						}
+					],
+					"longdesc": "How much the patches' centers are moved randomly",
+					"name": "jitter",
+					"shortdesc": "Jitter",
+					"type": "linked_control"
+				},
+				{
+					"label": "Rotation",
+					"linked_widgets": [
+						{
+							"node": "patches",
+							"widget": "rotation"
+						}
+					],
+					"longdesc": "The random rotation of the patches (1 is any angle); keep it at 0 for directional images",
+					"name": "rotation",
+					"shortdesc": "Rotation",
+					"type": "linked_control"
+				},
+				{
+					"label": "Keep contrast",
+					"linked_widgets": [
+						{
+							"node": "patches",
+							"widget": "contrast"
+						}
+					],
+					"longdesc": "Keeps the contrast of the image where patches are blended (histogram preserving blending), instead of averaging them",
+					"name": "contrast",
+					"shortdesc": "Keep contrast",
+					"type": "linked_control"
+				}
+			]
+		}
+	],
+	"parameters": {
+		"cells": 4.0,
+		"contrast": 1.0,
+		"jitter": 1.0,
+		"rotation": 0.0,
+		"softness": 0.3
+	},
+	"seed_int": 0,
+	"shortdesc": "Patch Tiling",
+	"type": "graph"
+}
