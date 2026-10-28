@@ -155,6 +155,9 @@ func setup_controls(filter : String = "") -> void:
 			param_defs = generator.get_filtered_parameter_defs(filter)
 		else:
 			param_defs = generator.get_parameter_defs()
+		# Generators can leave out parameters they do not currently use
+		if generator.has_method("get_preview_2d_parameter_defs"):
+			param_defs = generator.get_preview_2d_parameter_defs(param_defs)
 		var float_param_defs = []
 		var complex_param_defs = []
 		for p in param_defs:
