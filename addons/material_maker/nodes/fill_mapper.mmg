@@ -1,0 +1,232 @@
+{
+	"name": "fill_mapper",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"mode": 2,
+		"offset_random": 0.0,
+		"probability": 1.0,
+		"rotation": 0.0,
+		"rotation_random": 0.0,
+		"scale": 0.9,
+		"scale_random": 0.0,
+		"value_random": 0.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "vec4 $(name_uv)_map = $(name)_map($uv);",
+		"global": [
+			"// Integer hash (PCG3D, Jarzynski and Olano 2020): the same values on every GPU",
+			"uvec3 mm_fill_mapper_pcg3d(uvec3 v) {",
+			"\tv = v*1664525u+1013904223u;",
+			"\tv.x += v.y*v.z;",
+			"\tv.y += v.z*v.x;",
+			"\tv.z += v.x*v.y;",
+			"\tv ^= v >> 16u;",
+			"\tv.x += v.y*v.z;",
+			"\tv.y += v.z*v.x;",
+			"\tv.z += v.x*v.y;",
+			"\treturn v;",
+			"}",
+			"",
+			"// Three random values in [0, 1) for the area whose bounding box is bb (from a",
+			"// Fill node), a seed and a salt. The bounding box is quantized, so every pixel",
+			"// of an area gets the same values, and its position is wrapped, so they are",
+			"// the same in every tile",
+			"vec3 mm_fill_mapper_rand3(vec4 bb, float seed, uint salt) {",
+			"\tuvec4 q = uvec4(ivec4(round(bb*65536.0)));",
+			"\tq.xy &= uvec2(65535u);",
+			"\tuvec3 h = mm_fill_mapper_pcg3d(uvec3(q.xy, floatBitsToUint(seed)));",
+			"\th = mm_fill_mapper_pcg3d(h^uvec3(q.zw, salt));",
+			"\treturn vec3(h >> 8u)/16777216.0;",
+			"}"
+		],
+		"inputs": [
+			{
+				"default": "vec4(0.0)",
+				"function": true,
+				"label": "",
+				"longdesc": "The input fill data, to be connected to the output of a Fill node",
+				"name": "in",
+				"shortdesc": "Fill",
+				"type": "fill"
+			},
+			{
+				"default": "vec4(vec3(1.0), clamp(1.0-2.0*length($uv-vec2(0.5)), 0.0, 1.0))",
+				"function": true,
+				"label": "",
+				"longdesc": "The pattern placed in each area (its alpha is its coverage)",
+				"name": "pattern",
+				"shortdesc": "Pattern",
+				"type": "rgba"
+			}
+		],
+		"instance": [
+			"vec4 $(name)_map(vec2 uv) {",
+			"\tvec4 bb = $in(uv);",
+			"\t// Outlines (and empty areas) have no pattern",
+			"\tif (bb.z <= 0.0 || bb.w <= 0.0) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\tvec3 r1 = mm_fill_mapper_rand3(bb, $seed, 1u);",
+			"\tvec3 r2 = mm_fill_mapper_rand3(bb, $seed, 2u);",
+			"\tif (r1.x >= $probability) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\t// The pattern's frame: the bounding box (Stretch), a square around it (Square)",
+			"\t// or a square inside it (Fit)",
+			"\tvec2 frame = bb.zw;",
+			"\tif ($mode == 1) {",
+			"\t\tframe = vec2(max(bb.z, bb.w));",
+			"\t} else if ($mode == 2) {",
+			"\t\tframe = vec2(min(bb.z, bb.w));",
+			"\t}",
+			"\tfloat s = $scale*(1.0-$scale_random*r2.y);",
+			"\tif (s <= 0.0) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\t// Position relative to the pattern's center (fract handles areas that wrap",
+			"\t// around the texture's edges)",
+			"\tvec2 p = fract(uv-bb.xy)-0.5*bb.zw-(r1.yz-vec2(0.5))*2.0*$offset_random*bb.zw;",
+			"\tfloat a = radians($rotation+$rotation_random*(2.0*r2.x-1.0));",
+			"\t// Same direction as the Transform node's rotation",
+			"\tp = mat2(vec2(cos(a), -sin(a)), vec2(sin(a), cos(a)))*p;",
+			"\tvec2 local = p/(frame*s)+vec2(0.5);",
+			"\tif (any(lessThan(local, vec2(0.0))) || any(greaterThanEqual(local, vec2(1.0)))) {",
+			"\t\treturn vec4(0.0);",
+			"\t}",
+			"\tvec4 color = $pattern(local);",
+			"\tcolor.rgb *= 1.0-$value_random*r2.z;",
+			"\treturn color;",
+			"}"
+		],
+		"longdesc": "A fill companion node that places a pattern in each filled area, fitted to the area's bounding box, with a random rotation, size, offset and value per area",
+		"name": "Fill Mapper",
+		"outputs": [
+			{
+				"longdesc": "The patterns placed in the areas, on a transparent background",
+				"rgba": "$(name_uv)_map",
+				"shortdesc": "Output",
+				"type": "rgba"
+			},
+			{
+				"f": "$(name_uv)_map.a",
+				"longdesc": "The coverage of the patterns",
+				"shortdesc": "Mask",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": 2,
+				"label": "Mode",
+				"longdesc": "How the pattern is fitted to each area:\n- Stretch: stretched to the area's bounding box\n- Square: a square that covers the bounding box (like the Square mode of Fill to UV)\n- Fit: the largest square inside the bounding box",
+				"name": "mode",
+				"shortdesc": "Mode",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Stretch",
+						"value": "0"
+					},
+					{
+						"name": "Square",
+						"value": "1"
+					},
+					{
+						"name": "Fit",
+						"value": "2"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 0.9,
+				"label": "Scale",
+				"longdesc": "The size of the patterns, relative to their area",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "scale",
+				"shortdesc": "Scale",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Scale random",
+				"longdesc": "The random reduction of the size of each pattern",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "scale_random",
+				"shortdesc": "Scale random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation",
+				"longdesc": "The rotation of the patterns, in degrees",
+				"max": 180.0,
+				"min": -180.0,
+				"name": "rotation",
+				"shortdesc": "Rotation",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Rotation random",
+				"longdesc": "The random rotation of each pattern, in degrees",
+				"max": 180.0,
+				"min": 0.0,
+				"name": "rotation_random",
+				"shortdesc": "Rotation random",
+				"step": 1.0,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Offset random",
+				"longdesc": "The random offset of each pattern, relative to the size of its area",
+				"max": 0.5,
+				"min": 0.0,
+				"name": "offset_random",
+				"shortdesc": "Offset random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Value random",
+				"longdesc": "The random darkening of each pattern",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "value_random",
+				"shortdesc": "Value random",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Probability",
+				"longdesc": "The probability that an area has a pattern",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "probability",
+				"shortdesc": "Probability",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Fill Mapper"
+	},
+	"type": "shader"
+}
