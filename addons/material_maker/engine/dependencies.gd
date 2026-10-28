@@ -47,6 +47,10 @@ var render_queue_size : int = 0
 ## their buffers are kept when they leave the tree
 var moving_nodes : bool = false
 
+## Incremented whenever a dependency is updated (e.g. each iteration of an
+## Iterate Buffer), so waiting code can tell slow renders from stuck ones
+var render_progress : int = 0
+
 ## When buffers are freed after their last reader was rendered (see
 ## design/buffer_lifetimes.md)
 enum { RELEASE_NEVER, RELEASE_DURING_EXPORTS, RELEASE_ALWAYS }
@@ -176,6 +180,7 @@ func buffer_retry(buffer_name : String) -> void:
 		buffer_invalidate(buffer_name)
 
 func dependency_update(dependency_name : String, value = null, internal : bool = false):
+	render_progress += 1
 	var need_update : bool = false
 	var is_buffer_just_updated : bool = false
 	if value != null:

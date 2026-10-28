@@ -781,12 +781,18 @@ func export_material_with_profile(prefix : String, profile : String, size : int 
 func wait_for_render_queue() -> void:
 	const STUCK_TIMEOUT_MS : int = 60000
 	var render_queue_size : int = mm_deps.get_render_queue_size()
+	var render_progress : int = mm_deps.render_progress
 	var last_change : int = Time.get_ticks_msec()
 	while render_queue_size > 0:
 		mm_deps.update()
-		await mm_deps.updated
-		if render_queue_size != mm_deps.get_render_queue_size():
+		# Poll instead of awaiting mm_deps.updated: an update loop that is
+		# replaced (e.g. when a buffer being rendered is deleted) never emits it
+		await mm_deps.get_tree().process_frame
+		if render_queue_size != mm_deps.get_render_queue_size() or render_progress != mm_deps.render_progress:
+			# Slow buffers (e.g. Iterate Buffers with many iterations) keep
+			# the queue size, but make progress
 			render_queue_size = mm_deps.get_render_queue_size()
+			render_progress = mm_deps.render_progress
 			last_change = Time.get_ticks_msec()
 		elif Time.get_ticks_msec()-last_change > STUCK_TIMEOUT_MS:
 			push_warning("Exporting while %d buffer(s) are still rendering" % render_queue_size)
