@@ -8,7 +8,8 @@
 	"type": "shader",
 	"parameters": {
 		"elevation": 45.0,
-		"strength": 1.0
+		"strength": 1.0,
+		"srgb": true
 	},
 	"shader_model": {
 		"code": "vec4 $(name_uv)_ps = $(name)_solve($uv);",
@@ -55,15 +56,27 @@
 			"// Lambertian photometric stereo with 4 lights at the same elevation, from",
 			"// the right, top, left and bottom of the image. The least squares solution",
 			"// for g = albedo*normal (x right, y down, z towards the camera) is:",
+			"float $(name)_to_linear(float c) {",
+			"\tc = max(c, 0.0);",
+			"\treturn $srgb ? (c <= 0.04045 ? c/12.92 : pow((c+0.055)/1.055, 2.4)) : c;",
+			"}",
+			"",
+			"float $(name)_from_linear(float c) {",
+			"\tc = max(c, 0.0);",
+			"\treturn $srgb ? (c <= 0.0031308 ? 12.92*c : 1.055*pow(c, 1.0/2.4)-0.055) : c;",
+			"}",
+			"",
 			"vec4 $(name)_solve(vec2 uv) {",
 			"\tfloat e = radians(clamp($elevation, 5.0, 85.0));",
-			"\tfloat i_east = $east(uv);",
-			"\tfloat i_north = $north(uv);",
-			"\tfloat i_west = $west(uv);",
-			"\tfloat i_south = $south(uv);",
+			"\tfloat i_east = $(name)_to_linear($east(uv));",
+			"\tfloat i_north = $(name)_to_linear($north(uv));",
+			"\tfloat i_west = $(name)_to_linear($west(uv));",
+			"\tfloat i_south = $(name)_to_linear($south(uv));",
 			"\tvec3 g = vec3((i_east-i_west)/(2.0*cos(e)), (i_south-i_north)/(2.0*cos(e)), (i_east+i_north+i_west+i_south)/(4.0*sin(e)));",
 			"\tfloat albedo = length(g);",
 			"\tvec3 n = albedo > 0.00001 ? g/albedo : vec3(0.0, 0.0, 1.0);",
+			"\t// Normals that point into the surface (noise, shadows) are moved onto it",
+			"\tn.z = max(n.z, 0.001);",
 			"\tn.xy *= $strength;",
 			"\tn = normalize(n);",
 			"\treturn vec4(n, albedo);",
@@ -79,7 +92,7 @@
 				"type": "rgb"
 			},
 			{
-				"f": "$(name_uv)_ps.w",
+				"f": "$(name)_from_linear($(name_uv)_ps.w)",
 				"longdesc": "The albedo (diffuse reflectance)",
 				"shortdesc": "Albedo",
 				"type": "f"
@@ -109,6 +122,14 @@
 				"shortdesc": "Strength",
 				"step": 0.01,
 				"type": "float"
+			},
+			{
+				"default": true,
+				"label": "sRGB photos",
+				"longdesc": "Set it for photos in sRGB (most photos and image files): they are linearized first, as Lambert's law needs linear values, and the albedo is converted back to sRGB",
+				"name": "srgb",
+				"shortdesc": "sRGB photos",
+				"type": "boolean"
 			}
 		],
 		"shortdesc": "Photometric Stereo"

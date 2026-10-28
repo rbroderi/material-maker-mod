@@ -29,6 +29,9 @@ The **Photometric Stereo** node has the following parameters:
 
 * **Elevation** is the elevation of the lights above the surface, in degrees
 * **Strength** multiplies the slopes of the normal map
+* **sRGB photos** linearizes the photos first (Lambert's law needs linear values) and
+  converts the albedo back to sRGB. Set it for most photos and image files, and clear it
+  for photos that are already linear
 
 Example images
 ++++++++++++++
