@@ -180,20 +180,23 @@ func setup_controls(filter : String = "") -> void:
 				%ComplexParameters.clear()
 				%ComplexParameters.visible = false
 			_:
-				if %ComplexParameters.item_count == complex_param_defs.size():
-					var changed : bool = false
+				var changed : bool = %ComplexParameters.item_count != complex_param_defs.size()
+				if not changed:
 					for i in %ComplexParameters.item_count:
 						if %ComplexParameters.get_item_text(i) != complex_param_defs[i].name:
 							changed = true
-					if not changed:
-						return
-				edited_parameter = [complex_param_defs[0]]
-				%ComplexParameters.clear()
-				for i in range(complex_param_defs.size()):
-					%ComplexParameters.add_item(complex_param_defs[i].name, i)
-					%ComplexParameters.set_item_metadata(i, complex_param_defs[i])
-				%ComplexParameters.selected = 0
-				%ComplexParameters.visible = true
+				if changed:
+					edited_parameter = [complex_param_defs[0]]
+					%ComplexParameters.clear()
+					for i in range(complex_param_defs.size()):
+						%ComplexParameters.add_item(complex_param_defs[i].name, i)
+						%ComplexParameters.set_item_metadata(i, complex_param_defs[i])
+					%ComplexParameters.selected = 0
+					%ComplexParameters.visible = true
+				else:
+					# Same parameters (same node, or another node of the same type): keep the
+					# selected parameter, but edit it in the current generator
+					edited_parameter = [complex_param_defs[max(%ComplexParameters.selected, 0)]]
 
 		for e in [ $PolygonEditor, $SplinesEditor, $PixelsEditor, $LatticeEditor ]:
 			e.setup_control(generator, edited_parameter)
