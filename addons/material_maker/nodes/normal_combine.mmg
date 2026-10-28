@@ -1,0 +1,136 @@
+{
+	"name": "normal_combine",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"format": 0,
+		"mode": 0,
+		"strength": 1.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": [
+			"// Combines 2 unit normals (z >= 0): 0 is Reoriented Normal Mapping (Barre-Brisebois and Hill),",
+			"// 1 is Whiteout and 2 is UDN",
+			"vec3 mm_normal_combine(vec3 base, vec3 detail, int mode) {",
+			"\tvec3 r;",
+			"\tif (mode == 0) {",
+			"\t\tvec3 t = base+vec3(0.0, 0.0, 1.0);",
+			"\t\tvec3 u = detail*vec3(-1.0, -1.0, 1.0);",
+			"\t\tr = t*dot(t, u)/t.z-u;",
+			"\t} else if (mode == 1) {",
+			"\t\tr = vec3(base.xy+detail.xy, base.z*detail.z);",
+			"\t} else {",
+			"\t\tr = vec3(base.xy+detail.xy, base.z);",
+			"\t}",
+			"\treturn mm_normal_safe_normalize(r);",
+			"}",
+			""
+		],
+		"includes": [
+			"normal_normalize"
+		],
+		"inputs": [
+			{
+				"default": "vec3(0.5, 0.5, $format == 0 ? 0.0 : 1.0)",
+				"function": true,
+				"label": "Base",
+				"longdesc": "The base normal map",
+				"name": "base",
+				"shortdesc": "Base",
+				"type": "rgb"
+			},
+			{
+				"default": "vec3(0.5, 0.5, $format == 0 ? 0.0 : 1.0)",
+				"function": true,
+				"label": "Detail",
+				"longdesc": "The detail normal map, applied over the base",
+				"name": "detail",
+				"shortdesc": "Detail",
+				"type": "rgb"
+			}
+		],
+		"instance": [
+			"vec3 $(name)_combine(vec2 uv) {",
+			"\tfloat z_sign = ($format == 0 ? -1.0 : 1.0);",
+			"\tvec3 base = mm_normal_decode($base(uv), z_sign);",
+			"\tvec3 detail = mm_normal_decode($detail(uv), z_sign);",
+			"\tdetail = mm_normal_safe_normalize(vec3(detail.xy*$strength, detail.z));",
+			"\treturn mm_normal_encode(mm_normal_combine(base, detail, $mode), z_sign);",
+			"}"
+		],
+		"longdesc": "Combines a detail normal map with a base normal map, with the Reoriented Normal Mapping (RNM), Whiteout or UDN methods",
+		"name": "Normal Combine",
+		"outputs": [
+			{
+				"longdesc": "The combined normal map",
+				"rgb": "$(name)_combine($uv)",
+				"shortdesc": "Output",
+				"type": "rgb"
+			}
+		],
+		"parameters": [
+			{
+				"default": 0,
+				"label": "Mode",
+				"longdesc": "The method used to combine the normal maps. RNM rotates the detail normals to follow the base (the most accurate), Whiteout and UDN are cheaper approximations that flatten the details on slopes, UDN more than Whiteout",
+				"name": "mode",
+				"shortdesc": "Mode",
+				"type": "enum",
+				"values": [
+					{
+						"name": "RNM",
+						"value": "0"
+					},
+					{
+						"name": "Whiteout",
+						"value": "1"
+					},
+					{
+						"name": "UDN",
+						"value": "2"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Strength",
+				"longdesc": "The strength of the detail normal map (0 keeps the base normal map)",
+				"max": 2.0,
+				"min": 0.0,
+				"name": "strength",
+				"shortdesc": "Strength",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Format",
+				"longdesc": "The format of the normal maps. The default format is the one of the Normal Map node's default output (z is inverted). OpenGL and DirectX normal maps store z as is, and the result does not depend on the orientation of x and y, as long as all inputs use the same format",
+				"name": "format",
+				"shortdesc": "Format",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Default",
+						"value": "0"
+					},
+					{
+						"name": "OpenGL",
+						"value": "1"
+					},
+					{
+						"name": "DirectX",
+						"value": "2"
+					}
+				]
+			}
+		],
+		"shortdesc": "Normal Combine"
+	},
+	"type": "shader"
+}
