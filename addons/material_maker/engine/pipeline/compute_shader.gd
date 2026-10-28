@@ -105,7 +105,10 @@ func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits :
 	if is_32_bits:
 		output_texture_type |= 2
 	elif is_8_bits:
-		output_texture_type = TEXTURE_TYPE_R8 if (shader_code.output_type == "f") else TEXTURE_TYPE_RGBA8
+		var texture_type_8_bits : int = TEXTURE_TYPE_R8 if (shader_code.output_type == "f") else TEXTURE_TYPE_RGBA8
+		# Fall back to 16 bits floats if the GPU does not support 8 bits storage
+		if is_output_texture_type_supported(texture_type_8_bits):
+			output_texture_type = texture_type_8_bits
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 	
 	return await set_shader_from_shadercode_ext(shader_template, shader_code, output_textures, extra_parameters)

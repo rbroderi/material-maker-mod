@@ -115,6 +115,13 @@ func get_buffer_size() -> int:
 			return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
 	return int(get_parameter("size"))
 
+## Returns true if the buffer is stored as 8 bits (if the GPU does not
+## support 8 bits storage, 16 bits floats are used instead)
+func is_8_bits_effective() -> bool:
+	if version != VERSION_COMPLEX or not get_parameter("f8") or get_parameter("f32"):
+		return false
+	return MMPipeline.is_output_texture_type_supported(MMPipeline.TEXTURE_TYPE_R8 if is_greyscale else MMPipeline.TEXTURE_TYPE_RGBA8)
+
 ## Returns false for parameters that are ignored with the current settings
 ## (so the node can grey them out)
 func is_parameter_used(n : String) -> bool:
@@ -132,14 +139,18 @@ func is_parameter_used(n : String) -> bool:
 ## The size and format of the buffer, shown under the node
 func get_badge() -> String:
 	var format : String = "16F"
+	var note : String = ""
 	if version == VERSION_COMPLEX:
 		if get_parameter("f32"):
 			format = "32F"
 		elif get_parameter("f8"):
-			format = "8 bits"
+			if is_8_bits_effective():
+				format = "8 bits"
+			else:
+				note = " (8 bits unsupported)"
 	var dimensions : Vector2i = get_buffer_dimensions()
 	var size_text : String = "%d px" % dimensions.x if dimensions.x == dimensions.y else "%dx%d px" % [ dimensions.x, dimensions.y ]
-	return "%s  %s %s" % [ size_text, format, "gray" if is_greyscale else "RGBA" ]
+	return "%s  %s %s%s" % [ size_text, format, "gray" if is_greyscale else "RGBA", note ]
 
 ## Keywords of node types and input names that need more than 8 bits of precision
 const NORMAL_KEYWORDS : Array[String] = [ "normal" ]
@@ -148,7 +159,7 @@ const HEIGHT_KEYWORDS : Array[String] = [ "height", "depth", "occlusion", "curva
 ## A warning when an 8 bits buffer feeds a node that computes normals or uses
 ## heights, since 256 levels show as steps there. Colors and masks are fine.
 func get_precision_warning() -> String:
-	if version != VERSION_COMPLEX or get_parameter("f32") or not get_parameter("f8"):
+	if not is_8_bits_effective():
 		return ""
 	var parent : Node = get_parent()
 	if not parent is MMGenGraph:
