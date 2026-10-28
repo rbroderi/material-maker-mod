@@ -117,12 +117,16 @@ func is_parameter_used(n : String) -> bool:
 ## The size and format of the buffer, shown under the node
 func get_badge() -> String:
 	var format : String = "16F"
+	var note : String = ""
 	if version == VERSION_COMPLEX:
 		if get_parameter("f32"):
 			format = "32F"
 		elif get_parameter("f8"):
-			format = "8 bits"
-	return "%d px  %s %s" % [ 1 << get_buffer_size(), format, "gray" if is_greyscale else "RGBA" ]
+			if is_8_bits_effective():
+				format = "8 bits"
+			else:
+				note = " (8 bits unsupported)"
+	return "%d px  %s %s%s" % [ 1 << get_buffer_size(), format, "gray" if is_greyscale else "RGBA", note ]
 
 ## Keywords of node types and input names that need more than 8 bits of precision
 const NORMAL_KEYWORDS : Array[String] = [ "normal" ]
@@ -131,7 +135,7 @@ const HEIGHT_KEYWORDS : Array[String] = [ "height", "depth", "occlusion", "curva
 ## A warning when an 8 bits buffer feeds a node that computes normals or uses
 ## heights, since 256 levels show as steps there. Colors and masks are fine.
 func get_precision_warning() -> String:
-	if version != VERSION_COMPLEX or get_parameter("f32") or not get_parameter("f8"):
+	if not is_8_bits_effective():
 		return ""
 	var parent : Node = get_parent()
 	if not parent is MMGenGraph:

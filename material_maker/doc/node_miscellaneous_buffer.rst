@@ -56,3 +56,5 @@ the node. The *texture resolution* is greyed out in *Relative to output* mode, a
 *size offset* in *Absolute* mode. An orange warning is shown when an 8 bits Advanced Buffer
 feeds a node that computes normals or uses heights (directly, through reroutes or through
 groups), because 256 levels are usually not enough for them and steps become visible.
+If the GPU does not support 8 bits storage, 16 bits floats are used instead, and the badge
+shows *16F (8 bits unsupported)*.
