@@ -75,6 +75,10 @@ const TEXTURE_TYPE : Array[Dictionary] = [
 	{ decl="rgba8", data_format=RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM, image_format=Image.FORMAT_RGBA8, channels=4, bytes_per_channel=1 }
 ]
 
+const OUTPUT_TEXTURE_USAGE_BITS : int = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+
+static var output_texture_type_supported : Dictionary[int, bool] = {}
+
 
 var parameters : Dictionary
 var parameter_values : PackedByteArray
@@ -407,9 +411,24 @@ func create_output_texture(rd : RenderingDevice, texture_size : Vector2i, textur
 	if is_framebuffer:
 		usage_bits =  RenderingDevice.TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 	else:
-		usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+		usage_bits = OUTPUT_TEXTURE_USAGE_BITS
 	
 	return create_texture(rd, texture_size, texture_type, usage_bits)
+
+## Returns true if the GPU supports the texture type for compute shader outputs
+## (the result is cached, and a warning is shown once if it is not supported)
+static func is_output_texture_type_supported(texture_type : int) -> bool:
+	if not output_texture_type_supported.has(texture_type):
+		var rd : RenderingDevice = mm_renderer.rendering_device
+		if rd == null:
+			# Not known yet (the rendering device is created by the rendering thread)
+			return true
+		var data_format : int = TEXTURE_TYPE[texture_type].data_format
+		var supported : bool = rd.texture_is_format_supported_for_usage(data_format, OUTPUT_TEXTURE_USAGE_BITS)
+		if not supported:
+			push_warning("%s textures are not supported by the GPU, using 16 bits floats instead" % TEXTURE_TYPE[texture_type].decl)
+		output_texture_type_supported[texture_type] = supported
+	return output_texture_type_supported[texture_type]
 
 func create_depth_texture(rd : RenderingDevice, texture_size : Vector2i) -> RID:
 	return create_texture(rd, texture_size, TEXTURE_TYPE_DEPTH, RenderingDevice.TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT)
