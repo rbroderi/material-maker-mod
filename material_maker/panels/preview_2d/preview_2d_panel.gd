@@ -81,24 +81,36 @@ var compare_enabled : bool = false:
 		compare_enabled = v and snapshot != null
 		material.set_shader_parameter("compare_enabled", compare_enabled)
 		queue_redraw()
+		request_pixel_values()
 var compare_split : float = 0.5:
 	set(v):
 		compare_split = clampf(v, 0.0, 1.0)
 		material.set_shader_parameter("compare_split", compare_split)
 var dragging_split : bool = false
 
-## Pixel values under the mouse, read from a float render of the output
-const PIXEL_PICK_SIZE : int = 1024
+## Values of the pixel under the mouse, read from a 32 bits render of that
+## pixel only (see get_pixel_values_text)
 var show_pixel_values : bool = false:
 	set(v):
 		show_pixel_values = v
-		pixel_image = null
 		if pixel_label != null:
-			pixel_label.visible = v
-var pixel_image : Image = null
-var pixel_image_rendering : bool = false
+			pixel_label.visible = false
+		request_pixel_values()
 var pixel_label : Label = null
-var pixel_position : Vector2
+## Renders the previewed output (see create_inspect_shader), null when it
+## must be created again
+var inspect_shader : MMComputeShader = null
+## Incremented when the previewed output changes
+var inspect_version : int = 0
+var pixel_position : Vector2 = Vector2(-1, -1)
+var pixel_values_updating : bool = false
+
+## Pixel grid of outputs that do not read any texture
+const INSPECT_DEFAULT_SIZE : Vector2i = Vector2i(1024, 1024)
+## Snapshots are rendered at the size of the largest texture the output reads,
+## within these limits
+const SNAPSHOT_MIN_SIZE : int = 1024
+const SNAPSHOT_MAX_SIZE : int = 2048
 
 const POSTPROCESS_OPTIONS : Array = [
 	{ name="None", function="preview_2d(uv)" },
@@ -140,6 +152,8 @@ func _ready():
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_THEME_CHANGED:
 		update_shader_options()
+	elif what == NOTIFICATION_MOUSE_EXIT:
+		request_pixel_values(Vector2(-1, -1))
 
 
 func clear() -> void:
@@ -173,7 +187,7 @@ func get_shader_custom_functions():
 
 func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 	super.set_generator(g, o, force)
-	pixel_image = null
+	invalidate_inspect_shader()
 	update_shader_options()
 
 	%PreviewLocked.visible = g != null and preview_mode != Modes.CUSTOM_PREVIEW
@@ -209,8 +223,10 @@ func set_preview_shader_parameter(parameter_name, value):
 	material.set_shader_parameter(parameter_name, value)
 
 func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
+	if inspect_shader != null:
+		inspect_shader.set_parameter(parameter_name, value, true)
+		request_pixel_values()
 	super.on_dep_update_value(buffer_name, parameter_name, value)
-	pixel_image = null
 	return false
 
 
@@ -338,24 +354,79 @@ func _input(event):
 	if event.is_pressed():
 		mm_globals.propagate_shortcuts(self, event)
 
-func on_parameter_changed(n : String, v) -> void:
-	super.on_parameter_changed(n, v)
-	pixel_image = null
+#region INSPECTION
 
-## Renders the current output into a snapshot, shown left of the split when
-## comparing
+## Forgets the shader used to read pixel values (when the previewed output
+## changes)
+func invalidate_inspect_shader() -> void:
+	inspect_shader = null
+	inspect_version += 1
+	request_pixel_values()
+
+## A compute shader that renders the previewed output with 32 bits precision,
+## at UV mm_inspect_offset+uv*mm_inspect_scale, or null if there is none
+func create_inspect_shader() -> MMComputeShader:
+	if not is_instance_valid(generator) or generator.get_output_defs().is_empty():
+		return null
+	var source : MMGenBase.ShaderCode = generator.get_shader_code("uv", output, MMGenContext.new())
+	if source.output_type == "":
+		return null
+	var uv : String = "(mm_inspect_offset+uv*mm_inspect_scale)"
+	if source.output_type == "f":
+		source.output_type = "rgba"
+	if source.output_values.has("rgba"):
+		# The variation variables are declared in main() by the compute shader template
+		var variations : String = "float _seed_variation_ = seed_variation;\nvec4 _controlled_variation_ = vec4(0.0);\n"
+		source.defs += "vec4 mm_inspect_output(vec2 uv) {\n%s%s\nreturn %s;\n}\n" % [ variations, source.code, source.output_values.rgba ]
+		source.output_values.rgba = "mm_inspect_output(%s)" % uv
+	else:
+		# Other types are shown as in the preview
+		var preview_code : String = mm_io_types.types[source.output_type].preview
+		preview_code = preview_code.replace("uniform", "const")
+		preview_code = preview_code.replace("const sampler2D", "uniform sampler2D")
+		preview_code = preview_code.replace("preview_size", "64")
+		preview_code = preview_code.replace("$(code)", source.code)
+		preview_code = preview_code.replace("$(value)", source.output_values[source.output_type])
+		source.defs += preview_code
+		source.output_values.rgba = "preview_2d(%s)" % uv
+		source.output_type = "rgba"
+	source.code = ""
+	var extra_parameters : Array[Dictionary] = [
+		{ name="mm_inspect_offset", type="vec2", value=Vector2(0.0, 0.0) },
+		{ name="mm_inspect_scale", type="float", value=1.0 }
+	]
+	var compute_shader : MMComputeShader = MMComputeShader.new()
+	if not await compute_shader.set_shader_from_shadercode(source, true, extra_parameters):
+		return null
+	return compute_shader
+
+## The size of the largest texture a shader reads (a buffer or an image, not
+## necessarily square), INSPECT_DEFAULT_SIZE if it reads none
+static func get_inspect_size(compute_shader : MMComputeShader) -> Vector2i:
+	var rv : Vector2i = Vector2i(0, 0)
+	for t in compute_shader.input_textures:
+		if t.texture != null and t.texture.texture_size.x*t.texture.texture_size.y > rv.x*rv.y:
+			rv = t.texture.texture_size
+	return INSPECT_DEFAULT_SIZE if rv.x == 0 or rv.y == 0 else rv
+
+## Renders the current output into a 32 bits snapshot (at the size of the
+## largest texture it reads), shown left of the split when comparing
 func take_snapshot() -> void:
 	if generator == null:
 		return
-	snapshot_image = await render_output_image()
+	var compute_shader : MMComputeShader = await create_inspect_shader()
+	if compute_shader == null:
+		return
+	# Wait for the buffers the output depends on
+	await MMCliTools.wait_for_renders(get_tree())
+	var snapshot_size : Vector2i = get_inspect_size(compute_shader).clamp(Vector2i(SNAPSHOT_MIN_SIZE, SNAPSHOT_MIN_SIZE), Vector2i(SNAPSHOT_MAX_SIZE, SNAPSHOT_MAX_SIZE))
+	var texture : MMTexture = MMTexture.new()
+	if not await compute_shader.render_ext([ texture ], snapshot_size):
+		return
+	snapshot_image = (await texture.get_texture()).get_image()
 	snapshot = ImageTexture.create_from_image(snapshot_image)
 	material.set_shader_parameter("compare_texture", snapshot)
 	compare_enabled = true
-
-## Renders the current output with float precision, once the buffers it
-## depends on are rendered
-func render_output_image() -> Image:
-	return await MMCliTools.render_output_image(generator, output, Vector2i(PIXEL_PICK_SIZE, PIXEL_PICK_SIZE))
 
 ## UV of a position in the preview
 func pos_to_uv(pos : Vector2) -> Vector2:
@@ -364,27 +435,61 @@ func pos_to_uv(pos : Vector2) -> Vector2:
 		uv = Vector2(fposmod(uv.x, 1.0), fposmod(uv.y, 1.0))
 	return uv
 
-func update_pixel_values(pos : Vector2) -> void:
+## Updates the pixel values when they are shown, for the pixel at pos. Only
+## one pixel is rendered at a time, then the last requested one
+func request_pixel_values(pos : Vector2 = pixel_position) -> void:
 	pixel_position = pos
+	if not show_pixel_values or pixel_values_updating or not is_inside_tree() or pixel_label == null:
+		return
+	pixel_values_updating = true
+	while true:
+		pos = pixel_position
+		var version : int = inspect_version
+		var text : String = await get_pixel_values_text(pos)
+		if pos != pixel_position or version != inspect_version:
+			# The mouse moved or the output changed meanwhile
+			continue
+		pixel_label.text = text
+		pixel_label.visible = show_pixel_values and text != ""
+		break
+	pixel_values_updating = false
+
+func get_pixel_values_text(pos : Vector2) -> String:
+	if generator == null or pos.x < 0.0:
+		return ""
 	var uv : Vector2 = pos_to_uv(pos)
-	if uv.x < 0.0 or uv.x >= 1.0 or uv.y < 0.0 or uv.y >= 1.0 or generator == null:
-		pixel_label.text = ""
-		pixel_label.visible = false
-		return
-	pixel_label.visible = true
-	var from_snapshot : bool = compare_enabled and pos.x < compare_split*size.x
-	var image : Image = snapshot_image if from_snapshot else pixel_image
-	if image == null:
-		pixel_label.text = "Reading values..."
-		if not pixel_image_rendering:
-			pixel_image_rendering = true
-			pixel_image = await render_output_image()
-			pixel_image_rendering = false
-			update_pixel_values(pixel_position)
-		return
-	var pixel : Vector2i = Vector2i(uv*Vector2(image.get_size()))
-	var c : Color = image.get_pixelv(pixel)
-	pixel_label.text = "%s(%d, %d)\nR %.4f  G %.4f\nB %.4f  A %.4f" % [ "Snapshot " if from_snapshot else "", pixel.x, pixel.y, c.r, c.g, c.b, c.a ]
+	if uv.x < 0.0 or uv.x >= 1.0 or uv.y < 0.0 or uv.y >= 1.0:
+		return ""
+	var pixel : Vector2i
+	var image_size : Vector2i
+	var color : Color
+	var prefix : String = ""
+	if compare_enabled and snapshot_image != null and pos.x < compare_split*size.x:
+		image_size = snapshot_image.get_size()
+		pixel = Vector2i(uv*Vector2(image_size)).clamp(Vector2i(0, 0), image_size-Vector2i(1, 1))
+		color = snapshot_image.get_pixelv(pixel)
+		prefix = "Snapshot "
+	else:
+		if inspect_shader == null:
+			var version : int = inspect_version
+			var new_shader : MMComputeShader = await create_inspect_shader()
+			if version != inspect_version or new_shader == null:
+				return ""
+			inspect_shader = new_shader
+		var compute_shader : MMComputeShader = inspect_shader
+		# The pixel grid is the one of the largest texture the output reads,
+		# and the center of the pixel is rendered so texel values are exact
+		image_size = get_inspect_size(compute_shader)
+		pixel = Vector2i(uv*Vector2(image_size)).clamp(Vector2i(0, 0), image_size-Vector2i(1, 1))
+		compute_shader.set_parameter("mm_inspect_offset", (Vector2(pixel)+Vector2(0.5, 0.5))/Vector2(image_size))
+		compute_shader.set_parameter("mm_inspect_scale", 0.0)
+		var texture : MMTexture = MMTexture.new()
+		if not await compute_shader.render_ext([ texture ], Vector2i(1, 1)):
+			return ""
+		color = (await texture.get_texture()).get_image().get_pixel(0, 0)
+	return "%s(%d, %d) of %dx%d\nR %.5f  G %.5f\nB %.5f  A %.5f" % [ prefix, pixel.x, pixel.y, image_size.x, image_size.y, color.r, color.g, color.b, color.a ]
+
+#endregion
 
 func _on_gui_input(event):
 	if compare_enabled:
@@ -401,11 +506,12 @@ func _on_gui_input(event):
 		elif event is InputEventMouseMotion:
 			if dragging_split:
 				compare_split = event.position.x/size.x
+				request_pixel_values(event.position)
 				accept_event()
 				return
 			mouse_default_cursor_shape = Control.CURSOR_HSIZE if abs(event.position.x-compare_split*size.x) < 6.0 else Control.CURSOR_ARROW
-	if show_pixel_values and event is InputEventMouseMotion:
-		update_pixel_values(event.position)
+	if event is InputEventMouse:
+		request_pixel_values(event.position)
 	var need_update : bool = false
 	var new_center : Vector2 = center
 	var multiplier : float = min(size.x, size.y)
@@ -448,6 +554,7 @@ func _on_gui_input(event):
 		need_update = true
 	if need_update:
 		on_resized()
+		request_pixel_values()
 
 
 #region MENUS
