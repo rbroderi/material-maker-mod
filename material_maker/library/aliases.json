@@ -86,6 +86,7 @@
 	"Transform/Splatter": "duplicate,copy,clone,repeat",
 	"Transform/Splatter/Color": "duplicate,copy,clone,repeat,colour",
 	"Transform/Tile 2x2": "input,multiple,several",
+	"Transform/Tile Sampler": "duplicate,copy,clone,repeat,grid,scatter,splatter",
 	"Transform/Tiler": "duplicate,copy,clone,repeat,grid",
 	"Transform/Tiler/Color": "duplicate,copy,clone,repeat,grid,colour",
 	"Transform/Tiler/Advanced/Color": "colour",
