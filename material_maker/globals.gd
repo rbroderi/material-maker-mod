@@ -65,6 +65,8 @@ const DEFAULT_CONFIG : Dictionary = {
 	node_close_button = true,
 	ui_field_sensitivity = 1.0,
 	color_picker_floating = false,
+	color_swatches = [],
+	color_picker_swatches_visible = true,
 	custom_theme_base_color = Color(0.22, 0.243, 0.294),
 	custom_theme_accent_color = Color(0.702, 0.631, 1.0),
 	custom_theme_contrast = 0.8,
@@ -98,6 +100,57 @@ func get_config(key : String):
 
 func set_config(key : String, value):
 	config.set_value("config", key, value)
+
+# Color swatches, shared by all color pickers and saved in the configuration
+
+## Shows the saved swatches in [param picker] and saves them when the user adds or removes one
+func add_color_swatches(picker : ColorPicker) -> void:
+	picker.presets_visible = true
+	picker.preset_added.connect(save_color_swatches.bind(picker).unbind(1))
+	picker.preset_removed.connect(save_color_swatches.bind(picker).unbind(1))
+	var swatches_button : Button = get_color_swatches_button(picker)
+	if swatches_button:
+		swatches_button.toggled.connect(func(pressed : bool): set_config("color_picker_swatches_visible", pressed))
+	update_color_swatches(picker)
+
+## Returns the button that shows or hides the swatches of [param picker]
+## (outside of the editor, Godot always hides them when a picker is created)
+func get_color_swatches_button(picker : ColorPicker) -> Button:
+	var nodes : Array[Node] = picker.get_children(true)
+	while not nodes.is_empty():
+		var n : Node = nodes.pop_front()
+		# The swatches grid contains the "add swatch" button, and its header is just before it
+		if n is GridContainer and n.get_children(true).any(func(c): return c is Button):
+			var header : Node = n.get_parent().get_child(0, true)
+			for c in header.get_children(true):
+				if c is Button and c.toggle_mode:
+					return c
+			return null
+		nodes.append_array(n.get_children(true))
+	return null
+
+## Updates the swatches of [param picker]. Call it before showing the picker,
+## another picker may have changed them.
+func update_color_swatches(picker : ColorPicker) -> void:
+	var swatches_button : Button = get_color_swatches_button(picker)
+	if swatches_button:
+		swatches_button.button_pressed = get_config("color_picker_swatches_visible")
+	var saved = get_config("color_swatches")
+	var swatches : PackedColorArray = PackedColorArray()
+	if saved is Array:
+		for c in saved:
+			if c is Color:
+				swatches.append(c)
+	if picker.get_presets() == swatches:
+		return
+	for c in picker.get_presets():
+		picker.erase_preset(c)
+	for c in swatches:
+		picker.add_preset(c)
+
+func save_color_swatches(picker : ColorPicker) -> void:
+	# Colors are stored as they are, so alpha and HDR values are kept
+	set_config("color_swatches", Array(picker.get_presets()))
 
 # Clipboard parsing
 

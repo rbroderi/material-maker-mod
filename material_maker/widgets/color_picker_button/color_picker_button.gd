@@ -38,9 +38,11 @@ func on_color_changed(c):
 func on_picker_created():
 	get_popup().connect("about_to_popup", Callable(self, "on_about_to_show"))
 	previous_color = color
+	mm_globals.add_color_swatches(get_picker())
 
 func on_about_to_show():
 	previous_color = color
+	mm_globals.update_color_swatches(get_picker())
 	if mm_globals.has_config("color_picker_color_mode"):
 		get_picker().color_mode = mm_globals.get_config("color_picker_color_mode")
 	if mm_globals.has_config("color_picker_shape"):

@@ -1928,6 +1928,7 @@ func colorize_nodes() -> void:
 	add_child(popup)
 	picker.edit_alpha = false
 	picker.edit_intensity = false
+	mm_globals.add_color_swatches(picker)
 
 	var csf = get_window().content_scale_factor
 	popup.about_to_popup.connect(func() -> void:
