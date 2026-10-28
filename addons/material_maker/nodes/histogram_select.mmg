@@ -1,0 +1,78 @@
+{
+	"name": "histogram_select",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"position": 0.5,
+		"range": 0.25,
+		"contrast": 0.5
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"instance": "",
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "",
+				"longdesc": "The input image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "f"
+			}
+		],
+		"longdesc": "Outputs white where the input is in a range of values, and black elsewhere, with a soft transition.",
+		"name": "Histogram Select",
+		"outputs": [
+			{
+				"f": "1.0-smoothstep(0.0, max(1.0-$contrast, 0.0001)*0.5, abs($in($uv)-$position)-0.5*$range)",
+				"longdesc": "The output image",
+				"shortdesc": "Output",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Position",
+				"longdesc": "The center of the selected range",
+				"max": 1,
+				"min": 0,
+				"name": "position",
+				"shortdesc": "Position",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.25,
+				"label": "Range",
+				"longdesc": "The width of the selected range",
+				"max": 1,
+				"min": 0,
+				"name": "range",
+				"shortdesc": "Range",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Contrast",
+				"longdesc": "The sharpness of the transition (1 is a hard edge)",
+				"max": 1,
+				"min": 0,
+				"name": "contrast",
+				"shortdesc": "Contrast",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Histogram select"
+	},
+	"type": "shader"
+}

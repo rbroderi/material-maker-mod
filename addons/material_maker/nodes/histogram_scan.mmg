@@ -1,0 +1,65 @@
+{
+	"name": "histogram_scan",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"position": 0.5,
+		"contrast": 0.0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "float $(name_uv)_width = max(1.0-$contrast, 0.0001);",
+		"global": "",
+		"instance": "",
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "",
+				"longdesc": "The input image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "f"
+			}
+		],
+		"longdesc": "Scans the input values with a position and increases the contrast of the result. Position 0 gives a black output and position 1 a white one. At position 0.5 and contrast 0 the input is unchanged, contrast 1 is a threshold.",
+		"name": "Histogram Scan",
+		"outputs": [
+			{
+				"f": "clamp(($in($uv)+$(name_uv)_width-(1.0-$position)*(1.0+$(name_uv)_width))/$(name_uv)_width, 0.0, 1.0)",
+				"longdesc": "The output image",
+				"shortdesc": "Output",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Position",
+				"longdesc": "Shifts the transition, like a brightness control (0 is black, 1 is white)",
+				"max": 1,
+				"min": 0,
+				"name": "position",
+				"shortdesc": "Position",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Contrast",
+				"longdesc": "The contrast increase (1 is a threshold)",
+				"max": 1,
+				"min": 0,
+				"name": "contrast",
+				"shortdesc": "Contrast",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Histogram scan"
+	},
+	"type": "shader"
+}

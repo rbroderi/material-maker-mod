@@ -1,0 +1,65 @@
+{
+	"name": "histogram_range",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"range": 0.0,
+		"position": 0.5
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"instance": "",
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "",
+				"longdesc": "The input image",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "f"
+			}
+		],
+		"longdesc": "Compresses the range of the input values towards a position, like moving both output levels inwards. At range 0 the input is unchanged.",
+		"name": "Histogram Range",
+		"outputs": [
+			{
+				"f": "mix(clamp($in($uv), 0.0, 1.0), $position, $range)",
+				"longdesc": "The output image",
+				"shortdesc": "Output",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Range",
+				"longdesc": "How much the range is reduced (0 keeps the input unchanged, 1 outputs the position)",
+				"max": 1,
+				"min": 0,
+				"name": "range",
+				"shortdesc": "Range",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Position",
+				"longdesc": "The value the range is reduced towards",
+				"max": 1,
+				"min": 0,
+				"name": "position",
+				"shortdesc": "Position",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Histogram range"
+	},
+	"type": "shader"
+}
