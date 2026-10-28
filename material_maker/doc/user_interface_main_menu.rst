@@ -154,10 +154,14 @@ Tools menu
 * *Library instances* lists the nodes that were created from library items that embed their
   definition (graphs and custom shaders saved in a library), and shows which ones are
   outdated (their library item changed since they were created) or were modified locally.
-  Outdated nodes can be updated: their parameter values and connections are kept.
-  *Show changes* shows what updating the selected node would change: its output before and
-  after (rendered with unconnected inputs), and the differences of its definition (nodes,
-  connections, parameters, inputs, outputs, and shader code line by line).
+  Outdated nodes can be updated: their parameter values and connections are kept (new
+  parameters get their default value, and connections to ports that were removed are
+  dropped). Updating several nodes is a single undo step.
+  *Show changes* (or a double click) shows what updating the selected outdated or modified
+  node would change: its output before and after (rendered with unconnected inputs), and
+  the parameters, inputs, outputs, shader code (line by line, long diffs are cut) and inner
+  nodes and connections that were added, removed or changed. Graph parameters whose library
+  default differs from the value the node keeps are listed at the end.
 
 * *Add current brush to library* is only visible when the current
   project is a paint project. It first prompts for an item name. If a name is entered and
