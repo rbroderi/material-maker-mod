@@ -93,6 +93,13 @@ func get_buffer_size() -> int:
 			return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
 	return int(get_parameter("size"))
 
+## Returns true if the buffer is stored as 8 bits (if the GPU does not
+## support 8 bits storage, 16 bits floats are used instead)
+func is_8_bits_effective() -> bool:
+	if version != VERSION_COMPLEX or not get_parameter("f8") or get_parameter("f32"):
+		return false
+	return MMPipeline.is_output_texture_type_supported(MMPipeline.TEXTURE_TYPE_R8 if is_greyscale else MMPipeline.TEXTURE_TYPE_RGBA8)
+
 ## Returns false for parameters that are ignored with the current settings
 ## (so the node can grey them out)
 func is_parameter_used(n : String) -> bool:
