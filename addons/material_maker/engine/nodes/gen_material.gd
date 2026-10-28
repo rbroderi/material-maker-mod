@@ -87,8 +87,10 @@ func get_preprocessed_output_def(output_index : int):
 
 
 ## Height of exported images: the size with the material's aspect ratio
-func get_image_height() -> int:
-	var size : int = get_image_size()
+## Height of exported images of a given width (by default, the material's
+## size), with the material's aspect ratio
+func get_image_height(width : int = 0) -> int:
+	var size : int = width if width > 0 else get_image_size()
 	return MMGenBuffer.aspect_height(size, int(get_parameter("aspect"))) if parameters.has("aspect") else size
 
 func get_image_size() -> int:
@@ -899,8 +901,10 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
-		if height == 0:
-			height = get_image_height()
+	# Without a height (e.g. --size <width> on the command line), the height
+	# follows the material's aspect ratio
+	if height == 0:
+		height = get_image_height(size)
 	export_last_target = profile
 	export_paths[profile] = prefix
 	if tiles.is_empty():
