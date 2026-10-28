@@ -18,13 +18,17 @@ contrast of the result:
 Histogram Range
 +++++++++++++++
 
-The **Histogram Range** node compresses the input values towards a position, like moving
-both output levels inwards:
+The **Histogram Range** node scales the input values around mid grey and moves mid grey
+to a position, like the output levels of a levels adjustment. The result is clamped
+between 0 and 1:
 
-* *Range* is how much the range is reduced (0 leaves the input unchanged, 1 outputs the
+* *Range* is the width of the output range (1 keeps the full range, 0 outputs the
   position everywhere);
 
-* *Position* is the value the range is reduced towards.
+* *Position* is the center of the output range, where an input of 0.5 goes. With a range
+  of 1, moving it brightens or darkens the input, and values pushed past 0 or 1 are clipped.
+
+At range 1 and position 0.5 the input is unchanged.
 
 Histogram Shift
 +++++++++++++++

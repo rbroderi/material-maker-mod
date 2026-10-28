@@ -5,7 +5,7 @@
 		"y": 0
 	},
 	"parameters": {
-		"range": 0.0,
+		"range": 1.0,
 		"position": 0.5
 	},
 	"seed_int": 0,
@@ -23,11 +23,11 @@
 				"type": "f"
 			}
 		],
-		"longdesc": "Compresses the range of the input values towards a position, like moving both output levels inwards. At range 0 the input is unchanged.",
+		"longdesc": "Scales the input values around mid grey by the range and moves mid grey to the position, like the output levels of a levels adjustment. Results are clamped to 0 and 1. At range 1 and position 0.5 the input is unchanged.",
 		"name": "Histogram Range",
 		"outputs": [
 			{
-				"f": "mix(clamp($in($uv), 0.0, 1.0), $position, $range)",
+				"f": "clamp($position+($in($uv)-0.5)*$range, 0.0, 1.0)",
 				"longdesc": "The output image",
 				"shortdesc": "Output",
 				"type": "f"
@@ -36,9 +36,9 @@
 		"parameters": [
 			{
 				"control": "None",
-				"default": 0.0,
+				"default": 1.0,
 				"label": "Range",
-				"longdesc": "How much the range is reduced (0 keeps the input unchanged, 1 outputs the position)",
+				"longdesc": "The width of the output range (1 keeps the full range, 0 outputs the position everywhere)",
 				"max": 1,
 				"min": 0,
 				"name": "range",
@@ -50,7 +50,7 @@
 				"control": "None",
 				"default": 0.5,
 				"label": "Position",
-				"longdesc": "The value the range is reduced towards",
+				"longdesc": "The center of the output range: where mid grey (0.5) of the input goes",
 				"max": 1,
 				"min": 0,
 				"name": "position",
