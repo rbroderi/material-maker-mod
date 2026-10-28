@@ -29,6 +29,9 @@ func _ready() -> void:
 	mm_deps.create_buffer("o%d_tex" % get_instance_id(), self)
 	do_update_shader()
 
+func _enter_tree() -> void:
+	exiting = false
+
 func _exit_tree() -> void:
 	exiting = true
 

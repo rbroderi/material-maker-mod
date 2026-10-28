@@ -39,6 +39,9 @@ func _init():
 	iteration_param_name = "o%d_iteration" % get_instance_id()
 	set_current_iteration(0)
 
+func _enter_tree() -> void:
+	exiting = false
+
 func _exit_tree() -> void:
 	exiting = true
 

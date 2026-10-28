@@ -447,10 +447,13 @@ func create_subgraph(gens : Array) -> MMGenGraph:
 	new_graph.position = center
 	# Add grouped generators and keep their names
 	var names : Array = []
+	# Moved generators (and their children) must keep their render buffers
+	mm_deps.moving_nodes = true
 	for g in generators:
 		names.push_back(g.name)
 		remove_child(g)
 		new_graph.add_generator(g)
+	mm_deps.moving_nodes = false
 	# Create inputs and outputs generators
 	var gen_inputs = MMGenIOs.new()
 	gen_inputs.name = "gen_inputs"

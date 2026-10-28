@@ -39,6 +39,10 @@ var buffers : Dictionary[String, Buffer] = {}
 var reset_stats : bool = true
 var render_queue_size : int = 0
 
+## Set while nodes are moved to another parent (e.g. into a new group), so
+## their buffers are kept when they leave the tree
+var moving_nodes : bool = false
+
 
 signal render_queue_empty
 
@@ -61,6 +65,8 @@ func delete_buffer(buffer_name : String):
 	dependencies_values.erase(buffer_name)
 
 func delete_buffers_from_object(object : Object):
+	if moving_nodes:
+		return
 	var remove_buffers : Array = []
 	for b in buffers.keys():
 		if buffers[b].object == object:
