@@ -5,7 +5,7 @@ class_name MMGenGpuReduction
 
 # Base class of nodes that reduce their input with a GPU pass (that
 # accumulates results in an int array with atomics) and use the results on
-# the CPU (see MMGenStatistics).
+# the CPU (see MMGenAnalysis and MMGenStatistics).
 #
 # Subclasses define the hooks below: the compute shader template and its
 # replacements, the results array and what is done with the results.
