@@ -7,12 +7,13 @@ input and produce a grayscale output.
 Histogram Scan
 ++++++++++++++
 
-The **Histogram Scan** node selects a range of values and increases its contrast:
+The **Histogram Scan** node scans the input values with a position and increases the
+contrast of the result:
 
-* *Position* is the input value that is mapped to mid-gray (0.5 leaves the input unchanged
-  when contrast is 0; higher values brighten the output);
+* *Position* shifts the transition, like a brightness control: 0 gives a black output,
+  1 a white output, and 0.5 leaves the input unchanged when contrast is 0;
 
-* *Contrast* increases the contrast around that value (1 is a threshold).
+* *Contrast* increases the contrast of the result (1 is a threshold).
 
 Histogram Range
 +++++++++++++++
