@@ -30,6 +30,8 @@ user interface, and inputs to receive data from other nodes.
 Inputs and parameters can be added in the **General** tab, but first, you may want to
 choose a nice name for your new node.
 
+.. _shader-nodes-parameters:
+
 Parameters
 ~~~~~~~~~~
 
@@ -47,6 +49,20 @@ the new parameter. On this line:
 * on the right of the type selector, controls can be used to define a default value and
   constraints for the parameter
 * **float** parameters can be assigned a **control** variable in the 2D preview
+* a label written **Group::Label** is shown as *Label* in the node, and under a
+  collapsible *Group* header in the :doc:`parameters panel <user_interface_parameters_panel>`
+
+The minimum and maximum of **float** parameters are a soft range: they define the
+slider, but other values can be typed, or dragged when dragging starts at the end of the
+slider. A hard range that typed and dragged values cannot exceed can be defined by adding
+**hard_min** and/or **hard_max** to the parameter in the node's JSON (for example to keep
+a value positive while the slider covers 0 to 1). The node editor keeps them when the node
+is edited. Expressions typed in a float field (such as **$time**) are not clamped.
+
+.. code-block:: json
+
+    { "name": "scale", "label": "Noise::Scale", "type": "float",
+      "default": 4, "min": 1, "max": 32, "step": 1, "hard_min": 1, "hard_max": 256 }
 
 To use a parameter in your shader code it is necessary to prefix it with a dollar sign.
 So a **foo** parameter can be refered to by **$foo** or **$(foo)** in the shader code.

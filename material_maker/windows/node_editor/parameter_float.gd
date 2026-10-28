@@ -2,6 +2,9 @@ extends HBoxContainer
 
 const CONTROLS = [ "None", "P1.x", "P1.y", "P1.a", "P1.r", "P2.x", "P2.y", "P2.a", "P2.r", "P3.x", "P3.y", "Rect1.x", "Rect1.y", "Radius1.r", "Radius1.a", "Radius11.r", "Radius11.a", "Scale1.x", "Scale1.y", "Angle1.a", "Angle2.a" ]
 
+# Hard range (hard_min, hard_max), only defined in the node's JSON, kept when editing
+var hard_range : Dictionary = {}
+
 func _ready() -> void:
 	$Control.clear()
 	for c in CONTROLS:
@@ -15,9 +18,15 @@ func get_model_data() -> Dictionary:
 		default = $Default.value,
 		control = $Control.get_item_text($Control.selected)
 	}
+	data.merge(hard_range)
 	return data
 
 func set_model_data(data) -> void:
+	hard_range = {}
+	for k in [ "hard_min", "hard_max" ]:
+		if data.has(k):
+			hard_range[k] = data[k]
+			$Default.set(k, data[k])
 	if data.has("min"):
 		$Min.value = data.min
 		$Default.min_value = data.min
