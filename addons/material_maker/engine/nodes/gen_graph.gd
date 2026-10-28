@@ -539,7 +539,13 @@ func _serialize(data: Dictionary) -> Dictionary:
 		data.scroll_offset = { x=scroll_offset.x, y=scroll_offset.y }
 	return data
 
+func _serialize_data(data: Dictionary) -> Dictionary:
+	data = super._serialize_data(data)
+	encode_path_parameters(data)
+	return data
+
 func _deserialize(data : Dictionary) -> void:
+	decode_path_parameters(data)
 	if data.has("label"):
 		label = data.label
 	if data.has("shortdesc"):
