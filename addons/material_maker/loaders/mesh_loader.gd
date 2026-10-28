@@ -14,13 +14,11 @@ static func load_gltf_mesh(file_path) -> ArrayMesh:
 	if not FileAccess.file_exists(file_path):
 		printerr("GLTF/GLB file does not exists or is not accesible")
 		return null
-	var glb_filebytes = FileAccess.get_file_as_bytes(file_path)
-	if glb_filebytes == null:
-		printerr("GLTF/GLB file data is null")
-		return null
-	var err = gltf.append_from_buffer(glb_filebytes, "", gltf_state)
+	# Loading from the file (not from a buffer) finds external buffers and
+	# textures, that are relative to the file
+	var err = gltf.append_from_file(file_path, gltf_state)
 	if err != OK:
-		printerr("Failure during parsing GLTF/GLB buffer")
+		printerr("Failure during parsing GLTF/GLB file")
 		return null
 	var node: Node = gltf.generate_scene(gltf_state)
 	if node is MeshInstance3D:
@@ -37,13 +35,10 @@ static func load_fbx_mesh(file_path) -> ArrayMesh:
 	if not FileAccess.file_exists(file_path):
 		push_error("FBX file does not exists or is not accessible")
 		return null
-	var fbx_filebytes = FileAccess.get_file_as_bytes(file_path)
-	if fbx_filebytes == null:
-		push_error("FBX file data is null")
-		return null
-	var err = fbx.append_from_buffer(fbx_filebytes, "", fbx_state)
+	# Loading from the file (not from a buffer) finds external textures
+	var err = fbx.append_from_file(file_path, fbx_state)
 	if err != OK:
-		push_error("Failure during parsing FBX buffer")
+		push_error("Failure during parsing FBX file")
 		return null
 	var node: Node = fbx.generate_scene(fbx_state)
 	if node is MeshInstance3D:
