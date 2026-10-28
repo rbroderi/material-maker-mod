@@ -93,11 +93,10 @@ func get_items(filter : String, disabled_sections : Array, aliased_items : Array
 			if not include:
 				result_quality = 0.6
 				for alias_dict in aliased_items:
-					for key in alias_dict:
-						if key == i.tree_item and filter in alias_dict[key]:
-							if alias_dict[key].begins_with(filter) or ","+filter in alias_dict[key]:
-								result_quality = 0.9
-							include = true
+					if alias_dict.has(i.tree_item) and filter in alias_dict[i.tree_item]:
+						if alias_dict[i.tree_item].begins_with(filter) or ","+filter in alias_dict[i.tree_item]:
+							result_quality = 0.9
+						include = true
 
 			if not include:
 				include = true
@@ -107,7 +106,10 @@ func get_items(filter : String, disabled_sections : Array, aliased_items : Array
 						include = false
 
 			if not include:
-				result_quality = max(fuzzy_quality(filter, i.display_name.to_lower()), fuzzy_quality(filter, i.tree_item.to_lower()))
+				var aliases : String = ""
+				for alias_dict in aliased_items:
+					aliases += ","+alias_dict.get(i.tree_item, "")
+				result_quality = fuzzy_quality(filter, i.tree_item.to_lower(), aliases)
 				include = result_quality > 0.0
 
 		if include:
@@ -118,47 +120,74 @@ func get_items(filter : String, disabled_sections : Array, aliased_items : Array
 	return array
 
 
-## Fuzzy matching, for filters that match nothing exactly: returns a quality
-## (lower than exact matches) if each word of the filter is a word of the text
-## with at most one typo, or if the characters of the filter appear in order
-## in the text, and 0 otherwise
-static func fuzzy_quality(filter : String, text : String) -> float:
+## Typo tolerant matching, for items the filter does not match exactly (all
+## exact matches score 0.4 or more, and the recent items bonus of the add node
+## popup is at most 0.05, so a fuzzy match is never listed before an exact
+## one). Returns:
+## - 0.3 if each word of the filter matches a word of the item path or an alias
+##   with at most one typo (words shorter than 4 characters must begin a word),
+## - 0.1 to 0.25 if the characters of the filter appear in order in the item
+##   path, starting at the beginning of a word and not too spread out (the more
+##   compact the match, the higher the score),
+## - 0 otherwise.
+static func fuzzy_quality(filter : String, tree_item : String, aliases : String = "") -> float:
 	if filter.length() < 3:
 		return 0.0
-	var text_words : PackedStringArray = text.replace("/", " ").split(" ", false)
+	var words : PackedStringArray = tree_item.replace("/", " ").split(" ", false)
+	words.append_array(aliases.split(",", false))
 	var all_words_match : bool = true
-	for word in filter.split(" ", false):
+	for filter_word in filter.split(" ", false):
 		var found : bool = false
-		for text_word in text_words:
-			if word.length() >= 4 and (edit_distance(word, text_word) <= 1 or edit_distance(word, text_word.left(word.length())) <= 1):
-				found = true
+		for word in words:
+			if filter_word.length() < 4:
+				found = word.begins_with(filter_word)
+			else:
+				found = is_within_one_edit(filter_word, word) or is_within_one_edit(filter_word, word.left(filter_word.length()))
+			if found:
 				break
 		if not found:
 			all_words_match = false
 			break
 	if all_words_match:
-		return 0.35
-	# Subsequence: the more compact the match, the better
+		return 0.3
+	# Subsequence, starting at the beginning of a word
 	var characters : String = filter.replace(" ", "")
-	var position : int = -1
-	var first : int = -1
-	for c in characters:
-		position = text.find(c, position+1)
+	var text : String = tree_item.replace("/", " ")
+	var best_compactness : float = 0.0
+	for start in text.length():
+		if text[start] != characters[0] or (start > 0 and text[start-1] != " "):
+			continue
+		var position : int = start
+		for c in characters.substr(1):
+			position = text.find(c, position+1)
+			if position == -1:
+				break
 		if position == -1:
-			return 0.0
-		if first == -1:
-			first = position
-	return 0.1+0.2*float(characters.length())/float(position-first+1)
+			break
+		best_compactness = maxf(best_compactness, float(characters.length())/float(position-start+1))
+	if best_compactness < 0.5:
+		return 0.0
+	return 0.1+0.15*best_compactness
 
-## Levenshtein distance
-static func edit_distance(a : String, b : String) -> int:
-	var previous : PackedInt32Array = PackedInt32Array(range(b.length()+1))
-	for i in a.length():
-		var current : PackedInt32Array = PackedInt32Array([ i+1 ])
-		for j in b.length():
-			current.append(mini(mini(previous[j+1]+1, current[j]+1), previous[j]+(0 if a[i] == b[j] else 1)))
-		previous = current
-	return previous[b.length()]
+## Returns true if a can be changed into b with at most one insertion,
+## deletion, substitution or transposition of adjacent characters (a plain
+## edit distance counts a swap as two typos)
+static func is_within_one_edit(a : String, b : String) -> bool:
+	var length_difference : int = a.length()-b.length()
+	if absi(length_difference) > 1:
+		return false
+	var i : int = 0
+	while i < mini(a.length(), b.length()) and a[i] == b[i]:
+		i += 1
+	if i == a.length() or i == b.length():
+		return true
+	if length_difference == 1:
+		return a.substr(i+1) == b.substr(i)
+	if length_difference == -1:
+		return a.substr(i) == b.substr(i+1)
+	if a.substr(i+1) == b.substr(i+1):
+		return true
+	return i+1 < a.length() and a[i] == b[i+1] and a[i+1] == b[i] and a.substr(i+2) == b.substr(i+2)
 
 func generate_node_sections(node_sections : Dictionary) -> void:
 	for i in library_items:
