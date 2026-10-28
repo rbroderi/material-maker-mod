@@ -217,7 +217,8 @@ func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.Da
 func in_thread_get_texture() -> Texture2D:
 	if texture_needs_update:
 		var image : Image = in_thread_read_image()
-		texture.set_image.call_deferred(image)
+		if image != null:
+			texture.set_image.call_deferred(image)
 		texture_needs_update = false
 	return texture
 
@@ -246,9 +247,7 @@ func in_thread_read_image() -> Image:
 		RenderingDevice.DATA_FORMAT_R32G32_SFLOAT:
 			image_format = Image.FORMAT_RGF
 	if UNORM16_FORMATS.has(texture_format):
-		var channels : int = UNORM16_FORMATS[texture_format]
-		image_format = [ Image.FORMAT_RF, Image.FORMAT_RF, Image.FORMAT_RGF, Image.FORMAT_RGBAF, Image.FORMAT_RGBAF ][channels]
-		return Image.create_from_data(texture_size.x, texture_size.y, false, image_format, in_thread_unorm16_to_float(rd, rid, texture_size, channels))
+		return in_thread_read_unorm16_image(rd, rid, texture_size, UNORM16_FORMATS[texture_format])
 	var row_size : int = texture_size.x*BYTES_PER_PIXEL.get(texture_format, 0)
 	if row_size == 0 or row_size*texture_size.y <= MAX_READBACK_SIZE:
 		return Image.create_from_data(texture_size.x, texture_size.y, false, image_format, rd.texture_get_data(rid, 0))
@@ -260,20 +259,36 @@ func in_thread_read_image() -> Image:
 	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 	var strip_rid : RID = rd.texture_create(fmt, RDTextureView.new(), [])
 	if not strip_rid.is_valid():
+		push_error("Failed to read back texture of size %dx%d" % [ texture_size.x, texture_size.y ])
 		return null
-	var image : Image = Image.create_empty(texture_size.x, texture_size.y, false, image_format)
+	var data : PackedByteArray = PackedByteArray()
 	var y : int = 0
 	while y < texture_size.y:
 		var height : int = min(strip_height, texture_size.y-y)
-		if rd.texture_copy(rid, strip_rid, Vector3(0, y, 0), Vector3.ZERO, Vector3(texture_size.x, height, 1), 0, 0, 0, 0) != OK:
-			push_error("Failed to read back texture of size %dx%d" % [ texture_size.x, texture_size.y ])
-			image = null
+		if rd.texture_copy(rid, strip_rid, Vector3(0, y, 0), Vector3.ZERO, Vector3(texture_size.x, height, 1), 0, 0, 0, 0) != OK or not append_strip(data, rd.texture_get_data(strip_rid, 0), row_size, strip_height, height):
+			data = PackedByteArray()
 			break
-		var strip : Image = Image.create_from_data(texture_size.x, strip_height, false, image_format, rd.texture_get_data(strip_rid, 0))
-		image.blit_rect(strip, Rect2i(0, 0, texture_size.x, height), Vector2i(0, y))
 		y += height
 	rd.free_rid(strip_rid)
-	return image
+	return image_from_strips(texture_size, image_format, data, row_size)
+
+## Appends the first rows of a strip read back from the rendering device to
+## the data of an image (strips are assembled as raw data, since
+## Image.blit_rect() fails for images of 4 GB or more, e.g. 16384x16384 RGBA
+## 32 bits floats)
+static func append_strip(data : PackedByteArray, strip_data : PackedByteArray, row_size : int, strip_height : int, height : int) -> bool:
+	if strip_data.size() != row_size*strip_height:
+		return false
+	data.append_array(strip_data if height == strip_height else strip_data.slice(0, row_size*height))
+	return true
+
+## The image of data assembled by append_strip(), or null (with an error) if
+## the data is incomplete
+static func image_from_strips(size : Vector2i, image_format : Image.Format, data : PackedByteArray, row_size : int) -> Image:
+	if data.size() != row_size*size.y:
+		push_error("Failed to read back texture of size %dx%d" % [ size.x, size.y ])
+		return null
+	return Image.create_from_data(size.x, size.y, false, image_format, data)
 
 ## The data format of the textures of an image format, or -1
 static func image_data_format(image_format : int) -> int:
@@ -302,25 +317,35 @@ static func image_data_format(image_format : int) -> int:
 ## channel count
 static var unorm16_shaders : Dictionary = {}
 
+## Copies a strip of the source texture (from row offset.y, size rows) to the
+## output texture
 const UNORM16_TO_FLOAT_SHADER : String = """#version 450
 layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
 layout(set = 0, binding = 0) uniform sampler2D source_texture;
 layout(set = 0, binding = 1, @FORMAT) restrict uniform writeonly image2D output_texture;
+layout(push_constant, std430) uniform Strip {
+	ivec2 offset;
+	ivec2 size;
+} strip;
 void main() {
 	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-	if (any(greaterThanEqual(p, imageSize(output_texture)))) {
+	if (any(greaterThanEqual(p, strip.size))) {
 		return;
 	}
-	imageStore(output_texture, p, texelFetch(source_texture, p, 0));
+	imageStore(output_texture, p, texelFetch(source_texture, p+strip.offset, 0));
 }
 """
 
-## The data of a 16 bits integer texture as 32 bits floats (in the rendering thread)
-static func in_thread_unorm16_to_float(rendering_device : RenderingDevice, source : RID, size : Vector2i, channels : int) -> PackedByteArray:
+## Reads a 16 bits integer texture back as a 32 bits float image (in the
+## rendering thread). The texture is converted by a compute shader and read
+## back in strips of at most MAX_READBACK_SIZE bytes (as floats), so large
+## textures need neither a float copy nor a staging buffer of their whole
+## size (e.g. 4 GB for 16384x16384 RGBA). Returns null if it fails.
+static func in_thread_read_unorm16_image(rendering_device : RenderingDevice, source : RID, size : Vector2i, channels : int) -> Image:
 	var formats : Dictionary = {
-		1: [ "r32f", RenderingDevice.DATA_FORMAT_R32_SFLOAT ],
-		2: [ "rg32f", RenderingDevice.DATA_FORMAT_R32G32_SFLOAT ],
-		4: [ "rgba32f", RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT ] }
+		1: [ "r32f", RenderingDevice.DATA_FORMAT_R32_SFLOAT, Image.FORMAT_RF ],
+		2: [ "rg32f", RenderingDevice.DATA_FORMAT_R32G32_SFLOAT, Image.FORMAT_RGF ],
+		4: [ "rgba32f", RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, Image.FORMAT_RGBAF ] }
 	var format : Array = formats[channels]
 	var key : String = "%d:%d" % [ rendering_device.get_instance_id(), channels ]
 	if not unorm16_shaders.has(key):
@@ -329,41 +354,65 @@ static func in_thread_unorm16_to_float(rendering_device : RenderingDevice, sourc
 		var spirv : RDShaderSPIRV = rendering_device.shader_compile_spirv_from_source(src)
 		if spirv.compile_error_compute != "":
 			push_error(spirv.compile_error_compute)
-			return PackedByteArray()
-		unorm16_shaders[key] = rendering_device.shader_create_from_spirv(spirv)
+			return null
+		var new_shader : RID = rendering_device.shader_create_from_spirv(spirv)
+		if not new_shader.is_valid():
+			push_error("Failed to create the 16 bits texture readback shader")
+			return null
+		unorm16_shaders[key] = new_shader
 	var shader : RID = unorm16_shaders[key]
+	var row_size : int = size.x*4*channels
+	var strip_height : int = clampi(MAX_READBACK_SIZE/row_size, 1, size.y)
 	var fmt : RDTextureFormat = RDTextureFormat.new()
 	fmt.width = size.x
-	fmt.height = size.y
+	fmt.height = strip_height
 	fmt.format = format[1]
 	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 	var output : RID = rendering_device.texture_create(fmt, RDTextureView.new(), [])
-	var sampler_state : RDSamplerState = RDSamplerState.new()
-	var sampler : RID = rendering_device.sampler_create(sampler_state)
-	var source_uniform : RDUniform = RDUniform.new()
-	source_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
-	source_uniform.binding = 0
-	source_uniform.add_id(sampler)
-	source_uniform.add_id(source)
-	var output_uniform : RDUniform = RDUniform.new()
-	output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-	output_uniform.binding = 1
-	output_uniform.add_id(output)
-	var uniform_set : RID = rendering_device.uniform_set_create([ source_uniform, output_uniform ], shader, 0)
-	var pipeline : RID = rendering_device.compute_pipeline_create(shader)
-	var compute_list : int = rendering_device.compute_list_begin()
-	rendering_device.compute_list_bind_compute_pipeline(compute_list, pipeline)
-	rendering_device.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
-	rendering_device.compute_list_dispatch(compute_list, (size.x+7)/8, (size.y+7)/8, 1)
-	rendering_device.compute_list_end()
-	rendering_device.submit()
-	rendering_device.sync()
-	var data : PackedByteArray = rendering_device.texture_get_data(output, 0)
+	var sampler : RID = rendering_device.sampler_create(RDSamplerState.new())
+	var uniform_set : RID = RID()
+	var pipeline : RID = RID()
+	if output.is_valid() and sampler.is_valid():
+		var source_uniform : RDUniform = RDUniform.new()
+		source_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
+		source_uniform.binding = 0
+		source_uniform.add_id(sampler)
+		source_uniform.add_id(source)
+		var output_uniform : RDUniform = RDUniform.new()
+		output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
+		output_uniform.binding = 1
+		output_uniform.add_id(output)
+		uniform_set = rendering_device.uniform_set_create([ source_uniform, output_uniform ], shader, 0)
+		pipeline = rendering_device.compute_pipeline_create(shader)
+	var data : PackedByteArray = PackedByteArray()
+	if uniform_set.is_valid() and pipeline.is_valid():
+		var strip_parameters : PackedByteArray = PackedInt32Array([ 0, 0, size.x, 0 ]).to_byte_array()
+		var y : int = 0
+		while y < size.y:
+			var height : int = min(strip_height, size.y-y)
+			strip_parameters.encode_s32(4, y)
+			strip_parameters.encode_s32(12, height)
+			var compute_list : int = rendering_device.compute_list_begin()
+			rendering_device.compute_list_bind_compute_pipeline(compute_list, pipeline)
+			rendering_device.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
+			rendering_device.compute_list_set_push_constant(compute_list, strip_parameters, strip_parameters.size())
+			rendering_device.compute_list_dispatch(compute_list, (size.x+7)/8, (height+7)/8, 1)
+			rendering_device.compute_list_end()
+			rendering_device.submit()
+			rendering_device.sync()
+			var strip_data : PackedByteArray = rendering_device.texture_get_data(output, 0)
+			if strip_height == size.y:
+				# A single strip (no copy)
+				data = strip_data
+			elif not append_strip(data, strip_data, row_size, strip_height, height):
+				data = PackedByteArray()
+				break
+			y += height
 	# Freeing the output texture also frees the uniform set that uses it
 	for r in [ pipeline, sampler, output ]:
 		if r.is_valid():
 			rendering_device.free_rid(r)
-	return data
+	return image_from_strips(size, format[2], data, row_size)
 
 func get_texture() -> Texture2D:
 	await restore()
