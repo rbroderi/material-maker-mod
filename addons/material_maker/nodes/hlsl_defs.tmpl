@@ -15,6 +15,26 @@ inline int2 toint2(int x) {
 inline int2 toint2(int x, int y) {
     return int2(x, y);
 }
+// Copies (and conversions of float vectors), and truncations of larger
+// vectors, as GLSL's constructors
+inline int2 toint2(int2 v) {
+    return v;
+}
+inline int2 toint2(int3 v) {
+    return v.xy;
+}
+inline int2 toint2(int4 v) {
+    return v.xy;
+}
+inline int3 toint3(int3 v) {
+    return v;
+}
+inline int3 toint3(int4 v) {
+    return v.xyz;
+}
+inline int4 toint4(int4 v) {
+    return v;
+}
 
 inline int3 toint3(int x) {
     return int3(x, x, x);
@@ -62,7 +82,8 @@ inline float2 tofloat2(float x) {
 inline float2 tofloat2(float x, float y) {
     return float2(x, y);
 }
-// Copies, and truncations of larger vectors, as GLSL's constructors
+// Copies (and conversions of int vectors), and truncations of larger
+// vectors, as GLSL's constructors
 inline float2 tofloat2(float2 v) {
     return v;
 }
