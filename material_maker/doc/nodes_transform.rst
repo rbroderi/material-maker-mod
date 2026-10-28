@@ -18,6 +18,7 @@ The transform nodes are nodes that affect the geometry of their input.
 	node_transform_custom_uv
 	node_transform_tile_2x2
 	node_transform_splatter
+	node_transform_fx-map
 	node_transform_tiler
 	node_transform_tiler_advanced
 	node_transform_circle_splatter
