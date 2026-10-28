@@ -39,13 +39,13 @@
 			},
 			{
 				"f": "$(name_uv)_wet",
-				"longdesc": "1 in the water and fading out in a band above it",
-				"shortdesc": "Wetness",
+				"longdesc": "1 in the water, fading out in a band above it",
+				"shortdesc": "Wet",
 				"type": "f"
 			},
 			{
 				"f": "$(name_uv)_depth",
-				"longdesc": "The depth of the water, relative to the level",
+				"longdesc": "The depth of the water, relative to the level (1 where the height is 0)",
 				"shortdesc": "Depth",
 				"type": "f"
 			}
@@ -103,7 +103,7 @@
 				"control": "None",
 				"default": 8.0,
 				"label": "Noise scale",
-				"longdesc": "The scale of the noise",
+				"longdesc": "The scale of the noise (rounded to a whole number so the masks tile)",
 				"max": 64.0,
 				"min": 1.0,
 				"name": "noise_scale",

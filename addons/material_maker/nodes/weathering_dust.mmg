@@ -7,10 +7,11 @@
 	"seed_int": 0,
 	"type": "shader",
 	"parameters": {
-		"amount": 0.5,
+		"amount": 0.3,
 		"softness": 0.1,
 		"noise_scale": 8.0,
-		"noise_amount": 0.5
+		"noise_amount": 0.5,
+		"cavity_weight": 0.3
 	},
 	"shader_model": {
 		"code": "",
@@ -20,7 +21,7 @@
 				"default": "vec3(0.5, 0.5, 0.0)",
 				"function": true,
 				"label": "",
-				"longdesc": "A normal map",
+				"longdesc": "A normal map, e.g. from the Normal Map or Mesh Map nodes",
 				"name": "normal",
 				"shortdesc": "Normal",
 				"type": "rgb"
@@ -29,7 +30,7 @@
 				"default": "1.0",
 				"function": true,
 				"label": "",
-				"longdesc": "An ambient occlusion map (dark in cavities)",
+				"longdesc": "An ambient occlusion map (white where open, dark in cavities), e.g. from the Occlusion or Mesh Map nodes",
 				"name": "ao",
 				"shortdesc": "Ambient occlusion",
 				"type": "f"
@@ -38,13 +39,14 @@
 		"instance": [
 			"float $(name)_mask(vec2 uv) {",
 			"\tfloat noise = mm_weathering_fbm(uv, $noise_scale, 5, $seed)-0.5;",
-			"\tvec3 n = mm_normal_decode($normal(uv));",
-			"\tfloat flat_areas = n.z*n.z;",
-			"\tfloat dust = flat_areas*0.7+0.3*(1.0-$ao(uv));",
-			"\treturn smoothstep(1.0-$amount, 1.0-$amount+$softness+0.0001, dust+noise*$noise_amount);",
+			"\tvec3 n = mm_weathering_normal($normal(uv));",
+			"\tfloat flat_areas = clamp(n.z, 0.0, 1.0);",
+			"\tflat_areas *= flat_areas;",
+			"\tfloat dust = mix(flat_areas, 1.0-clamp($ao(uv), 0.0, 1.0), $cavity_weight);",
+			"\treturn mm_weathering_threshold(dust+noise*$noise_amount, $amount, $softness);",
 			"}"
 		],
-		"longdesc": "Generates a mask of dust settled on flat, upward facing surfaces and in corners, broken up by noise",
+		"longdesc": "Generates a mask of dust settled on flat surfaces facing the viewer (the top of a floor seen from above) and in corners, broken up by noise",
 		"name": "Dust",
 		"outputs": [
 			{
@@ -57,9 +59,9 @@
 		"parameters": [
 			{
 				"control": "None",
-				"default": 0.5,
+				"default": 0.3,
 				"label": "Amount",
-				"longdesc": "The amount of the effect",
+				"longdesc": "The amount of the effect: 0 gives an empty mask, 1 a full mask",
 				"max": 1.0,
 				"min": 0.0,
 				"name": "amount",
@@ -81,9 +83,21 @@
 			},
 			{
 				"control": "None",
+				"default": 0.3,
+				"label": "Cavity weight",
+				"longdesc": "How much corners (from the ambient occlusion map) get dust, rather than flat surfaces",
+				"max": 1.0,
+				"min": 0.0,
+				"name": "cavity_weight",
+				"shortdesc": "Cavity weight",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
 				"default": 8.0,
 				"label": "Noise scale",
-				"longdesc": "The scale of the noise that breaks up the mask",
+				"longdesc": "The scale of the noise that breaks up the mask (rounded to a whole number so the mask tiles)",
 				"max": 64.0,
 				"min": 1.0,
 				"name": "noise_scale",
@@ -106,8 +120,7 @@
 		],
 		"shortdesc": "Dust",
 		"includes": [
-			"weathering_grunge",
-			"normal_normalize"
+			"weathering_grunge"
 		]
 	}
 }

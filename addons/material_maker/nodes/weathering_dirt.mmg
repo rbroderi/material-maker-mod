@@ -21,7 +21,7 @@
 				"default": "1.0",
 				"function": true,
 				"label": "",
-				"longdesc": "An ambient occlusion map (dark in cavities)",
+				"longdesc": "An ambient occlusion map (white where open, dark in cavities), e.g. from the Occlusion or Mesh Map nodes",
 				"name": "ao",
 				"shortdesc": "Ambient occlusion",
 				"type": "f"
@@ -30,7 +30,7 @@
 				"default": "0.5",
 				"function": true,
 				"label": "",
-				"longdesc": "A curvature map (0.5 is flat, brighter is convex), e.g. from the Curvature or Mesh Map nodes",
+				"longdesc": "A curvature map (0.5 is flat, brighter is convex, darker is concave), e.g. from the Smooth Curvature or Mesh Map nodes",
 				"name": "curvature",
 				"shortdesc": "Curvature",
 				"type": "f"
@@ -39,8 +39,9 @@
 		"instance": [
 			"float $(name)_mask(vec2 uv) {",
 			"\tfloat noise = mm_weathering_fbm(uv, $noise_scale, 5, $seed)-0.5;",
-			"\tfloat cavity = (1.0-$ao(uv))+$curvature_weight*max(0.5-$curvature(uv), 0.0)*2.0;",
-			"\treturn smoothstep(1.0-$amount, 1.0-$amount+$softness+0.0001, cavity+noise*$noise_amount);",
+			"\tfloat cavity = 1.0-clamp($ao(uv), 0.0, 1.0);",
+			"\tfloat concave = clamp((0.5-$curvature(uv))*2.0, 0.0, 1.0);",
+			"\treturn mm_weathering_threshold(cavity+$curvature_weight*concave+noise*$noise_amount, $amount, $softness);",
 			"}"
 		],
 		"longdesc": "Generates a mask of dirt accumulated in cavities and concave areas, from ambient occlusion and curvature maps, broken up by noise",
@@ -58,7 +59,7 @@
 				"control": "None",
 				"default": 0.5,
 				"label": "Amount",
-				"longdesc": "The amount of the effect",
+				"longdesc": "The amount of the effect: 0 gives an empty mask, 1 a full mask",
 				"max": 1.0,
 				"min": 0.0,
 				"name": "amount",
@@ -94,7 +95,7 @@
 				"control": "None",
 				"default": 8.0,
 				"label": "Noise scale",
-				"longdesc": "The scale of the noise that breaks up the mask",
+				"longdesc": "The scale of the noise that breaks up the mask (rounded to a whole number so the mask tiles)",
 				"max": 64.0,
 				"min": 1.0,
 				"name": "noise_scale",
