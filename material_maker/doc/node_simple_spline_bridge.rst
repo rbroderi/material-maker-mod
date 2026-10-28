@@ -1,7 +1,8 @@
 Spline Bridge node
 ~~~~~~~~~~~~~~~~~~
 
-The **Spline Bridge** node: fills the area between two curves, and maps a pattern on it: its x axis goes along the curves, and its y axis from the first curve to the second.
+The **Spline Bridge** node fills the area between two curves, and maps a pattern on it: its x
+axis goes along the curves, and its y axis from the first curve to the second.
 
 Inputs
 ++++++
@@ -28,4 +29,10 @@ Usage
 +++++
 
 Both curves are edited in the 2D preview (select them with the drop down button of the
-preview). They are followed from their first to their last point.
+preview). They go smoothly through their points, like the **Poly Curve** node's curve, and
+are followed from their first to their last point. The curves can have different numbers of
+points: points at the same fraction of the length of each curve (measured on its control
+points) are connected.
+
+If the curves cross each other, the area between them folds over itself, and the pattern is
+mirrored on the other side of the crossing.

@@ -68,26 +68,42 @@
 			}
 		],
 		"instance": [
+			"// Point of the a curve at the fraction t of its length (measured on its control points)",
 			"vec2 $(name)_a(float t) {",
 			"\tvec2 v[] = $curve_a;",
 			"\tint l = v.length();",
-			"\tif (l < 2) {",
-			"\t\treturn v[0];",
+			"\tfloat total = 0.0;",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\ttotal += length(v[i+1]-v[i]);",
 			"\t}",
-			"\tfloat x = clamp(t, 0.0, 1.0)*float(l-1);",
-			"\tint i = min(int(x), l-2);",
-			"\treturn mix(v[i], v[i+1], x-float(i));",
+			"\tfloat x = clamp(t, 0.0, 1.0)*total;",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\tfloat s = length(v[i+1]-v[i]);",
+			"\t\tif (x <= s || i == l-2) {",
+			"\t\t\treturn curve(clamp(x/max(s, 0.00000001), 0.0, 1.0), v[max(i-1, 0)], v[i], v[i+1], v[min(i+2, l-1)]);",
+			"\t\t}",
+			"\t\tx -= s;",
+			"\t}",
+			"\treturn v[l-1];",
 			"}",
 			"",
+			"// Point of the b curve at the fraction t of its length (measured on its control points)",
 			"vec2 $(name)_b(float t) {",
 			"\tvec2 v[] = $curve_b;",
 			"\tint l = v.length();",
-			"\tif (l < 2) {",
-			"\t\treturn v[0];",
+			"\tfloat total = 0.0;",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\ttotal += length(v[i+1]-v[i]);",
 			"\t}",
-			"\tfloat x = clamp(t, 0.0, 1.0)*float(l-1);",
-			"\tint i = min(int(x), l-2);",
-			"\treturn mix(v[i], v[i+1], x-float(i));",
+			"\tfloat x = clamp(t, 0.0, 1.0)*total;",
+			"\tfor (int i = 0; i < l-1; ++i) {",
+			"\t\tfloat s = length(v[i+1]-v[i]);",
+			"\t\tif (x <= s || i == l-2) {",
+			"\t\t\treturn curve(clamp(x/max(s, 0.00000001), 0.0, 1.0), v[max(i-1, 0)], v[i], v[i+1], v[min(i+2, l-1)]);",
+			"\t\t}",
+			"\t\tx -= s;",
+			"\t}",
+			"\treturn v[l-1];",
 			"}",
 			"",
 			"// Distance from uv to the segment between the curves at t: (s, distance)",
@@ -116,7 +132,7 @@
 			"\t}",
 			"\t// Refine around the best step",
 			"\tfloat dt = 1.0/float(steps);",
-			"\tfor (int k = 0; k < 10; ++k) {",
+			"\tfor (int k = 0; k < 12; ++k) {",
 			"\t\tdt *= 0.5;",
 			"\t\tfor (int side = -1; side <= 1; side += 2) {",
 			"\t\t\tfloat t = clamp(best_t+float(side)*dt, 0.0, 1.0);",
@@ -137,7 +153,7 @@
 			"\treturn vec4(c.rgb, c.a*b.w);",
 			"}"
 		],
-		"longdesc": "Fills the area between two curves, and maps a pattern on it: its x axis goes along the curves, and its y axis from the first curve to the second",
+		"longdesc": "Fills the area between two smooth curves, and maps a pattern on it: its x axis goes along the curves, and its y axis from the first curve to the second",
 		"name": "Spline Bridge",
 		"outputs": [
 			{
@@ -183,7 +199,7 @@
 					"type": "Polygon"
 				},
 				"label": "First curve",
-				"longdesc": "The first curve, edited in the 2D preview",
+				"longdesc": "The first curve, edited in the 2D preview. It goes smoothly through its points, like the Poly Curve node's",
 				"name": "curve_a",
 				"shortdesc": "First curve",
 				"type": "polyline"
@@ -211,7 +227,7 @@
 					"type": "Polygon"
 				},
 				"label": "Second curve",
-				"longdesc": "The second curve, edited in the 2D preview",
+				"longdesc": "The second curve, edited in the 2D preview. It goes smoothly through its points, like the Poly Curve node's",
 				"name": "curve_b",
 				"shortdesc": "Second curve",
 				"type": "polyline"
@@ -253,6 +269,9 @@
 				"type": "float"
 			}
 		],
-		"shortdesc": "Spline Bridge"
+		"shortdesc": "Spline Bridge",
+		"includes": [
+			"polycurve"
+		]
 	}
 }
