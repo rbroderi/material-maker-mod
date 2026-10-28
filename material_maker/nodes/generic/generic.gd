@@ -181,7 +181,22 @@ func on_parameter_changed(p : String, v) -> void:
 	else:
 		MMGraphNodeGeneric.update_control_from_parameter(controls, p, v)
 		update_parameter_tooltip(p, v)
+		update_unused_controls()
 	get_parent().set_need_save()
+
+## Greys out the controls of parameters the generator ignores with its current settings
+func update_unused_controls() -> void:
+	if not generator.has_method("is_parameter_used"):
+		return
+	for p in controls.keys():
+		var control = controls[p]
+		if not is_instance_valid(control):
+			continue
+		var used : bool = generator.is_parameter_used(p)
+		if control is BaseButton:
+			control.disabled = not used
+		elif control is FloatEdit:
+			control.editable = used
 
 static func initialize_controls_from_generator(control_list, gen, object) -> void:
 	var parameter_names = []
@@ -617,6 +632,7 @@ func update_node() -> void:
 			previous_focus.focus_next = first_focus.get_path()
 			first_focus.focus_previous = previous_focus.get_path()
 		initialize_properties()
+		update_unused_controls()
 	
 	# Outputs
 	var outputs = generator.get_output_defs()
