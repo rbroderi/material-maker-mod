@@ -8,6 +8,14 @@ var texture_size : Vector2i
 var texture_format : RenderingDevice.DataFormat
 var texture : Texture2D
 var texture_needs_update : bool = false
+## Increased by set_texture(), so the rendering thread can tell whether the
+## texture it read is still current
+var texture_version : int = 0
+## Makes set_texture() (main thread) atomic for get_texture_rid() (rendering
+## thread): texture, texture_format, texture_size, texture_version and rid
+## change together. Only held for a few assignments, never while a texture is
+## being created.
+var mutex : Mutex = Mutex.new()
 
 
 func _init() -> void:
@@ -25,23 +33,39 @@ static func in_thread_free_rid(texture_rid, rendering_device):
 		rendering_device.free_rid(texture_rid)
 
 func get_texture_rid(target_rd : RenderingDevice) -> RID:
-	if ! rid.is_valid():
-		var image : Image = texture.get_image()
+	mutex.lock()
+	while ! rid.is_valid():
+		# Read the texture and its format together, then create the RD texture
+		# without holding the lock
+		var source : Texture2D = texture
+		var format : RenderingDevice.DataFormat = texture_format
+		var version : int = texture_version
+		mutex.unlock()
+		var image : Image = source.get_image()
 		if image == null or image.get_width() == 0 or image.get_height() == 0:
 			#print("No image for texture %s" % str(texture))
 			image = Image.create(1, 1, false, Image.FORMAT_RH)
-			texture_format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
+			format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
 		var fmt : RDTextureFormat = RDTextureFormat.new()
 		fmt.width = image.get_width()
 		fmt.height = image.get_height()
-		fmt.format = texture_format
+		fmt.format = format
 		fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 		var view : RDTextureView = RDTextureView.new()
-		rd = target_rd
-		rid = rd.texture_create(fmt, view, [ image.get_data() ])
-	else:
-		assert(target_rd == rd)
-	return rid
+		var new_rid : RID = target_rd.texture_create(fmt, view, [ image.get_data() ])
+		mutex.lock()
+		if version == texture_version:
+			texture_format = format
+			rd = target_rd
+			rid = new_rid
+			break
+		# set_texture() was called meanwhile: start again with the new texture
+		if new_rid.is_valid():
+			target_rd.free_rid(new_rid)
+	assert(target_rd == rd)
+	var texture_rid : RID = rid
+	mutex.unlock()
+	return texture_rid
 
 func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.DataFormat, new_rd : RenderingDevice) -> void:
 	if new_rid == rid:
@@ -110,13 +134,19 @@ func set_texture(new_texture : ImageTexture) -> void:
 				format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
 		size = image.get_size()
 	# The rendering thread may create the RD texture from this one at any time
-	# (when it has none): only use the new texture once its image is converted
+	# (when it has none): only use the new texture once its image is converted,
+	# and swap it in together with its format and size
+	mutex.lock()
 	texture_format = format
 	texture_size = size
 	texture = new_texture
-	if rid.is_valid():
-		rd.free_rid(rid)
+	texture_version += 1
+	var old_rid : RID = rid
+	var old_rd : RenderingDevice = rd
 	rid = RID()
+	mutex.unlock()
+	if old_rid.is_valid():
+		old_rd.free_rid(old_rid)
 
 func get_width() -> int:
 	return texture_size.x
