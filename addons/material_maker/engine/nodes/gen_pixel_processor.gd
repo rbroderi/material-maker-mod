@@ -104,7 +104,7 @@ static func build_shader_model(graph : Dictionary, mode : String = "pixel") -> D
 		model_parameters.append({ name="size", label="Size", type="size", first=4, last=13, default=10 })
 	if not errors.is_empty():
 		return { errors=errors }
-	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed", function_prefix="$(name)_fn_" }
+	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed", mode=mode, function_prefix="$(name)_fn_" }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
 	if not result.ok:
 		return { errors=result.errors }
