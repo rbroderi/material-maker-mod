@@ -48,8 +48,8 @@ Function graphs give MM:
 - `output` is the result. `float`/`int` results are broadcast to gray RGBA, `vec2` gets
   `b = 0, a = 1`, `vec3` gets `a = 1`.
 - `inputs` are image inputs (sampled as RGBA), `parameters` are float parameters.
-- `random_seed` (optional) is the integer seed of `sd_rand`; without it, the node's seed
-  is used.
+- `random_seed` (optional) is the integer seed of `sd_rand` (sd_rand plugin); without
+  it, the node's seed is used.
 - `functions` are sub-functions with typed `params`; their graphs use `arg` to read
   arguments and may use every operation except `sd_rand`. Recursion is rejected.
 - `pos` on nodes is editor metadata, ignored by the compiler. Node ids that contain
@@ -78,14 +78,33 @@ with floats implicitly (`to_float`, `to_int`).
 | Logic | `and`, `or`, `not`, `select` (`cond`, `a`, `b`) | bool / operand type |
 | Conversion | `to_int` (floor), `to_float` | int / float |
 | Functions | `call` (`function`, `args`), `loop` (`function`, `count` ≤ 1024, `init`) | return type |
-| Random | `rand` (vec2 seed → float), `sd_rand` (`a`: amplitude) | float |
+| Random | `rand` (vec2 seed → float) | float |
+| Plugins | `sd_rand` (`a`: amplitude, sd_rand plugin), other operations added by plugins | float |
 
 `loop` repeats `acc = function(acc, i)` for `i` in `0..count-1`; the function must take
 `(T, int)` and return `T`.
 
-### Substance-compatible random numbers
+### Operations added by plugins
 
-`sd_rand` follows the behavioral specification in sbsar2ptex's
+Plugins add operations with `MMPlugins.API.add_function_graph_op(name, operands,
+compile_callable, globals)` (stored by `MMFunctionGraph.add_operation()`):
+
+- `operands` are the keys of the node that reference other nodes (dependencies),
+- `compile_callable(compiler, node_id, node, op, operands)` sets
+  `compiler.types[node_id]` and returns the node's GLSL expression, or calls
+  `compiler.error()` and returns `""`; it can add statements before the node's to
+  `compiler.code`, globals with `compiler.add_global()`, and read `compiler.variables`
+  (`mode` is `"pixel"` or `"value"`) and `compiler.graph` (the whole graph),
+- `globals` are GLSL definitions added once per shader when the operation is used.
+
+Built-in operations cannot be replaced. Plugin operations are listed in the editor's
+*Other* category, are not available in parameter functions, and graphs that use one
+that is not available (plugin disabled or not installed) get an "unknown operation"
+error. Registrations are cleared when Material Maker quits.
+
+### Substance-compatible random numbers (sd_rand plugin)
+
+`sd_rand` (`material_maker/plugins/sd_rand`) follows the behavioral specification in sbsar2ptex's
 `docs/random-generator.md` (implemented from the spec):
 
 - **pixel processors**: the state is a Jenkins one-at-a-time hash of the seed and the bit
@@ -104,8 +123,8 @@ and 5). FX-Map random streams will come with an FX-Map node.
 
 1. validates sub-functions and orders them so callees come first,
 2. compiles each sub-function to a GLSL function `prefix+name(vec2 uv, args...)`,
-3. compiles the main graph (operands first, one statement per node; loops and `sd_rand`
-   add statements),
+3. compiles the main graph (operands first, one statement per node; loops and some
+   plugin operations such as `sd_rand` add statements),
 4. returns `{ ok, code, value, functions, globals, types, node_errors, function_types,
    function_node_errors, errors }`.
 
@@ -120,7 +139,7 @@ only use parameters and constants into a single GLSL expression (parameter funct
 
 - **Pixel Processor** (`MMGenPixelProcessor`): compiles its graph into a shader model
   (function inputs, float parameters, sub-functions and the main function as instance
-  code, `sd_rand`'s hash as a global). Previews, exports and automatic buffers work
+  code, globals such as `sd_rand`'s hash). Previews, exports and automatic buffers work
   unchanged. Only `function_graph` is serialized.
 - **Value Processor** (`MMGenValueProcessor`): same compilation in *value* mode (no `pos`
   or `size`). Its visible output samples a hidden **1×1 buffer** of the graph's raw
@@ -142,7 +161,7 @@ in code:
 - vector constructors have one slot per component, with constants on unconnected slots;
 - the graph is compiled after each change: types in node titles, errors in red with a
   tooltip, *Apply*/*OK* disabled while invalid;
-- side panel: inputs, parameters and fixed seed (main graph), name and typed arguments
+- side panel: inputs and parameters (main graph), name and typed arguments
   (sub-functions), available parameters (expression mode);
 - *Add function* / *Remove function* and a scope selector; *Edit JSON* as a fallback;
 - layout by dependency depth for nodes without a stored position;
@@ -151,7 +170,9 @@ in code:
 ## Tests
 
 - `test/test_function_graph.gd` (GUT, 35 tests): v1 and v2 operations, typing errors,
-  functions, recursion, loops, `sd_rand` code generation, parameter functions, value mode.
+  functions, recursion, loops, plugin operations, parameter functions, value mode;
+  `material_maker/plugins/sd_rand/tests/test_sd_rand.gd`: `sd_rand` code generation,
+  enabling and disabling the plugin.
 - GPU checks: `sd_rand` conformance vectors, loops, value processor evaluation and
   updates, editor interactions (open from a node, round trip, connect/disconnect, vector
   constants, type errors, functions, apply with undo, expression mode), parameter

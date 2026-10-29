@@ -12,8 +12,8 @@ class_name MMFunctionGraph
 # - parameter_expressions: a dictionary that maps parameter names to GLSL
 #   expressions (e.g. "$contrast")
 # - variables: GLSL expressions for "pos", "size" and "seed", the prefix
-#   of generated function names ("function_prefix"), and for sd_rand the
-#   uint seed ("sd_seed") and mode ("sd_rand_mode": "pixel" or "value")
+#   of generated function names ("function_prefix"), and the mode ("mode":
+#   "pixel" or "value", for operations added by plugins)
 # and returns { ok, code, value, functions, types, node_errors, errors }:
 # - code is a list of GLSL statements and value the vec4 expression of the
 #   result (inside a function that has a vec2 uv argument),
@@ -56,36 +56,42 @@ const OPERANDS : Dictionary = {
 	"cross": [ "a", "b" ], "swizzle": [ "a" ], "mix": [ "a", "b", "t" ],
 	"clamp": [ "a", "min", "max" ], "smoothstep": [ "e0", "e1", "a" ],
 	"and": [ "a", "b" ], "or": [ "a", "b" ], "not": [ "a" ], "select": [ "cond", "a", "b" ],
-	"rand": [ "a" ], "sd_rand": [ "a" ], "to_int": [ "a" ], "to_float": [ "a" ], "loop": [ "init" ]
+	"rand": [ "a" ], "to_int": [ "a" ], "to_float": [ "a" ], "loop": [ "init" ]
 }
 
 static var re_identifier : RegEx = RegEx.create_from_string("^[a-zA-Z][a-zA-Z0-9_]*$")
 
-# Substance-compatible random numbers (behavior specified in sbsar2ptex's
-# docs/random-generator.md). Each evaluation owns a 32 bits state:
-# - pixel processors start from a Jenkins one-at-a-time hash of the seed and
-#   of the bit patterns of the pixel center position,
-# - value functions start from the seed,
-# and each sd_rand call advances it with an LCG, then uses bits 1-23 as the
-# mantissa of a number in [0, 1).
-const SD_RAND_PIXEL_LCG : String = "1228363579u+51137u" # 0x4937573B, 0xC7C1
-const SD_RAND_VALUE_LCG : String = "2147001325u+715136305u" # 0x7FF8A3ED, 0x2AA01D31
-const SD_RAND_GLOBAL : String = """uint mm_sd_rand_init(uint seed, vec2 pos) {
-	uint h = seed;
-	h += h << 10u;
-	h ^= h >> 6u;
-	h += floatBitsToUint(pos.x);
-	h += h << 10u;
-	h ^= h >> 6u;
-	h += floatBitsToUint(pos.y);
-	h += h << 10u;
-	h ^= h >> 6u;
-	h += h << 3u;
-	h ^= h >> 11u;
-	h += h << 15u;
-	return h;
-}
-"""
+## Operations added by plugins (see add_operation): op -> { operands,
+## compile, globals, plugin }
+static var plugin_operations : Dictionary = {}
+
+## Adds an operation (for plugins, see MMPlugins.API.add_function_graph_op):
+## - operands: the keys of the node that reference other nodes,
+## - compile_callable: called with the Compiler, the node id, the node, the
+##   operation and the operand ids, sets the node's type in compiler.types
+##   and returns its GLSL expression, or reports an error with
+##   compiler.error() and returns "" (it can also add statements before the
+##   node's to compiler.code, and globals with compiler.add_global()),
+## - globals: global GLSL definitions the operation requires (added once).
+## Returns false if an operation with that name already exists.
+static func add_operation(op : String, operands : Array, compile_callable : Callable, globals : Array = [], plugin : String = "") -> bool:
+	if not is_identifier(op) or is_builtin_operation(op) or plugin_operations.has(op):
+		return false
+	plugin_operations[op] = { operands=operands.duplicate(), compile=compile_callable, globals=globals.duplicate(), plugin=plugin }
+	return true
+
+## Removes the operations added by a plugin (all of them if plugin is "")
+static func remove_plugin_operations(plugin : String = "") -> void:
+	for op in plugin_operations.keys():
+		if plugin == "" or plugin_operations[op].plugin == plugin:
+			plugin_operations.erase(op)
+
+static func is_builtin_operation(op : String) -> bool:
+	return BINARY_OPS.has(op) or UNARY_OPS.has(op) or COMPARISON_OPS.has(op) or Compiler.OP_COMPILERS.has(op)
+
+## The names of all operations, built-in ones first
+static func get_operation_names() -> Array:
+	return BINARY_OPS.keys()+UNARY_OPS.keys()+COMPARISON_OPS.keys()+Compiler.OP_COMPILERS.keys()+plugin_operations.keys()
 
 static func is_identifier(s) -> bool:
 	return (s is String or s is StringName) and re_identifier.search(str(s)) != null
@@ -114,8 +120,9 @@ class Compiler:
 	# Arguments of the function being compiled: name -> { type, glsl_name }
 	var args : Dictionary = {}
 	var context : String = ""
-
-	var uses_sd_rand : bool = false
+	# The whole function graph (e.g. for settings of operations added by
+	# plugins)
+	var graph : Dictionary = {}
 
 	var errors : PackedStringArray = PackedStringArray()
 	var node_errors : Dictionary = {}
@@ -123,6 +130,7 @@ class Compiler:
 	var types : Dictionary = {}
 	var names : Dictionary = {}
 	var code : PackedStringArray = PackedStringArray()
+	var globals : PackedStringArray = PackedStringArray()
 
 	func error(node_id : String, message : String) -> void:
 		if node_id == "":
@@ -130,6 +138,10 @@ class Compiler:
 		else:
 			errors.append("%s%s: %s" % [ context, node_id, message ])
 			node_errors[node_id] = message
+
+	func add_global(definition : String) -> void:
+		if not definition in globals:
+			globals.append(definition)
 
 	func get_operand_ids(node : Dictionary) -> Array:
 		var op : String = node.get("op", "")
@@ -140,6 +152,8 @@ class Compiler:
 			keys = [ "a" ]
 		elif OPERANDS.has(op):
 			keys = OPERANDS[op]
+		elif MMFunctionGraph.plugin_operations.has(op):
+			keys = MMFunctionGraph.plugin_operations[op].operands
 		var rv : Array = []
 		for k in keys:
 			rv.append(node.get(k))
@@ -214,7 +228,7 @@ class Compiler:
 		"dot": "compile_dot_distance", "distance": "compile_dot_distance", "length": "compile_length", "cross": "compile_cross",
 		"swizzle": "compile_swizzle", "mix": "compile_mix_clamp", "clamp": "compile_mix_clamp", "smoothstep": "compile_mix_clamp",
 		"and": "compile_logic", "or": "compile_logic", "not": "compile_logic", "select": "compile_select",
-		"rand": "compile_rand", "sd_rand": "compile_sd_rand"
+		"rand": "compile_rand"
 	}
 
 	func compile_node(node_id : String) -> String:
@@ -243,7 +257,17 @@ class Compiler:
 				return ""
 			types[node_id] = "bool"
 			return "(%s %s %s)" % [ value_of(node.a), COMPARISON_OPS[op], value_of(node.b) ]
-		error(node_id, "unknown operation %s" % op)
+		if MMFunctionGraph.plugin_operations.has(op):
+			var operation : Dictionary = MMFunctionGraph.plugin_operations[op]
+			var expression = operation.compile.call(self, node_id, node, op, operands)
+			if not expression is String:
+				error(node_id, "operation %s did not return an expression" % op)
+				return ""
+			if expression != "":
+				for g in operation.globals:
+					add_global(g)
+			return expression
+		error(node_id, "unknown operation %s (it may need a plugin that is not installed or enabled)" % op)
 		return ""
 
 
@@ -445,26 +469,6 @@ class Compiler:
 		types[node_id] = "float"
 		return "rand(%s+vec2(%s))" % [ value_of(node.a), variables.seed ]
 
-	func compile_sd_rand(node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
-		# Substance-compatible rand(a): every call advances a random
-		# state, in dependency order (see SD_RAND_* below)
-		if types[node.a] != "float":
-			error(node_id, "sd_rand requires a float amplitude")
-			return ""
-		if not args.is_empty() or context != "":
-			error(node_id, "sd_rand is not supported in sub-functions")
-			return ""
-		var mode : String = variables.get("sd_rand_mode", "pixel")
-		if not uses_sd_rand:
-			uses_sd_rand = true
-			if mode == "value":
-				code.append("uint fg_rng = %s;" % variables.get("sd_seed", "0u"))
-			else:
-				code.append("uint fg_rng = mm_sd_rand_init(%s, uv);" % variables.get("sd_seed", "0u"))
-		code.append("fg_rng = fg_rng*%s;" % (SD_RAND_VALUE_LCG if mode == "value" else SD_RAND_PIXEL_LCG))
-		types[node_id] = "float"
-		return "((uintBitsToFloat(1065353216u | ((fg_rng >> 1u) & 8388607u))-1.0)*%s)" % value_of(node.a)
-
 	# Compiles nodes reachable from output into code, returns false on error
 	func compile_body() -> bool:
 		var state : Dictionary = {}
@@ -517,6 +521,7 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 	var errors : PackedStringArray = PackedStringArray()
 	var functions_info : Dictionary = {}
 	var function_definitions : PackedStringArray = PackedStringArray()
+	var globals : PackedStringArray = PackedStringArray()
 	var prefix : String = variables.get("function_prefix", "fg_function_")
 	var functions = graph.get("functions", {})
 	if not functions is Dictionary:
@@ -544,6 +549,7 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 		compiler.parameter_expressions = parameter_expressions
 		compiler.variables = variables
 		compiler.functions_info = functions_info
+		compiler.graph = graph
 		var declarations : PackedStringArray = PackedStringArray([ "vec2 uv" ])
 		for p in f.get("params", []):
 			compiler.args[p.name] = { type=p.type, glsl_name="fa_"+p.name }
@@ -561,12 +567,16 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 		definition += "\treturn %s;\n}\n" % compiler.value_of(compiler.output)
 		function_definitions.append(definition)
 		functions_info[name] = { params=f.get("params", []), return_type=return_type, glsl_name=prefix+name }
+		for g in compiler.globals:
+			if not g in globals:
+				globals.append(g)
 	# Compile the main graph
 	var main : Compiler = Compiler.new()
 	main.sample_expressions = sample_expressions
 	main.parameter_expressions = parameter_expressions
 	main.variables = variables
 	main.functions_info = functions_info
+	main.graph = graph
 	if not graph.has("nodes") or not graph.nodes is Dictionary:
 		main.error("", "the graph has no nodes")
 	elif not graph.has("output") or not graph.output is String:
@@ -594,9 +604,9 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 		"bool":
 			return { ok=false, errors=PackedStringArray([ "%s: the output cannot be a boolean" % graph.output ]),
 				node_errors={ graph.output: "the output cannot be a boolean" }, types=main.types }
-	var globals : PackedStringArray = PackedStringArray()
-	if main.uses_sd_rand and variables.get("sd_rand_mode", "pixel") == "pixel":
-		globals.append(SD_RAND_GLOBAL)
+	for g in main.globals:
+		if not g in globals:
+			globals.append(g)
 	return { ok=true, code=main.code, value=value, functions=function_definitions, globals=globals, types=main.types, node_errors={}, errors=errors,
 		function_types=function_types, function_node_errors=function_node_errors }
 
@@ -608,7 +618,7 @@ static func compile_expression(graph : Dictionary, parameter_expressions : Dicti
 		return { ok=false, errors=PackedStringArray([ "functions are not supported in parameter functions" ]) }
 	if graph.get("nodes") is Dictionary:
 		for n in graph.nodes.values():
-			if n is Dictionary and n.get("op", "") in [ "pos", "size", "sample", "rand", "sd_rand", "loop", "call" ]:
+			if n is Dictionary and (n.get("op", "") in [ "pos", "size", "sample", "rand", "loop", "call" ] or plugin_operations.has(n.get("op", ""))):
 				return { ok=false, errors=PackedStringArray([ "%s is not supported in parameter functions" % n.op ]) }
 	var result : Dictionary = compile(graph, [], parameter_expressions, { pos="uv", size="vec2(1.0)", seed="0.0" })
 	if not result.ok:

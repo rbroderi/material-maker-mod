@@ -58,9 +58,12 @@ Random numbers
 
 * *rand* returns a random value computed from a 2D seed.
 
-* *sd_rand* reproduces Substance Designer's pixel processor random generator: each call
-  returns the next value of a random sequence that depends on the seed and the pixel
-  position. With a fixed seed, results match Substance Designer for the same seed.
+* *sd_rand*, added by the *Substance random numbers* plugin (in the *Other* category),
+  reproduces Substance Designer's pixel processor random generator: each call returns the
+  next value of a random sequence that depends on the seed and the pixel position. With a
+  fixed seed, results match Substance Designer for the same seed.
+
+Plugins can add other operations, that are listed in the *Other* category.
 
 Notes
 +++++

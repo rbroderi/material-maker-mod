@@ -27,8 +27,8 @@ class_name MMPlugins
 # missing, too old, disabled, failed to load or depend on it is not loaded.
 # Their scripts can add menu items, import formats, RPC methods, command line
 # commands (material_maker --plugin <command> [arguments]) and modes, sections
-# of the 2D preview's export menu, export hooks, image file formats and node
-# types implemented by scripts.
+# of the 2D preview's export menu, export hooks, image file formats, node
+# types implemented by scripts and function graph operations.
 #
 # Graphs can declare what they need (see check_requirements): a "requires"
 # dictionary, or a line of their long description such as
@@ -130,6 +130,18 @@ class API:
 	## that is not available load them as placeholders (MMGenMissing).
 	func add_node_type(type : String, script : Script) -> void:
 		MMPlugins.node_types[type] = { plugin=plugin_id, script=script }
+
+	## Adds an operation to function graphs (Pixel and Value Processors):
+	## operands are the keys of nodes that reference other nodes, and
+	## compile_callable receives the compiler (MMFunctionGraph.Compiler), the
+	## node id, the node, the operation and the operand ids, and returns the
+	## node's GLSL expression after setting its type in compiler.types (or
+	## calls compiler.error() and returns ""). globals are the global GLSL
+	## definitions the operation needs (added once per shader). Graphs that use
+	## an operation that is not available show an error.
+	func add_function_graph_op(op_name : String, operands : Array, compile_callable : Callable, globals : Array = []) -> void:
+		if not MMFunctionGraph.add_operation(op_name, operands, compile_callable, globals, plugin_id):
+			push_error("Plugin %s: cannot add function graph operation %s (invalid or existing name)" % [ plugin_id, op_name ])
 
 static var plugins : Array[Dictionary] = []
 static var menu_items : Array[Dictionary] = []
@@ -487,5 +499,6 @@ static func clear_registrations() -> void:
 	image_formats.clear()
 	layered_image_formats.clear()
 	node_types.clear()
+	MMFunctionGraph.remove_plugin_operations()
 	for p in plugins:
 		p.erase("instance")

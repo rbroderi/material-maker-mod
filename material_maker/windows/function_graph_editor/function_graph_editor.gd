@@ -19,11 +19,11 @@ const OP_CATEGORIES : Dictionary = {
 	"Vector": [ "dot", "length", "distance", "cross", "normalize", "swizzle", "mix", "clamp", "smoothstep" ],
 	"Logic": [ "lt", "le", "gt", "ge", "eq", "ne", "and", "or", "not", "select" ],
 	"Conversion": [ "to_int", "to_float" ],
-	"Random": [ "rand", "sd_rand" ],
+	"Random": [ "rand" ],
 	"Functions": [ "call", "loop" ]
 }
 const PIXEL_ONLY_OPS : Array[String] = [ "pos", "size" ]
-const NON_EXPRESSION_OPS : Array[String] = [ "pos", "size", "sample", "rand", "sd_rand", "call", "loop", "arg" ]
+const NON_EXPRESSION_OPS : Array[String] = [ "pos", "size", "sample", "rand", "call", "loop", "arg" ]
 const VECTOR_COMPONENTS : Array[String] = [ "x", "y", "z", "w" ]
 const SLOT_COLOR : Color = Color(0.6, 0.7, 0.9)
 
@@ -231,6 +231,8 @@ func get_slot_keys(node : Dictionary) -> Array:
 		return [ "a", "b" ]
 	if MMFunctionGraph.UNARY_OPS.has(op):
 		return [ "a" ]
+	if MMFunctionGraph.plugin_operations.has(op):
+		return MMFunctionGraph.plugin_operations[op].operands
 	return MMFunctionGraph.OPERANDS.get(op, [])
 
 ## Returns the slots of a vector constructor, each one either
@@ -364,16 +366,32 @@ func rebuild_scope_selector() -> void:
 	if scope == "":
 		scope_selector.select(0)
 
+## Returns the operations the compiler supports, by category (operations
+## added by plugins are in an "Other" category)
+static func get_op_categories() -> Dictionary:
+	var supported : Array = MMFunctionGraph.get_operation_names()
+	var rv : Dictionary = {}
+	var listed : Array = []
+	for category in OP_CATEGORIES.keys():
+		rv[category] = OP_CATEGORIES[category].filter(func(op): return op in supported)
+		listed.append_array(OP_CATEGORIES[category])
+	var other : Array = supported.filter(func(op): return not op in listed)
+	if not other.is_empty():
+		other.sort()
+		rv["Other"] = other
+	return rv
+
 func rebuild_add_menu() -> void:
 	var popup : PopupMenu = add_menu.get_popup()
 	popup.clear()
 	for c in popup.get_children():
 		c.queue_free()
-	for category in OP_CATEGORIES.keys():
+	var categories : Dictionary = get_op_categories()
+	for category in categories.keys():
 		var submenu : PopupMenu = PopupMenu.new()
 		submenu.name = category
-		for op in OP_CATEGORIES[category]:
-			if graph_mode == "expression" and op in NON_EXPRESSION_OPS:
+		for op in categories[category]:
+			if graph_mode == "expression" and (op in NON_EXPRESSION_OPS or MMFunctionGraph.plugin_operations.has(op)):
 				continue
 			if graph_mode == "value" and op in PIXEL_ONLY_OPS:
 				continue
@@ -549,7 +567,7 @@ func update_status() -> void:
 	for p in get_parameter_names():
 		parameter_expressions[p] = "$"+p
 	# All nodes are compiled (not only those the output depends on) to show their types
-	var variables : Dictionary = { pos="uv", size="vec2(1.0)", seed="0.0", sd_rand_mode=graph_mode, compile_all_nodes=true }
+	var variables : Dictionary = { pos="uv", size="vec2(1.0)", seed="0.0", mode=graph_mode, compile_all_nodes=true }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
 	if scope == "":
 		compile_types = result.get("types", {})
@@ -737,23 +755,6 @@ func do_rebuild_panel() -> void:
 		for i in graph.parameters.size():
 			add_list_row(graph.parameters, i, [ "name", "label" ], [ "min", "max", "default" ])
 		add_button(side_panel, "+ Parameter", func(): add_list_item(graph.parameters, { name="p%d" % (graph.parameters.size()+1), label="Parameter", min=0.0, max=1.0, default=0.5, step=0.01 }))
-		add_section_title("Substance random seed (sd_rand)")
-		var row : HBoxContainer = HBoxContainer.new()
-		var check : CheckBox = CheckBox.new()
-		check.text = "Fixed seed"
-		check.button_pressed = graph.has("random_seed")
-		row.add_child(check)
-		var seed_field : SpinBox = create_float_field(float(graph.get("random_seed", 0)), set_random_seed, 1.0)
-		seed_field.editable = check.button_pressed
-		check.toggled.connect(func(on : bool):
-			seed_field.editable = on
-			if on:
-				graph.random_seed = int(seed_field.value)
-			else:
-				graph.erase("random_seed")
-			update_status())
-		row.add_child(seed_field)
-		side_panel.add_child(row)
 	else:
 		add_section_title("Function name")
 		var name_edit : LineEdit = LineEdit.new()
@@ -810,10 +811,6 @@ func add_list_row(list : Array, index : int, text_keys : Array, float_keys : Arr
 		rebuild_panel()
 		rebuild_view())
 	side_panel.add_child(row)
-
-func set_random_seed(v : float) -> void:
-	graph.random_seed = int(v)
-	update_status()
 
 func set_list_float(v : float, list : Array, index : int, key : String) -> void:
 	list[index][key] = v

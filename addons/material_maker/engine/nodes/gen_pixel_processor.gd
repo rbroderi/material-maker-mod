@@ -102,15 +102,18 @@ static func build_shader_model(graph : Dictionary, mode : String = "pixel") -> D
 		model_parameters.append({ name="size", label="Size", type="size", first=4, last=13, default=10 })
 	if not errors.is_empty():
 		return { errors=errors }
-	# sd_rand uses the graph's integer random seed if it has one (e.g. for
-	# graphs translated from Substance), or the node's seed
-	var sd_seed : String = "uint(fract($seed)*16777216.0)"
-	if graph.get("random_seed") is float or graph.get("random_seed") is int:
-		sd_seed = "%du" % (int(graph.random_seed) & 0xFFFFFFFF)
-	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed", function_prefix="$(name)_fn_", sd_seed=sd_seed, sd_rand_mode=mode }
+	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed", function_prefix="$(name)_fn_", mode=mode }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
 	if not result.ok:
-		return { errors=result.errors }
+		# Graphs that cannot be compiled (e.g. that need a plugin that is not
+		# enabled) get a model with their inputs and parameters, that outputs
+		# black, so loading and saving them keeps them unchanged
+		var type_name : String = "Value Processor" if mode == "value" else "Pixel Processor"
+		var invalid_model : Dictionary = { name=type_name, shortdesc=type_name, code="",
+			instance="vec4 $(name)_pp(vec2 uv) {\n\treturn vec4(0.0, 0.0, 0.0, 1.0);\n}\n",
+			inputs=model_inputs, parameters=model_parameters,
+			outputs=[ { rgba="$(name)_pp($uv)", type="rgba", shortdesc="Output", longdesc="The function graph is invalid" } ] }
+		return { errors=result.errors, invalid_model=invalid_model }
 	var instance : String = "\n".join(result.functions)+"vec4 $(name)_pp(vec2 uv) {\n"
 	for line in result.code:
 		instance += "\t%s\n" % line
@@ -146,6 +149,10 @@ func _deserialize(data : Dictionary) -> void:
 		var errors : PackedStringArray = set_function_graph(data.function_graph)
 		if not errors.is_empty():
 			push_error("Invalid function graph in %s: %s" % [ name, ", ".join(errors) ])
+			var result : Dictionary = build_shader_model(data.function_graph, get_mode())
+			if result.has("invalid_model"):
+				function_graph = data.function_graph
+				set_shader_model(result.invalid_model)
 
 func edit(node, _tab : String = "") -> void:
 	var editor = load("res://material_maker/windows/function_graph_editor/function_graph_editor.gd").new()

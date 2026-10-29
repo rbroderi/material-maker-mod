@@ -252,24 +252,54 @@ func test_loop_signature_is_checked() -> void:
 	}
 	assert_false(MMFunctionGraph.compile(graph, [], {}, VARIABLES).ok)
 
-func test_sd_rand_pixel_mode() -> void:
-	var r : Dictionary = compile({ one={ op="float", value=1 }, a={ op="sd_rand", a="one" }, b={ op="sd_rand", a="one" }, out={ op="add", a="a", b="b" } }, "out")
-	assert_true(r.ok, str(r.errors))
-	var code : String = "\n".join(r.code)
-	# The state is initialized once, and advanced by each call
-	assert_eq(code.count("mm_sd_rand_init("), 1)
-	assert_eq(code.count("fg_rng = fg_rng*1228363579u+51137u;"), 2)
-	assert_eq(r.globals.size(), 1)
+# A plugin operation: scale(a) = a*2.0, with a helper global
+const DUMMY_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }
+"
 
-func test_sd_rand_value_mode() -> void:
-	var variables : Dictionary = VARIABLES.duplicate()
-	variables.sd_rand_mode = "value"
-	variables.sd_seed = "5u"
-	var r : Dictionary = MMFunctionGraph.compile({ nodes={ one={ op="float", value=1 }, out={ op="sd_rand", a="one" } }, output="out" }, [], {}, variables)
+static func compile_dummy(compiler : MMFunctionGraph.Compiler, node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+	if compiler.types[node.a] != "float":
+		compiler.error(node_id, "dummy requires a float")
+		return ""
+	compiler.types[node_id] = "float"
+	return "mm_test_twice(%s)" % compiler.value_of(node.a)
+
+func test_plugin_operation() -> void:
+	assert_true(MMFunctionGraph.add_operation("test_dummy", [ "a" ], compile_dummy, [ DUMMY_GLOBAL ], "test"))
+	# Built-in and existing operations cannot be replaced
+	assert_false(MMFunctionGraph.add_operation("add", [ "a" ], compile_dummy, [], "test"))
+	assert_false(MMFunctionGraph.add_operation("test_dummy", [ "a" ], compile_dummy, [], "test"))
+	assert_true("test_dummy" in MMFunctionGraph.get_operation_names())
+	var graph : Dictionary = {
+		functions={ f={ params=[ { name="x", type="float" } ], nodes={ x={ op="arg", name="x" }, out={ op="test_dummy", a="x" } }, output="out" } },
+		nodes={ one={ op="float", value=1 }, a={ op="test_dummy", a="one" }, b={ op="call", function="f", args=[ "a" ] }, out={ op="test_dummy", a="b" } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
 	assert_true(r.ok, str(r.errors))
-	assert_string_contains("\n".join(r.code), "uint fg_rng = 5u;")
-	assert_string_contains("\n".join(r.code), "2147001325u+715136305u")
-	assert_eq(r.globals.size(), 0)
+	assert_string_contains("
+".join(r.code), "mm_test_twice(fg_0)")
+	# The global is added once, although the operation is used 3 times
+	assert_eq(Array(r.globals), [ DUMMY_GLOBAL ])
+	assert_false(MMFunctionGraph.compile({ nodes={ v={ op="vec2", value=[ 1, 1 ] }, out={ op="test_dummy", a="v" } }, output="out" }, [], {}, VARIABLES).ok)
+	assert_false(MMFunctionGraph.compile_expression({ nodes={ one={ op="float", value=1 }, out={ op="test_dummy", a="one" } }, output="out" }, {}).ok)
+	MMFunctionGraph.remove_plugin_operations("test")
+	assert_false("test_dummy" in MMFunctionGraph.get_operation_names())
+	r = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_false(r.ok)
+	assert_true(has_error_containing(r, "unknown operation test_dummy"), str(r.errors))
+
+func test_graph_with_unknown_operation_is_kept() -> void:
+	# e.g. a graph that needs a plugin that is not enabled
+	var graph : Dictionary = { version=2, inputs=[ { name="src", label="Source" } ], parameters=[ { name="k", label="K", min=0.0, max=1.0, default=0.5 } ],
+		nodes={ k={ op="param", name="k" }, out={ op="not_available", a="k" } }, output="out" }
+	var pixel_processor : MMGenPixelProcessor = MMGenPixelProcessor.new()
+	pixel_processor._deserialize({ function_graph=graph.duplicate(true) })
+	assert_push_error("unknown operation not_available")
+	assert_eq(pixel_processor.function_graph, graph)
+	assert_eq(pixel_processor.get_input_defs().map(func(i): return i.name), [ "src" ])
+	assert_true(pixel_processor.get_parameter_defs().any(func(p): return p.name == "k"))
+	assert_eq(pixel_processor._serialize({}).function_graph, graph)
+	pixel_processor.free()
 
 func test_compile_expression() -> void:
 	var graph : Dictionary = { nodes={ s={ op="param", name="speed" }, two={ op="float", value=2 }, out={ op="mul", a="s", b="two" } }, output="out" }

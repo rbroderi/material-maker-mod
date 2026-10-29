@@ -145,6 +145,19 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   definitions (.mmg files) cannot describe. **script** extends **MMGenBase** (see the engine's
   generators, such as **MMGenSbsFxMap**), and nodes whose **"type"** is **type** in graph files
   are created from it
+* function graph operations (Pixel and Value Processors): **api.add_function_graph_op(name,
+  operands, compile_callable, globals)**. **operands** are the keys of the node that reference
+  other nodes. **compile_callable** receives the compiler (**MMFunctionGraph.Compiler**), the
+  node id, the node, the operation and the operand ids, sets the node's type in
+  **compiler.types** and returns its GLSL expression (**compiler.value_of(id)** gives the
+  expression of an operand, **compiler.types[id]** its type), or calls
+  **compiler.error(node_id, message)** and returns an empty string. It can add statements
+  before the node's to **compiler.code**, globals with **compiler.add_global(definition)**,
+  and read **compiler.variables** (**mode** is "pixel" or "value") and **compiler.graph**.
+  **globals** are GLSL definitions added once per shader when the operation is used. These
+  operations are listed in the *Other* category of the function graph editor, and graphs that
+  use one that is not available show an "unknown operation" error. The *Substance random
+  numbers* plugin (**sd_rand**) is an example
 * **MMPlugins.load_plugin_file(plugin_id, file_name)** loads a file of another (loaded) plugin, for
   example a script shared with the plugins that depend on it
 * **api.get_main_window()**, the main window (null on the command line), to add panels or dialogs

@@ -28,7 +28,8 @@ default, *X* and *Y* define the position where the input is sampled.
 Notes
 +++++
 
-*sd_rand* reproduces Substance Designer's random generator for value functions.
+*sd_rand* (added by the *Substance random numbers* plugin) reproduces Substance Designer's
+random generator for value functions.
 
 Parameter functions
 +++++++++++++++++++
