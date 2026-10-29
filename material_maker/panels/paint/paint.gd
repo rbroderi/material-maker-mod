@@ -87,8 +87,7 @@ signal update_material
 
 
 func _ready():
-	# Assign all textures to painted mesh
-	painted_mesh.set_surface_override_material(0, StandardMaterial3D.new())
+	# The painted mesh is still empty here: set_object() assigns the mesh and its material
 	# Updated Texture2View wrt current camera position
 	update_view()
 	# Disable physics process so we avoid useless updates of tex2view textures
