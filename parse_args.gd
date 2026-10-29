@@ -176,9 +176,20 @@ func _ready():
 	if options.is_empty():
 		get_tree().quit(1)
 		return
-	# Rendering needs a window (the GPU is not available in headless mode),
-	# but it does not need to be visible
-	if DisplayServer.get_name() != "headless" and not options.get("show_window", false):
+	# Godot's headless mode replaces the renderer by a dummy one, that cannot
+	# create the rendering devices Material Maker renders with. Unless this
+	# Godot build can, Material Maker runs again with a hidden window.
+	var headless : bool = DisplayServer.get_name() == "headless"
+	if headless and mode != "--list-parameters":
+		var rd : RenderingDevice = RenderingServer.create_local_rendering_device()
+		if rd == null:
+			get_tree().quit(run_with_hidden_window())
+			return
+		rd.free()
+	if OS.has_environment(RUN_AGAIN_VARIABLE):
+		quit_with_parent_process()
+	# Rendering needs a window, but it does not need to be visible
+	if not headless and not options.get("show_window", false):
 		get_window().mode = Window.MODE_MINIMIZED
 	var dir : DirAccess = DirAccess.open(".")
 	print("Current dir: ", dir.get_current_dir())
@@ -256,6 +267,90 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 		i += 1
 	options.files = files
 	return options
+
+## Set in the environment of the process started by run_with_hidden_window
+const RUN_AGAIN_VARIABLE : String = "MATERIAL_MAKER_RUN_WITHOUT_HEADLESS"
+
+const PIPE_CHUNK : int = 4096
+
+## Runs Material Maker again without --headless (its window is minimized in
+## command line modes), under xvfb-run on Linux systems without a display,
+## relays its output and returns its exit code
+func run_with_hidden_window() -> int:
+	if OS.has_environment(RUN_AGAIN_VARIABLE):
+		# This is already the process run again, still without rendering device
+		printerr("ERROR: Material Maker needs a GPU, and cannot create a rendering device")
+		return 1
+	# Godot's own options (such as --headless and --path) are not in
+	# OS.get_cmdline_args()
+	var args : PackedStringArray = OS.get_cmdline_args()
+	if not OS.has_feature("template"):
+		args = PackedStringArray([ "--path", ProjectSettings.globalize_path("res://") ]) + args
+	if OS.is_stdout_verbose():
+		args.insert(0, "--verbose")
+	if not OS.get_cmdline_user_args().is_empty():
+		args.append("--")
+		args.append_array(OS.get_cmdline_user_args())
+	var command : String = OS.get_executable_path()
+	if OS.get_name() in [ "Linux", "FreeBSD", "NetBSD", "OpenBSD", "BSD" ] and OS.get_environment("DISPLAY") == "" and OS.get_environment("WAYLAND_DISPLAY") == "":
+		if OS.execute("sh", [ "-c", "command -v xvfb-run" ]) != 0:
+			printerr("ERROR: Material Maker needs a GPU, which this Godot build does not provide with --headless,")
+			printerr("and there is no display for a hidden window: run without --headless, or install xvfb-run.")
+			return 1
+		# Some versions of xvfb-run default to an 8 bits screen
+		args = PackedStringArray([ "-a", "-s", "-screen 0 1280x1024x24", command ]) + args
+		command = "xvfb-run"
+	print("This Godot build cannot render with --headless, running again with a hidden window")
+	OS.set_environment(RUN_AGAIN_VARIABLE, "1")
+	var process : Dictionary = OS.execute_with_pipe(command, args)
+	if process.is_empty():
+		printerr("ERROR: cannot run ", command)
+		return 1
+	var stderr_thread : Thread = Thread.new()
+	stderr_thread.start(relay_pipe.bind(process.stderr, true))
+	relay_pipe(process.stdio, false)
+	stderr_thread.wait_to_finish()
+	while OS.is_process_running(process.pid):
+		OS.delay_msec(10)
+	return OS.get_process_exit_code(process.pid)
+
+## Prints the lines read from a pipe until it is closed
+static func relay_pipe(pipe : FileAccess, error : bool) -> void:
+	var pending : PackedByteArray = PackedByteArray()
+	while true:
+		var data : PackedByteArray = pipe.get_buffer(PIPE_CHUNK)
+		if data.is_empty():
+			break
+		pending.append_array(data)
+		var end : int = pending.rfind(10)
+		if end != -1:
+			for line in pending.slice(0, end).get_string_from_utf8().split("\n"):
+				print_line(line.trim_suffix("\r"), error)
+			pending = pending.slice(end+1)
+	if not pending.is_empty():
+		print_line(pending.get_string_from_utf8(), error)
+
+static func print_line(line : String, error : bool) -> void:
+	if error:
+		printerr(line)
+	else:
+		print(line)
+
+var stdin_thread : Thread = null
+
+## In the process started by run_with_hidden_window, quits when its parent
+## exits (for example when it is killed by a timeout): its standard input is
+## a pipe from the parent, that is closed then
+func quit_with_parent_process() -> void:
+	if OS.get_stdin_type() != OS.STD_HANDLE_PIPE:
+		return
+	stdin_thread = Thread.new()
+	stdin_thread.start(func():
+		while OS.read_buffer_from_stdin(PIPE_CHUNK).size() > 0:
+			pass
+		(func():
+			printerr("ERROR: the --headless process exited, quitting")
+			get_tree().quit(1)).call_deferred())
 
 func expand_files(files : Array[String]) -> Array:
 	var expanded_files = []

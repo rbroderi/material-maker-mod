@@ -10,6 +10,11 @@ extension so double-clicking on them will directly open them.
 Material Maker can also process files without user interface, using one of the following
 modes. The window is minimized (rendering needs a GPU), unless **--show-window** is used.
 
+Godot's **--headless** option replaces the renderer by a dummy one, that cannot render. When it
+is used, Material Maker runs again without **--headless**, with a minimized window. On Linux
+systems without a display, this needs **xvfb-run** (from the *xvfb* package), that provides a
+virtual one.
+
  material_maker --export-material [options] <input_files>
  material_maker --render --node <node[:output]> [options] <input_files>
  material_maker --bake [--maps <map,...>] [options] <mesh_files>
