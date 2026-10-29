@@ -85,9 +85,21 @@ func set_parameter(p, v) -> void:
 	super.set_parameter(p, v)
 
 func source_changed(input_index : int) -> void:
+	auto_buffer_decisions.erase(input_index)
+	if auto_buffers.has(input_index):
+		var source : OutputPort = get_source(input_index)
+		if is_input_auto_buffered(input_index, source):
+			# Only the automatic buffer that holds the source's code must be
+			# regenerated
+			auto_buffers[input_index].set_source(source)
+			auto_buffers[input_index].update_shader()
+			return
 	update()
 
 func all_sources_changed() -> void:
+	auto_buffer_decisions.clear()
+	for b in auto_buffers.values():
+		b.update_shader()
 	update()
 
 func set_shader_model(data: Dictionary) -> void:
