@@ -17,14 +17,17 @@ class_name MMPlugins
 #	depends=["other", "another>=1.2"] ; optional, plugins (ids, i.e. folder
 #	                                ; names, with an optional minimum version)
 #	                                ; that are loaded first
+#	cli_modes=["--export-volume"]   ; optional, command line modes added by
+#	                                ; the script (with add_cli_mode)
 #
-# Plugins are loaded at startup (with the user interface, and on the command
-# line), unless they are disabled in the Plugins window (Tools menu).
+# Plugins are loaded at startup (with the user interface, and in command line
+# and RPC modes), unless they are disabled in the Plugins window (Tools menu).
 # Dependencies are loaded before the plugins that need them (a dependency that
 # is only disabled by default is enabled), and a plugin whose dependencies are
 # missing, too old, disabled, failed to load or depend on it is not loaded.
-# Their scripts can add menu items, command line commands
-# (material_maker --plugin <command> [arguments]) and export hooks.
+# Their scripts can add menu items, import formats, RPC methods, command line
+# commands (material_maker --plugin <command> [arguments]) and modes, sections
+# of the 2D preview's export menu and export hooks.
 
 
 const CONFIG_SECTION : String = "plugins"
@@ -35,7 +38,7 @@ class API:
 	var plugin_id : String
 	var plugin_path : String
 
-	## The main window (null on the command line)
+	## The main window (null in command line and RPC modes)
 	func get_main_window() -> Node:
 		return mm_globals.main_window
 
@@ -45,11 +48,45 @@ class API:
 	func add_menu_item(label : String, callable : Callable, menu : String = "Plugins", after : String = "") -> void:
 		MMPlugins.menu_items.append({ plugin=plugin_id, label=label, callable=callable, menu=menu, after=after })
 
+	## Adds a file format that is imported as a material graph (in the Load
+	## dialog, by drag and drop, with the RPC load method and on the command
+	## line): callable receives the file's path and returns the graph (a
+	## dictionary, as in .ptex files, with optional "warnings"), or an empty
+	## dictionary (it can be a coroutine)
+	func add_import_format(extension : String, description : String, callable : Callable) -> void:
+		MMPlugins.import_formats[extension.to_lower()] = { plugin=plugin_id, description=description, callable=callable }
+
+	## Adds a JSON-RPC method: callable receives the parameters dictionary
+	## (and, if it has 2 arguments, the MMRpcServer, for its fail(), require(),
+	## get_graph() and get_generator() helpers) and returns the result (it can
+	## be a coroutine)
+	func add_rpc_method(method_name : String, callable : Callable) -> void:
+		MMPlugins.rpc_methods[method_name] = callable
+
 	## Adds a command line command (material_maker --plugin <name> [args]):
 	## callable receives the arguments (PackedStringArray) and returns an exit
 	## code (it can be a coroutine)
 	func add_command(command_name : String, callable : Callable) -> void:
 		MMPlugins.commands[command_name] = callable
+
+	## Adds a command line mode (e.g. --export-volume, that must also be listed
+	## in the plugin's cli_modes): callable receives the command line tool
+	## (parse_args.gd, for process_graph_files() and expand_files()), the files
+	## and the options, and returns an exit code (it can be a coroutine).
+	## options maps the mode's own options to { key, type (TYPE_INT,
+	## TYPE_FLOAT, TYPE_STRING or TYPE_BOOL for flags), help }, that set
+	## options[key]. usage is a line of the --help text.
+	func add_cli_mode(mode : String, callable : Callable, usage : String, options : Dictionary = {}) -> void:
+		MMPlugins.cli_modes[mode] = { plugin=plugin_id, callable=callable, usage=usage }
+		for o in options.keys():
+			MMPlugins.cli_options[o] = options[o]
+
+	## Adds a section to the 2D preview's export menu: callable receives the
+	## export menu and returns a Control, whose optional
+	## update(generator, output_index) method is called when the previewed
+	## output changes (e.g. to hide the section)
+	func add_export_menu_section(callable : Callable) -> void:
+		MMPlugins.export_menu_sections.append(callable)
 
 	## Called after each material export, with the Material node, the export
 	## prefix and the target
@@ -58,7 +95,12 @@ class API:
 
 static var plugins : Array[Dictionary] = []
 static var menu_items : Array[Dictionary] = []
+static var import_formats : Dictionary = {}
+static var rpc_methods : Dictionary = {}
 static var commands : Dictionary = {}
+static var cli_modes : Dictionary = {}
+static var cli_options : Dictionary = {}
+static var export_menu_sections : Array[Callable] = []
 static var export_hooks : Array[Callable] = []
 static var loaded : bool = false
 static var discovered : bool = false
@@ -140,6 +182,17 @@ static func load_plugins() -> void:
 		if plugin.enabled:
 			load_with_dependencies(plugin, disabled, [])
 
+## The command line mode of the arguments added by an enabled plugin (see
+## cli_modes in plugin.cfg), or ""
+static func find_cli_mode(args : PackedStringArray) -> String:
+	discover_plugins()
+	for p in plugins:
+		if p.enabled:
+			for m in p.cli_modes:
+				if m in args:
+					return m
+	return ""
+
 ## Reads the configurations of the plugins (once)
 static func discover_plugins() -> void:
 	if discovered:
@@ -165,6 +218,7 @@ static func discover_plugins() -> void:
 				description=config.get_value("plugin", "description", ""),
 				version=config.get_value("plugin", "version", ""),
 				depends=Array(config.get_value("plugin", "depends", [])),
+				cli_modes=Array(config.get_value("plugin", "cli_modes", [])),
 				error="" }
 			var by_default : bool = config.get_value("plugin", "enabled_by_default", true)
 			plugin.enabled = plugin_dir in enabled_list or (by_default and not plugin_dir in disabled)
@@ -244,6 +298,30 @@ static func load_export_targets(path : String) -> void:
 		if export_data.has("material") and export_data.has("name"):
 			mm_loader.add_plugin_export_target(export_data)
 
+## The importer of a file (see API.add_import_format), or an empty dictionary
+static func get_import_format(path : String) -> Dictionary:
+	return import_formats.get(path.get_extension().to_lower(), {})
+
+## Imports a file as a material graph (a dictionary, empty on error)
+static func import_file(path : String) -> Dictionary:
+	var import_format : Dictionary = get_import_format(path)
+	if import_format.is_empty():
+		return {}
+	var imported = await import_format.callable.call(path)
+	if not imported is Dictionary or imported.is_empty():
+		return {}
+	for w in imported.get("warnings", []):
+		print("%s import: %s" % [ import_format.description, w ])
+	imported.erase("warnings")
+	return imported
+
+## Calls a plugin's RPC method, with the RPC server if it takes 2 arguments
+static func call_rpc_method(method_name : String, params : Dictionary, server : Node):
+	var callable : Callable = rpc_methods[method_name]
+	if callable.get_argument_count() >= 2:
+		return await callable.call(params, server)
+	return await callable.call(params)
+
 ## Node libraries of the enabled plugins (added to the library manager when
 ## the user interface starts)
 static func get_libraries() -> PackedStringArray:
@@ -273,7 +351,12 @@ static func unload_plugins() -> void:
 ## Releases what plugins registered, and their scripts' instances
 static func clear_registrations() -> void:
 	menu_items.clear()
+	import_formats.clear()
+	rpc_methods.clear()
 	commands.clear()
+	cli_modes.clear()
+	cli_options.clear()
+	export_menu_sections.clear()
 	export_hooks.clear()
 	for p in plugins:
 		p.erase("instance")

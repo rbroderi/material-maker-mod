@@ -186,6 +186,12 @@ static func interpret_file_name(file_name : String, path : String = "", file_ext
 	return file_name
 
 func load_gen(filename: String) -> MMGenBase:
+	# Formats of plugins are imported as graphs
+	if not MMPlugins.get_import_format(filename).is_empty():
+		var imported : Dictionary = await MMPlugins.import_file(filename)
+		if imported.is_empty():
+			return null
+		return await create_gen(imported)
 	var file : FileAccess = FileAccess.open(filename, FileAccess.READ)
 	if file != null:
 		var data = string_to_dict_tree(file.get_as_text())

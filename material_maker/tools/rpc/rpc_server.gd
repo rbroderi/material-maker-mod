@@ -97,11 +97,17 @@ func process_request(line : String) -> Dictionary:
 	if not params is Dictionary:
 		return make_error(id, ERROR_INVALID_PARAMS, "params must be an object")
 	var method_name : String = "api_"+request.method
-	if not has_method(method_name):
+	# Plugins can add methods (see MMPlugins.API.add_rpc_method)
+	var plugin_method : bool = not has_method(method_name) and MMPlugins.rpc_methods.has(request.method)
+	if not has_method(method_name) and not plugin_method:
 		return make_error(id, ERROR_METHOD_NOT_FOUND, "Unknown method '%s'" % request.method)
 	method_error = ""
 	# (await must apply to the call itself for asynchronous methods)
-	var result = await call(method_name, params)
+	var result
+	if plugin_method:
+		result = await MMPlugins.call_rpc_method(request.method, params, self)
+	else:
+		result = await call(method_name, params)
 	# Notifications (requests without id) have no response
 	if not request.has("id"):
 		return {}
@@ -459,6 +465,13 @@ func api_export(params : Dictionary):
 	await MMCliTools.wait_for_renders(get_tree())
 	await material.export_material(params.prefix, params.target, size, true)
 	return true
+
+## The plugins (see MMPlugins), and the RPC methods and commands they add
+func api_list_plugins(_params : Dictionary):
+	var plugins : Array = []
+	for p in MMPlugins.plugins:
+		plugins.append({ id=p.id, name=p.name, version=p.version, enabled=p.enabled, depends=p.depends, error=p.error, path=ProjectSettings.globalize_path(p.path) })
+	return { plugins=plugins, rpc_methods=MMPlugins.rpc_methods.keys(), commands=MMPlugins.commands.keys() }
 
 func api_undo(_params : Dictionary):
 	var graph_edit : MMGraphEdit = get_graph_edit()

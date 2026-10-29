@@ -177,6 +177,9 @@ func _ready():
 			mode = m
 			break
 	if mode == "":
+		# Modes of enabled plugins (see MMPlugins.API.add_cli_mode)
+		mode = MMPlugins.find_cli_mode(args)
+	if mode == "":
 		var no_logo : bool = ( args.find("--no-splash") != -1 )
 		var scene : PackedScene
 		if no_logo:
@@ -193,10 +196,11 @@ func _ready():
 		get_tree().change_scene_to_packed(scene)
 		return
 	if mode == "--help":
-		print(HELP)
+		print(get_help())
 		get_tree().quit()
 		return
-	# Plugins add nodes and export targets
+	# Plugins add nodes, export targets, import formats, RPC methods, and
+	# modes with their options
 	MMPlugins.load_plugins()
 	var options : Dictionary = parse_options(args)
 	if options.is_empty():
@@ -226,6 +230,32 @@ func _ready():
 			await list_parameters(expand_files(files))
 		"--rpc":
 			await run_rpc_server(files, options)
+		_:
+			# A mode of a plugin, that quits (e.g. with process_graph_files)
+			# or returns an exit code
+			if MMPlugins.cli_modes.has(mode):
+				var exit_code = await MMPlugins.cli_modes[mode].callable.call(self, files, options)
+				if exit_code is int:
+					get_tree().quit(exit_code)
+			else:
+				show_error("ERROR: the plugin of %s could not be loaded" % mode)
+				get_tree().quit(1)
+
+## The help, with the modes and options of enabled plugins
+func get_help() -> String:
+	MMPlugins.load_plugins()
+	if MMPlugins.cli_modes.is_empty():
+		return HELP
+	var lines : PackedStringArray = PackedStringArray([ "Modes of plugins:", "" ])
+	for m in MMPlugins.cli_modes.keys():
+		lines.append("  "+MMPlugins.cli_modes[m].usage)
+	if not MMPlugins.cli_options.is_empty():
+		lines.append("")
+		lines.append("Options of plugin modes:")
+		for o in MMPlugins.cli_options.keys():
+			var option : Dictionary = MMPlugins.cli_options[o]
+			lines.append("  %-26s %s" % [ o if option.type == TYPE_BOOL else o+" <value>", option.get("help", "") ])
+	return HELP+"\n"+"\n".join(lines)
 
 ## Parses the options of the command line modes, and returns them with the
 ## list of input files (options.files), or an empty dictionary (after
@@ -241,7 +271,8 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 		var arg : String = args[i]
 		var has_value : bool = i+1 < args.size()
 		var value : String = args[i+1] if has_value else ""
-		var option : Dictionary = VALUE_OPTIONS.get(arg, {})
+		# (plugin modes add options, see MMPlugins.API.add_cli_mode)
+		var option : Dictionary = VALUE_OPTIONS.get(arg, MMPlugins.cli_options.get(arg, {}))
 		if not option.is_empty():
 			if option.type == TYPE_BOOL:
 				options[option.key] = true
@@ -274,7 +305,7 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 						options.maps = Array(value.split(",", false))
 				i += 1
 			_:
-				if arg in CLI_MODES:
+				if arg in CLI_MODES or MMPlugins.cli_modes.has(arg):
 					pass
 				elif arg.begins_with("-") and arg.length() > 1:
 					show_error("ERROR: unknown option %s (see material_maker -- --help)" % arg)
@@ -301,7 +332,8 @@ func expand_files(files : Array[String]) -> Array:
 				dir.list_dir_begin() # TODOGODOT4 fill missing arguments https://github.com/godotengine/godot/pull/40547
 				var file_name = dir.get_next()
 				while file_name != "":
-					if regex.search(file_name) and file_name.get_extension() == "ptex":
+					# (and files of formats imported by plugins)
+					if regex.search(file_name) and (file_name.get_extension() == "ptex" or not MMPlugins.get_import_format(file_name).is_empty()):
 						expanded_files.push_back(basedir+"/"+file_name)
 					file_name = dir.get_next()
 		elif f.begins_with("website:"):

@@ -785,6 +785,11 @@ func load_file(filename) -> bool:
 		set_new_generator(new_generator)
 		if rescued:
 			set_need_save(true)
+		elif not MMPlugins.get_import_format(filename).is_empty():
+			# Imported materials are new graphs (saving must not overwrite the
+			# imported file)
+			set_save_path("")
+			set_need_save(true)
 		#print("Material has %d buffers" % find_buffers(new_generator))
 		return true
 	else:

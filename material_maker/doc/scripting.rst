@@ -51,6 +51,7 @@ graph (and in **list_nodes**).
 
 * **ping()** returns the version and whether the user interface is running
 * **new_graph()**, **load(path)**, **save(path)** create, load and save .ptex files
+  (**load** also imports the file formats of plugins)
 * **list_nodes()** returns the nodes with their type, inputs, outputs and parameters
 * **get_node(node)**, **list_connections()**, **list_parameters()**
 * **set_parameter(node, parameter, value)** and **set_parameters(values)**, where values is a
@@ -68,6 +69,10 @@ graph (and in **list_nodes**).
 * **list_export_targets()** and **export(target, prefix, size)** export the material (prefix is
   the path of the exported files without extension, and size 0 uses the Material node's size)
 * **undo()** and **redo()** (with the user interface only)
+* **list_plugins()** lists the plugins, and the RPC methods and commands they add
 * **quit()** (without user interface only)
+
+Enabled plugins can add other methods (see :ref:`plugins-section`), that are called in the same
+way (for example **mm.call("example_node_count")** with the example plugin).
 
 Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).

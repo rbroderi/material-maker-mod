@@ -18,7 +18,8 @@ modes. The window is minimized (rendering needs a GPU), unless **--show-window**
  material_maker --plugin <command> [<arguments>]
  material_maker -- --help
 
-Input files are .ptex files (wildcards are accepted). The mode and options can be given before
+Input files are .ptex files (wildcards are accepted), or files of formats that plugins import
+(see :ref:`plugins-section`). The mode and options can be given before
 or after **--** (for example material_maker -- --render --node Material:0 bricks.ptex). Godot
 handles some short options itself (such as **-t** and **--help**), so they only reach Material
 Maker after **--**.
@@ -38,6 +39,9 @@ Modes
   :ref:`scripting-section`), and runs until the server's **quit** method is called
 * **--plugin <command> [<arguments>]** runs a command of a plugin (see :ref:`plugins-section`),
   with the arguments that follow it
+
+Plugins can also add modes (such as **--example-thumbnails** in the example plugin) and their
+options, that are listed by **material_maker -- --help** when the plugin is enabled.
 
 Options
 -------
