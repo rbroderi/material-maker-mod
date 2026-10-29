@@ -43,6 +43,10 @@ func get_type() -> String:
 func get_type_name() -> String:
 	return "Pixel Processor"
 
+## "pixel" for pixel processors, "value" for value processors
+func get_mode() -> String:
+	return "pixel"
+
 static func is_valid_name(n) -> bool:
 	if not n is String or n == "" or n in RESERVED_NAMES:
 		return false
@@ -63,8 +67,10 @@ static func uses_op(graph : Dictionary, op : String) -> bool:
 					return true
 	return false
 
-## Builds the shader model for a function graph, returns { model, globals, errors }
-static func build_shader_model(graph : Dictionary) -> Dictionary:
+## Builds the shader model for a function graph, returns { model, globals, errors }.
+## In "value" mode, the graph is evaluated once (value processors), so it
+## cannot use the pixel position.
+static func build_shader_model(graph : Dictionary, mode : String = "pixel") -> Dictionary:
 	var errors : PackedStringArray = PackedStringArray()
 	var used_names : Dictionary = {}
 	var inputs = graph.get("inputs", [])
@@ -90,7 +96,11 @@ static func build_shader_model(graph : Dictionary) -> Dictionary:
 		model_parameters.append({ name=p.name, label=p.get("label", p.name), type="float", control="None",
 			min=float(p.get("min", 0.0)), max=float(p.get("max", 1.0)), step=float(p.get("step", 0.01)), default=float(p.get("default", 0.0)) })
 		parameter_expressions[p.name] = "$"+p.name
-	if uses_op(graph, "size"):
+	if mode == "value":
+		for op in [ "pos", "size" ]:
+			if uses_op(graph, op):
+				errors.append("%s cannot be used in a value processor" % op)
+	elif uses_op(graph, "size"):
 		model_parameters.append({ name="size", label="Size", type="size", first=4, last=13, default=10 })
 	if not errors.is_empty():
 		return { errors=errors }
@@ -103,9 +113,9 @@ static func build_shader_model(graph : Dictionary) -> Dictionary:
 		instance += "\t%s\n" % line
 	instance += "\treturn %s;\n}\n" % result.value
 	var model : Dictionary = {
-		name="Pixel Processor",
-		shortdesc="Pixel Processor",
-		longdesc="Computes each pixel with a function graph",
+		name="Value Processor" if mode == "value" else "Pixel Processor",
+		shortdesc="Value Processor" if mode == "value" else "Pixel Processor",
+		longdesc="Computes a value once with a function graph" if mode == "value" else "Computes each pixel with a function graph",
 		code="",
 		instance=instance,
 		inputs=model_inputs,
@@ -116,7 +126,7 @@ static func build_shader_model(graph : Dictionary) -> Dictionary:
 
 ## Sets the function graph, returns the list of errors (empty on success)
 func set_function_graph(graph : Dictionary) -> PackedStringArray:
-	var result : Dictionary = build_shader_model(graph)
+	var result : Dictionary = build_shader_model(graph, get_mode())
 	if not result.errors.is_empty():
 		return result.errors
 	function_graph = graph
@@ -129,7 +139,7 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 	# Global definitions are added one by one, so those that are used by
 	# several pixel processors are only declared once
 	for g in function_graph_globals:
-		rv.add_global(g, "%s (Pixel Processor)" % get_hier_name())
+		rv.add_global(g, "%s (%s)" % [ get_hier_name(), get_type_name() ])
 	return rv
 
 func _serialize(data : Dictionary) -> Dictionary:
@@ -176,7 +186,7 @@ func on_edit_confirmed(node, dialog : AcceptDialog, text_edit : TextEdit, errors
 	if not json.data is Dictionary:
 		errors_label.text = tr("The function graph must be a JSON object")
 		return
-	var result : Dictionary = build_shader_model(json.data)
+	var result : Dictionary = build_shader_model(json.data, get_mode())
 	if not result.errors.is_empty():
 		errors_label.text = "\n".join(result.errors)
 		return

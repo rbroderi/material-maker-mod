@@ -296,3 +296,30 @@ func test_pixel_processor_returns_globals() -> void:
 	assert_eq(r.globals, PackedStringArray([ MMFunctionGraph.RAND_GLOBAL ]))
 	assert_false(r.model.has("global"))
 	assert_string_contains(r.model.instance, "mm_fg_rand(fg_0, $seed)")
+
+# Value processors
+
+func test_value_processor_default_graph_builds() -> void:
+	var r : Dictionary = MMGenPixelProcessor.build_shader_model(MMGenValueProcessor.DEFAULT_VALUE_FUNCTION_GRAPH.duplicate(true), "value")
+	assert_true(r.errors.is_empty(), str(r.errors))
+	assert_eq(r.model.name, "Value Processor")
+	assert_eq(r.model.parameters.map(func(p): return p.name), [ "x", "y" ])
+
+func test_value_processor_rejects_position() -> void:
+	for op in [ "pos", "size" ]:
+		var graph : Dictionary = { inputs=[], parameters=[], nodes={ p={ op=op }, out={ op="swizzle", a="p", components="x" } }, output="out" }
+		var r : Dictionary = MMGenPixelProcessor.build_shader_model(graph, "value")
+		assert_eq(r.errors, PackedStringArray([ "%s cannot be used in a value processor" % op ]))
+		# Pixel processors accept them
+		assert_true(MMGenPixelProcessor.build_shader_model(graph).errors.is_empty())
+
+func test_value_processor_node() -> void:
+	var vp : MMGenValueProcessor = MMGenValueProcessor.new()
+	assert_eq(vp.get_mode(), "value")
+	assert_eq(vp.get_type(), "value_processor")
+	assert_eq(vp.get_parameter_defs().map(func(p): return p.name), [ "x", "y" ])
+	var graph : Dictionary = { inputs=[], parameters=[], nodes={ p={ op="pos" }, out={ op="swizzle", a="p", components="x" } }, output="out" }
+	assert_false(vp.set_function_graph(graph).is_empty())
+	# The previous graph is kept
+	assert_eq(vp.function_graph.nodes.out.op, "sample")
+	vp.free()

@@ -271,6 +271,7 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 		meshmap = MMGenMeshMap,
 		sdf = MMGenSDF,
 		pixel_processor = MMGenPixelProcessor,
+		value_processor = MMGenValueProcessor,
 		ios = MMGenIOs,
 		switch = MMGenSwitch,
 		export = MMGenExport,
