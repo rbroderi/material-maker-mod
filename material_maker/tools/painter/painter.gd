@@ -182,7 +182,7 @@ func update_view_textures():
 	t2v_pipeline.set_parameter("viewport_size", viewport_size)
 	t2v_pipeline.set_parameter("transform", projection)
 	t2v_pipeline.set_parameter("v2t", v2t_texture)
-	await t2v_pipeline.render(Vector2i(texture_size, texture_size), 3, t2v_texture)
+	await t2v_pipeline.render(Vector2i(texture_size, texture_size), 3, t2v_texture, true)
 	t2v_texture.get_texture()
 
 func update_textures() -> void:
