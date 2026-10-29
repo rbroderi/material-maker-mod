@@ -36,13 +36,17 @@ func _ready():
 		menu_bar.get_parent().remove_child(menu_bar)
 		get_parent().add_menu_bar(menu_bar, self)
 	
+	# Keep the window: the editor may leave the tree during the frame below (the 2D
+	# preview panels are removed when a paint project is opened at startup).
+	var window : Window = get_window()
+
 	await get_tree().process_frame
 
-	if get_window().get_window_id() != DisplayServer.MAIN_WINDOW_ID:
-		get_window().content_scale_factor = mm_globals.ui_scale_factor()
-		get_window().min_size = get_window().get_contents_minimum_size() * get_window().content_scale_factor
-		get_window().hide()
-		get_window().popup_centered()
+	if window.get_window_id() != DisplayServer.MAIN_WINDOW_ID:
+		window.content_scale_factor = mm_globals.ui_scale_factor()
+		window.min_size = window.get_contents_minimum_size() * window.content_scale_factor
+		window.hide()
+		window.popup_centered()
 
 	super._ready()
 	update_controls()
