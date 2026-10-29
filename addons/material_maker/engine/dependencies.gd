@@ -220,6 +220,16 @@ func get_render_queue_size() -> int:
 			invalidated_buffers += 1
 	return invalidated_buffers
 
+## Names of the buffers of the generators of a graph (and of their children)
+## that failed to render
+func get_failed_buffers(graph : Node) -> PackedStringArray:
+	var failed : PackedStringArray = PackedStringArray()
+	for b in buffers.keys():
+		var buffer : Buffer = buffers[b]
+		if buffer.status == Buffer.Error and is_instance_valid(buffer.object) and buffer.object is Node and (buffer.object == graph or graph.is_ancestor_of(buffer.object)):
+			failed.append(buffer.object.get_hier_name() if buffer.object.has_method("get_hier_name") else b)
+	return failed
+
 func material_update_params(material : MMShaderBase):
 	for p in material.get_parameters().keys():
 		if dependencies_values.has(p):

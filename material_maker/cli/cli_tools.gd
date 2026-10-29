@@ -139,6 +139,20 @@ static func resolve_node_output(graph : MMGenBase, node_spec : String) -> Dictio
 		return { error="node '%s' not found" % node_path }
 	return { generator=generator, output=node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0 }
 
+## The top graph of a project, that contains a graph
+static func get_top_graph(graph : MMGenGraph) -> MMGenGraph:
+	var top : MMGenGraph = graph
+	while top.get_parent() is MMGenGraph:
+		top = top.get_parent()
+	return top
+
+## The material node (the node with export profiles) of a graph, or null
+static func find_material_node(graph : Node) -> MMGenBase:
+	for c in graph.get_children():
+		if c.has_method("get_export_profiles"):
+			return c
+	return null
+
 ## A node output spec as a part of a file name
 static func spec_to_file_part(node_spec : String) -> String:
 	return node_spec.replace("/", "_").replace(":", "_")
