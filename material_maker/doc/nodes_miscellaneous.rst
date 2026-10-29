@@ -8,6 +8,7 @@ Miscellaneous nodes
 	node_miscellaneous_buffer
 	node_miscellaneous_iterate_buffer
 	node_miscellaneous_custom_shader
+	node_miscellaneous_pixel_processor
 	node_miscellaneous_switch
 	node_miscellaneous_remote
 	node_miscellaneous_comment
