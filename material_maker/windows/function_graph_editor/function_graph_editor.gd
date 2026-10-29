@@ -32,8 +32,8 @@ const SLOT_COLOR : Color = Color(0.6, 0.7, 0.9)
 
 var graph : Dictionary = {}
 var graph_mode : String = "pixel"
-# Named parameters that can be used in expression mode
-var expression_parameters : Array = []
+# Names that param nodes can use in expression mode, and their expressions
+var expression_parameters : Dictionary = {}
 # "" for the main graph, or the name of the edited sub-function
 var scope : String = ""
 var compile_types : Dictionary = {}
@@ -117,8 +117,8 @@ func _init() -> void:
 	add_child(history_timer)
 
 ## Starts editing a function graph. In expression mode, parameters are the
-## names that param nodes can use.
-func edit(g : Dictionary, m : String, window_title : String = "", parameters : Array = []) -> void:
+## names that param nodes can use, and their expressions.
+func edit(g : Dictionary, m : String, window_title : String = "", parameters : Dictionary = {}) -> void:
 	graph_mode = m
 	expression_parameters = parameters
 	set_graph(g)
@@ -354,7 +354,7 @@ func new_node(op : String) -> Dictionary:
 
 func get_parameter_names() -> Array:
 	if graph_mode == "expression":
-		return expression_parameters
+		return expression_parameters.keys()
 	return graph.get("parameters", []).map(func(p): return p.get("name", ""))
 
 #
@@ -577,7 +577,7 @@ func update_status() -> void:
 	var sample_expressions : Array = graph.get("inputs", []).map(func(i): return "$in%d(%%s)" % graph.get("inputs", []).find(i))
 	var parameter_expressions : Dictionary = {}
 	for p in get_parameter_names():
-		parameter_expressions[p] = "$"+p
+		parameter_expressions[p] = expression_parameters.get(p, "$"+p)
 	# All nodes are compiled (not only those the output depends on) to show their types
 	var variables : Dictionary = { pos="uv", size="vec2(1.0)", seed="0.0", compile_all_nodes=true }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
@@ -758,7 +758,7 @@ func do_rebuild_panel() -> void:
 	if graph_mode == "expression":
 		add_section_title("Available parameters")
 		var label : Label = Label.new()
-		label.text = ", ".join(expression_parameters) if not expression_parameters.is_empty() else "(none)"
+		label.text = ", ".join(expression_parameters.keys()) if not expression_parameters.is_empty() else "(none)"
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD
 		side_panel.add_child(label)
 	elif scope == "":

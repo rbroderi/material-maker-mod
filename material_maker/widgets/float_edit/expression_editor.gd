@@ -48,6 +48,10 @@ func get_parameter_function_variables(generator : MMGenBase) -> Dictionary:
 	if parent != null and parent.has_method("get_named_parameters"):
 		for n in parent.get_named_parameters().keys():
 			rv[n] = "$"+n
+	# Variables the node's shader defines for this parameter's expression
+	# (such as the instance index and random values of FX-Map Iterate)
+	for v in generator.get_parameter_def(object.name).get("expression_variables", []):
+		rv[v] = v
 	return rv
 
 func add_function_graph_button() -> void:
@@ -73,7 +77,7 @@ func edit_function_graph(generator : MMGenBase) -> void:
 	var function_graph_editor = load("res://material_maker/windows/function_graph_editor/function_graph_editor.gd").new()
 	mm_globals.main_window.add_dialog(function_graph_editor)
 	function_graph_editor.graph_applied.connect(on_function_graph_applied.bind(generator, parameter_name, variables))
-	function_graph_editor.edit(graph, "expression", "Parameter function - %s" % parameter_name, variables.keys())
+	function_graph_editor.edit(graph, "expression", "Parameter function - %s" % parameter_name, variables)
 
 func on_function_graph_applied(graph : Dictionary, generator : MMGenBase, parameter_name : String, variables : Dictionary) -> void:
 	var result : Dictionary = MMFunctionGraph.compile_expression(graph, variables)

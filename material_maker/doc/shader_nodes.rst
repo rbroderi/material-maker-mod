@@ -55,6 +55,19 @@ So **mygradient** should be refered to as **$mygradient($uv.x)** if you want to 
 the gradient on the x axis (**$uv** is an implicit variable used by Material Maker for
 UV coordinates).
 
+The value of a **float** parameter can also be an expression, that is written in the
+shader code where the parameter is used. If the shader code defines variables that
+expressions can use there (for example a loop index), list them in **expression_variables**
+in the parameter's JSON: the parameter's *Function graph...* editor then offers them
+as parameters. The node editor keeps them when the node is edited. The
+:doc:`FX-Map Iterate <node_transform_fx-map_iterate>` node uses this for its instance
+index and random values.
+
+.. code-block:: json
+
+    { "name": "x", "type": "float", "default": "r1", "min": 0, "max": 1, "step": 0.01,
+      "expression_variables": [ "i", "n", "t", "r1", "r2" ] }
+
 Inputs
 ~~~~~~
 
