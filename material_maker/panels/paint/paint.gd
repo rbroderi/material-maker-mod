@@ -379,6 +379,7 @@ const PAINTING_MODE_TEXTURE = 1
 const PAINTING_MODE_TEXTURE_FROM_VIEW = 2
 
 var stamp_center : Vector2
+var stamp_center_on_mesh : bool = true
 
 func painter_update_brush_params(paint_params : Dictionary) -> void:
 	for k in paint_params.keys():
@@ -456,7 +457,11 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 				painter_update_brush_params( { pattern_scale=brush_parameters.pattern_scale, pattern_angle=brush_parameters.pattern_angle } )
 				%BrushAngle.set_value(brush_parameters.pattern_angle*57.2957795131)
 			elif current_tool == MODE_FREEHAND_DOTS or current_tool == MODE_FREEHAND_LINE:
-				await paint(mouse_position, pressure, ev.tilt, painting_mode)
+				if dont_paint:
+					# Off the mesh: don't join the next dab to the last one
+					previous_position = null
+				else:
+					await paint(mouse_position, pressure, ev.tilt, painting_mode)
 				last_tilt = ev.tilt
 			painter_update_brush_params( { brush_size=brush_parameters.brush_size, brush_hardness=brush_parameters.brush_hardness } )
 		else:
@@ -468,13 +473,17 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 			if ev.button_index == MOUSE_BUTTON_LEFT:
 				if ev.pressed:
 					stroke_length = 0.0
-					previous_position = mouse_position
+					previous_position = null if dont_paint else mouse_position
 					if current_tool == MODE_STAMP:
 						stamp_center = mouse_position
+						stamp_center_on_mesh = not dont_paint
 						painter_update_brush_params( { brush_size=0 } )
 						show_brush(stamp_center, stamp_center)
 				elif current_tool == MODE_STAMP:
-					paint(stamp_center, pressure, last_tilt, painting_mode, true)
+					if stamp_center_on_mesh:
+						paint(stamp_center, pressure, last_tilt, painting_mode, true)
+					else:
+						end_stroke()
 				elif current_tool == MODE_COLOR_PICKER:
 					pick_color(ev.position, false)
 				elif current_tool == MODE_MASK_SELECTOR:
@@ -489,7 +498,10 @@ func handle_stroke_input(ev : InputEvent, painting_mode : int = PAINTING_MODE_VI
 						painter.update_brush()
 					else:
 						last_painted_position = mouse_position+Vector2(brush_spacing_control.value, brush_spacing_control.value)
-					paint(mouse_position, get_pressure(ev), last_tilt, painting_mode, true)
+					if dont_paint:
+						end_stroke()
+					else:
+						paint(mouse_position, get_pressure(ev), last_tilt, painting_mode, true)
 					reset_stroke()
 
 func _on_View_gui_input(ev : InputEvent):
@@ -649,6 +661,14 @@ func paint(pos : Vector2, pressure : float = 1.0, tilt : Vector2 = Vector2(0, 0)
 			previous_position = null
 	await do_paint(pos, pressure, tilt, painting_mode, end_of_stroke, layers.selected_layer.get_layer_type() == MMLayer.LAYER_MASK)
 	last_painted_position = pos
+
+## Ends the current stroke without painting (when it ends off the mesh)
+func end_stroke() -> void:
+	if layers.selected_layer == null or layers.selected_layer.get_layer_type() == MMLayer.LAYER_PROC:
+		return
+	await painter.end_stroke(layers.selected_layer.get_layer_type() == MMLayer.LAYER_MASK)
+	set_need_save()
+	stroke_seed = randf()
 
 var next_paint_to = null
 var next_pressure = null
