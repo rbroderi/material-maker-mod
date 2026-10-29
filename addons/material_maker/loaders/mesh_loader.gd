@@ -23,13 +23,18 @@ static func load_gltf_mesh(file_path) -> ArrayMesh:
 		printerr("Failure during parsing GLTF/GLB buffer")
 		return null
 	var node: Node = gltf.generate_scene(gltf_state)
+	var mesh : ArrayMesh = null
 	if node is MeshInstance3D:
-		return node.mesh
-	var mesh_instances : Array[Node] = node.find_children("*", "MeshInstance3D", true, false)
-	if mesh_instances.size() == 0:
+		mesh = node.mesh
+	else:
+		var mesh_instances : Array[Node] = node.find_children("*", "MeshInstance3D", true, false)
+		if mesh_instances.size() > 0:
+			mesh = mesh_instances[0].mesh
+	# The generated scene is not in the tree, free it (the mesh is kept by its reference)
+	node.free()
+	if mesh == null:
 		printerr("GLTF/GLB does not include any meshes")
-		return null
-	return mesh_instances[0].mesh
+	return mesh
 
 static func load_fbx_mesh(file_path) -> ArrayMesh:
 	var fbx : FBXDocument = FBXDocument.new()
@@ -46,13 +51,18 @@ static func load_fbx_mesh(file_path) -> ArrayMesh:
 		push_error("Failure during parsing FBX buffer")
 		return null
 	var node: Node = fbx.generate_scene(fbx_state)
+	var mesh : ArrayMesh = null
 	if node is MeshInstance3D:
-		return node.mesh
-	var mesh_instances : Array[Node] = node.find_children("*", "MeshInstance3D", true, false)
-	if mesh_instances.size() == 0:
+		mesh = node.mesh
+	else:
+		var mesh_instances : Array[Node] = node.find_children("*", "MeshInstance3D", true, false)
+		if mesh_instances.size() > 0:
+			mesh = mesh_instances[0].mesh
+	# The generated scene is not in the tree, free it (the mesh is kept by its reference)
+	node.free()
+	if mesh == null:
 		push_error("FBX does not include any meshes")
-		return null
-	return mesh_instances[0].mesh
+	return mesh
 
 static func load_mesh(path : String) -> ArrayMesh:
 	if path == null:
