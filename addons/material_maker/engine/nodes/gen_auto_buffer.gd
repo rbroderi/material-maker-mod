@@ -3,8 +3,8 @@ extends MMGenBuffer
 class_name MMGenAutoBuffer
 
 
-# Automatic buffers are inserted by shader nodes in front of function inputs
-# whose source would be expensive to evaluate at many positions.
+# Automatic buffers are inserted by shader nodes in front of inputs whose
+# source would be expensive to inline (see MMGenShader.should_auto_buffer()).
 # They are children of their consumer, get their source explicitly instead of
 # from graph connections, and are never serialized.
 

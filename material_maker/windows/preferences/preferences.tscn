@@ -679,28 +679,47 @@ text = "Automatic Buffers (experimental)"
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 size_flags_horizontal = 10
-tooltip_text = "Insert buffers automatically in front of inputs that are sampled at several positions (blur, warp...) and depend on many nodes. Applies to shaders generated afterwards."
+tooltip_text = "Insert buffers automatically in front of inputs that are sampled at several positions (blur, warp...) when their source is expensive, and in front of inputs whose source would make a shader too large. Applies to shaders generated afterwards."
 text = "On"
 flat = false
 config_variable = "auto_buffer"
 
-[node name="AutoBufferThreshold" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1854577820]
+[node name="AutoBufferMinGain" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=782531660]
 layout_mode = 2
 
-[node name="LabelAutoBufferThreshold" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferThreshold" unique_id=2019444164]
+[node name="LabelAutoBufferMinGain" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferMinGain" unique_id=1081417614]
 layout_mode = 2
-text = "Automatic Buffer Node Count"
+text = "Automatic Buffer Minimum Gain"
 
-[node name="auto_buffer_threshold" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferThreshold" unique_id=1210030245 instance=ExtResource("3")]
+[node name="auto_buffer_min_gain" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferMinGain" unique_id=835800855 instance=ExtResource("3")]
 custom_minimum_size = Vector2(200, 24)
 layout_mode = 2
 size_flags_horizontal = 10
-tooltip_text = "Minimum number of nodes an input must depend on to be buffered automatically."
-config_variable = "auto_buffer_threshold"
-value = 4.0
-min_value = 2.0
-max_value = 32.0
-step = 1.0
+tooltip_text = "An input sampled several times is buffered when evaluating its source for each sample is estimated to cost at least this many times more than rendering it into a buffer and sampling it."
+config_variable = "auto_buffer_min_gain"
+value = 2.0
+min_value = 1.0
+max_value = 16.0
+step = 0.5
+float_only = true
+
+[node name="AutoBufferShaderBudget" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=222173653]
+layout_mode = 2
+
+[node name="LabelAutoBufferShaderBudget" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferShaderBudget" unique_id=426936971]
+layout_mode = 2
+text = "Shader Budget (cost units)"
+
+[node name="auto_buffer_shader_budget" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferShaderBudget" unique_id=1969832147 instance=ExtResource("3")]
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Inputs whose source is estimated to cost more than this (roughly, in function calls per pixel) are buffered, which splits large shaders into smaller ones."
+config_variable = "auto_buffer_shader_budget"
+value = 4000.0
+min_value = 100.0
+max_value = 100000.0
+step = 100.0
 float_only = true
 
 [node name="AutoBufferSize" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=859498607]

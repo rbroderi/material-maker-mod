@@ -272,6 +272,25 @@ func get_connected_outputs(generator) -> Array:
 			rv.push_back(c.from_port)
 	return rv
 
+## Returns the buffer pin of the connection to an input: "" (automatic),
+## "always" or "never"
+func get_connection_buffer(to_name : String, to_port : int) -> String:
+	for c in connections:
+		if c.to == to_name and c.to_port == to_port:
+			return c.get("buffer", "")
+	return ""
+
+func set_connection_buffer(to_name : String, to_port : int, mode : String) -> void:
+	for c in connections:
+		if c.to == to_name and c.to_port == to_port:
+			if mode == "":
+				c.erase("buffer")
+			else:
+				c.buffer = mode
+			if has_node(NodePath(to_name)):
+				get_node(NodePath(to_name)).source_changed(to_port)
+			return
+
 func connect_children(from, from_port : int, to, to_port : int) -> bool:
 	if from == null or to == null:
 		return false

@@ -14,6 +14,8 @@ var editable : bool = false
 # Automatic buffers, indexed by input
 const AUTO_BUFFER_TYPES : Array[String] = [ "f", "rgb", "rgba" ]
 var auto_buffers : Dictionary = {}
+var auto_buffer_decisions : Dictionary = {}
+var cost_model : Dictionary = {}
 
 
 func toggle_editable() -> bool:
@@ -70,9 +72,11 @@ func set_parameter(n : String, v) -> void:
 			params_use_seed = new_params_use_seed
 	super.set_parameter(n, v)
 	# Automatic buffers follow the node's size parameter
-	for b in auto_buffers.values():
-		if int(b.get_parameter("size")) != get_auto_buffer_size():
-			b.set_parameter("size", get_auto_buffer_size())
+	if not auto_buffers.is_empty():
+		var auto_buffer_size : int = get_auto_buffer_size()
+		for b in auto_buffers.values():
+			if int(b.get_parameter("size")) != auto_buffer_size:
+				b.set_parameter("size", auto_buffer_size)
 	var had_rnd : bool = false
 	if old_value is String and (old_value.find("$rnd(") != -1 or old_value.find("$rndi(") != -1):
 		had_rnd = true
@@ -376,6 +380,8 @@ func expand_generic() -> void:
 func set_shader_model(data: Dictionary) -> void:
 	shader_model = data
 	shader_model_preprocessed = preprocess_shader_model(data)
+	cost_model = {}
+	auto_buffer_decisions = {}
 	if is_generic():
 		expand_generic()
 	init_parameters()
@@ -494,24 +500,131 @@ func generate_parameter_declarations(rv : ShaderCode) -> void:
 #
 # Automatic buffers
 #
-# When enabled in the preferences, function inputs (that are sampled at
-# arbitrary positions, for example by blur, warp or edge detect nodes) whose
-# source would inline many nodes are sampled through a hidden buffer, so the
-# source is rendered once instead of being evaluated for each sample.
+# When enabled in the preferences, inputs whose source is expensive to
+# evaluate are sampled through a hidden buffer, so the source is rendered
+# once instead of being evaluated again for each sample:
+# - inputs that are sampled many times (for example by blur, warp, normal map
+#   or edge detect nodes), when sampling the source repeatedly costs much more
+#   than rendering it once and sampling the result;
+# - any input whose source would make the generated shader too large (the
+#   shader budget), which splits large graphs into several smaller shaders.
+#
+# Costs are rough estimates of GPU work per pixel, in "function calls".
+# Connections can also be pinned to "always" (buffered even when automatic
+# buffers are disabled) or "never".
 #
 
-## Counts the generators that would be inlined when evaluating port, stopping
-## at textures (buffers, images...) and at limit
-static func count_inlined_generators(port : OutputPort, visited : Dictionary, limit : int) -> int:
-	if port == null or visited.size() >= limit:
-		return visited.size()
+const COST_TEXTURE_FETCH : float = 1.0
+const COST_BUFFER_OVERHEAD : float = 16.0
+const COST_OTHER_GENERATOR : float = 10.0
+const DEFAULT_LOOP_ITERATIONS : float = 16.0
+
+static var re_for : RegEx = RegEx.create_from_string("\\bfor\\s*\\(")
+static var re_for_loop : RegEx = RegEx.create_from_string("for\\s*\\(\\s*(?:int|float)\\s+\\w+\\s*=\\s*(-?[\\d.]+)\\s*;\\s*\\w+\\s*(<=?)\\s*(-?[\\d.]+)\\s*;")
+
+## Estimates the iteration count of the loops in code (1 without loops):
+## the largest constant loop bound, or DEFAULT_LOOP_ITERATIONS if some loops
+## don't have constant bounds
+static func estimate_loop_iterations(code : String) -> float:
+	if code.find("for") == -1:
+		return 1.0
+	var loop_count : int = re_for.search_all(code).size()
+	if loop_count == 0:
+		return 1.0
+	var iterations : float = 0.0
+	var constant_loops : int = 0
+	for m in re_for_loop.search_all(code):
+		var count : float = abs(m.get_string(3).to_float()-m.get_string(1).to_float())
+		if m.get_string(2) == "<=":
+			count += 1.0
+		iterations = max(iterations, count)
+		constant_loops += 1
+	if constant_loops < loop_count:
+		iterations = max(iterations, DEFAULT_LOOP_ITERATIONS)
+	return max(iterations, 1.0)
+
+## Returns the estimated cost of one evaluation of this node (without its
+## inputs) and, for each input, the number of times it is sampled
+func get_cost_model() -> Dictionary:
+	if not cost_model.is_empty():
+		return cost_model
+	var code : String = ""
+	for f in [ "global", "instance", "code" ]:
+		if shader_model_preprocessed.get(f) is String:
+			code += shader_model_preprocessed[f]+"\n"
+	for o in shader_model_preprocessed.get("outputs", []):
+		for f in mm_io_types.types.keys():
+			if o.get(f) is String:
+				code += o[f]+"\n"
+				break
+	var loop_iterations : float = estimate_loop_iterations(code)
+	var all_code : String = get_shader_model_code()
+	var samples : Array[float] = []
+	var variations : Array[bool] = []
+	var attributes : Array[bool] = []
+	for input in shader_model_preprocessed.get("inputs", []):
+		var count : float = max(1.0, RegEx.create_from_string("\\$%s\\b" % input.name).search_all(code).size())
+		if input.has("function") and input.function:
+			count *= loop_iterations
+		samples.append(count)
+		variations.append(all_code.contains("$%s.variation(" % input.name))
+		attributes.append(all_code.contains("$%s.texture" % input.name) or all_code.contains("$%s.size" % input.name))
+	cost_model = { cost=(1.0+code.count("("))*loop_iterations, samples=samples, variations=variations, attributes=attributes }
+	return cost_model
+
+## Returns the number of times an input is sampled per evaluation of the node
+func get_input_sample_count(index : int) -> float:
+	var samples : Array[float] = get_cost_model().samples
+	return samples[index] if index < samples.size() else 1.0
+
+## Estimates the per-pixel cost of evaluating port, taking into account the
+## inputs that would be buffered
+static func estimate_cost(port : OutputPort, memo : Dictionary) -> float:
+	if port == null:
+		return 0.0
 	var generator : MMGenBase = port.generator
-	if generator is MMGenTexture or visited.has(generator):
-		return visited.size()
-	visited[generator] = true
+	if generator is MMGenTexture:
+		return COST_TEXTURE_FETCH
+	# Graphs and their inputs are inlined, so their cost is the cost of what
+	# they forward
+	if generator is MMGenGraph:
+		if not generator.has_node("gen_outputs"):
+			return COST_OTHER_GENERATOR
+		return estimate_cost(generator.get_node("gen_outputs").get_source(port.output_index), memo)
+	if generator.name == "gen_inputs" and generator.get_parent() is MMGenGraph:
+		return estimate_cost(generator.get_parent().get_source(port.output_index), memo)
+	# Switches only evaluate their selected input
+	if generator is MMGenSwitch:
+		return estimate_cost(generator.get_source(port.output_index+int(generator.parameters.source)*int(generator.parameters.outputs)), memo)
+	if memo.has(generator):
+		return memo[generator]
+	memo[generator] = 0.0
+	var cost : float = COST_OTHER_GENERATOR
+	var samples : Array[float] = []
+	if generator is MMGenShader:
+		var model : Dictionary = generator.get_cost_model()
+		cost = model.cost
+		samples = model.samples
 	for i in generator.get_input_defs().size():
-		count_inlined_generators(generator.get_source(i), visited, limit)
-	return visited.size()
+		var source : OutputPort = generator.get_source(i)
+		if source == null:
+			continue
+		var sample_count : float = samples[i] if i < samples.size() else 1.0
+		var source_cost : float = estimate_cost(source, memo)
+		if generator is MMGenShader and generator.should_auto_buffer(i, source_cost, sample_count):
+			cost += sample_count*COST_TEXTURE_FETCH
+		else:
+			cost += sample_count*source_cost
+	memo[generator] = cost
+	return cost
+
+## Returns the buffer pin of the connection to an input: "" (automatic),
+## "always" or "never"
+func get_buffer_pin(index : int) -> String:
+	var parent = get_parent()
+	if parent is MMGenGraph:
+		return parent.get_connection_buffer(name, index)
+	return ""
 
 ## Returns all the code of the node's shader model (global and instance code,
 ## code, outputs and enum parameter values)
@@ -533,21 +646,14 @@ func get_shader_model_code() -> String:
 ## Returns true if the node's code samples an input with variations
 ## ($in.variation(...))
 func input_uses_variations(index : int) -> bool:
-	var inputs : Array = shader_model_preprocessed.get("inputs", [])
-	if index >= inputs.size():
-		return false
-	return get_shader_model_code().contains("$%s.variation(" % inputs[index].name)
+	var variations : Array[bool] = get_cost_model().variations
+	return variations[index] if index < variations.size() else false
 
-## Returns true if the node's code samples an input only once, outside of
-## loops: a buffer would not save any evaluation of its source
-func input_sampled_once(index : int) -> bool:
-	var inputs : Array = shader_model_preprocessed.get("inputs", [])
-	if index >= inputs.size():
-		return false
-	var code : String = get_shader_model_code()
-	if RegEx.create_from_string("\\bfor\\s*\\(").search(code) != null:
-		return false
-	return code.count("$%s(" % inputs[index].name) <= 1
+## Returns true if the node's code reads attributes of an input ($in.texture
+## or $in.size), that name the source's own texture
+func uses_input_attributes(index : int) -> bool:
+	var attributes : Array[bool] = get_cost_model().attributes
+	return attributes[index] if index < attributes.size() else false
 
 ## Returns true if port is sampled (directly or through other nodes) by a node
 ## that evaluates its input with variations: a buffer would only hold one of
@@ -577,38 +683,150 @@ static func is_sampled_with_variations(port : OutputPort, visited : Dictionary) 
 				return true
 	return false
 
-## Returns true if a function input should be sampled through an automatic
-## buffer
-func should_auto_buffer(index : int, input : Dictionary, source : OutputPort) -> bool:
-	if source == null or not mm_globals.get_config("auto_buffer") or not input.type in AUTO_BUFFER_TYPES:
+## Returns true if port reads the loop output of an Iterate Buffer (i.e. it is
+## in a loop body), not counting what is read through other textures
+static func reads_loop_state(port : OutputPort, memo : Dictionary = {}) -> bool:
+	if port == null:
 		return false
-	var threshold : int = int(mm_globals.get_config("auto_buffer_threshold"))
-	if count_inlined_generators(source, {}, threshold) < threshold:
+	var generator : MMGenBase = port.generator
+	if generator is MMGenIterateBuffer:
+		return port.output_index == 1
+	if generator is MMGenTexture:
 		return false
-	if input_sampled_once(index):
+	if generator is MMGenGraph:
+		return generator.has_node("gen_outputs") and reads_loop_state(generator.get_node("gen_outputs").get_source(port.output_index), memo)
+	if generator.name == "gen_inputs" and generator.get_parent() is MMGenGraph:
+		return reads_loop_state(generator.get_parent().get_source(port.output_index), memo)
+	if memo.has(generator):
 		return false
-	# A buffer holds a single variation of its source
-	if input_uses_variations(index):
+	memo[generator] = true
+	for i in generator.get_input_defs().size():
+		if reads_loop_state(generator.get_source(i), memo):
+			return true
+	return false
+
+## Decides whether an input should be sampled through an automatic buffer,
+## given the estimated cost of its source and how many times it is sampled
+## per evaluation of this node
+func should_auto_buffer(index : int, source_cost : float, sample_count : float) -> bool:
+	var inputs : Array = shader_model_preprocessed.get("inputs", [])
+	if index >= inputs.size() or not inputs[index].type in AUTO_BUFFER_TYPES:
 		return false
+	var source : OutputPort = get_source(index)
+	if source != null:
+		# Buffers can only store sources of these types (the type of switches
+		# and portals depends on what they forward)
+		var output_defs : Array = source.generator.get_output_defs()
+		if source.output_index < output_defs.size():
+			var source_type : String = output_defs[source.output_index].get("type", "rgba")
+			if source_type != "any" and not source_type in AUTO_BUFFER_TYPES:
+				return false
+		# Sources that are already textures gain nothing from a buffer
+		if source.generator is MMGenTexture:
+			return false
+	match get_buffer_pin(index):
+		"always":
+			return true
+		"never":
+			return false
+	if not mm_globals.get_config("auto_buffer"):
+		return false
+	# $in.texture and $in.size name the source's own texture, and a buffer
+	# holds a single variation of its source
+	if uses_input_attributes(index) or input_uses_variations(index):
+		return false
+	# Buffer when sampling the source repeatedly costs much more than
+	# rendering it once and sampling the result
+	var inlined_cost : float = sample_count*source_cost
+	var buffered_cost : float = sample_count*COST_TEXTURE_FETCH+source_cost+COST_BUFFER_OVERHEAD
+	if inlined_cost >= float(mm_globals.get_config("auto_buffer_min_gain"))*buffered_cost:
+		return true
+	# Shader splitting: buffer sources that would make the shader too large
+	return source_cost > float(mm_globals.get_config("auto_buffer_shader_budget"))
+
+## Returns the value of the size parameter of a generator, or -1
+static func get_size_parameter(generator : MMGenBase) -> int:
+	for p in generator.get_parameter_defs():
+		if p.type == "size" and generator.parameters.has(p.name):
+			return int(generator.parameters[p.name])
+	return -1
+
+## Returns the largest size parameter of the first nodes after port that
+## have one (for example the Material node or a Buffer), or -1
+static func get_downstream_size(port : OutputPort, visited : Dictionary) -> int:
+	var key : String = "%d:%d" % [ port.generator.get_instance_id(), port.output_index ]
+	if visited.has(key):
+		return -1
+	visited[key] = true
+	var rv : int = -1
+	for target in port.generator.get_targets(port.output_index):
+		var generator : MMGenBase = target.generator
+		var size : int = get_size_parameter(generator)
+		if size != -1:
+			rv = max(rv, size)
+			continue
+		var next_ports : Array = []
+		if generator is MMGenTexture:
+			continue
+		elif generator is MMGenGraph:
+			if generator.has_node("gen_inputs"):
+				next_ports.append(OutputPort.new(generator.get_node("gen_inputs"), target.input_index))
+		elif generator.name == "gen_outputs" and generator.get_parent() is MMGenGraph:
+			next_ports.append(OutputPort.new(generator.get_parent(), target.input_index))
+		else:
+			next_ports = generator.follow_input(target.input_index)
+		for p in next_ports:
+			rv = max(rv, get_downstream_size(p, visited))
+	return rv
+
+## Returns the resolution (as log2) of automatic buffers: the node's own size
+## parameter if it has one (the resolution it samples its inputs at),
+## otherwise the size of the nodes after it (such as the Material node), or
+## the size set in the preferences
+func get_auto_buffer_size() -> int:
+	var size : int = get_size_parameter(self)
+	if size != -1:
+		return size
+	var visited : Dictionary = {}
+	for o in get_output_defs().size():
+		size = max(size, get_downstream_size(OutputPort.new(self, o), visited))
+	if size != -1:
+		return size
+	return int(mm_globals.get_config("auto_buffer_size"))
+
+## Returns true if an input is sampled through an automatic buffer. Decisions
+## are kept until the input's source changes (or the preferences)
+func is_input_auto_buffered(index : int, source : OutputPort) -> bool:
+	if source == null:
+		return false
+	var pin : String = get_buffer_pin(index)
+	if pin == "" and not mm_globals.get_config("auto_buffer"):
+		return false
+	var key : String = "%s/%s/%s/%s" % [ pin, mm_globals.get_config("auto_buffer"), mm_globals.get_config("auto_buffer_min_gain"), mm_globals.get_config("auto_buffer_shader_budget") ]
+	if auto_buffer_decisions.get(index, {}).get("key") != key:
+		var decision : bool = should_auto_buffer(index, estimate_cost(source, {}), get_input_sample_count(index))
+		auto_buffer_decisions[index] = { key=key, decision=decision }
+	if not auto_buffer_decisions[index].decision:
+		return false
+	if pin == "always":
+		return true
+	# A buffer in a loop body would be rendered at each iteration, and each
+	# of its updates would restart the loop
+	if reads_loop_state(source):
+		return false
+	# A buffer holds a single variation of its source: don't buffer inputs of
+	# nodes that are evaluated with variations downstream (these depend on
+	# the graph after this node, so they are not kept with the decision)
 	var visited : Dictionary = {}
 	for o in get_output_defs().size():
 		if is_sampled_with_variations(OutputPort.new(self, o), visited):
 			return false
 	return true
 
-## Returns the resolution (as log2) of automatic buffers: the node's own size
-## parameter if it has one (the resolution it samples its inputs at), or the
-## size set in the preferences
-func get_auto_buffer_size() -> int:
-	for p in shader_model_preprocessed.get("parameters", []):
-		if p.type == "size" and parameters.has(p.name):
-			return int(parameters[p.name])
-	return int(mm_globals.get_config("auto_buffer_size"))
-
-## Returns the source to use for a function input: either source itself, or
-## an automatic buffer that samples it
-func get_function_input_source(index : int, input : Dictionary, source : OutputPort) -> OutputPort:
-	if not should_auto_buffer(index, input, source):
+## Returns the source to use for an input during code generation: either
+## source itself, or an automatic buffer that samples it
+func get_generation_source(index : int, source : OutputPort) -> OutputPort:
+	if not is_input_auto_buffered(index, source):
 		if auto_buffers.has(index):
 			auto_buffers[index].queue_free()
 			auto_buffers.erase(index)
@@ -616,11 +834,12 @@ func get_function_input_source(index : int, input : Dictionary, source : OutputP
 		return source
 	if auto_buffers.has(index):
 		auto_buffers[index].set_source(source)
-		if int(auto_buffers[index].get_parameter("size")) != get_auto_buffer_size():
-			auto_buffers[index].set_parameter("size", get_auto_buffer_size())
+		var auto_buffer_size : int = get_auto_buffer_size()
+		if int(auto_buffers[index].get_parameter("size")) != auto_buffer_size:
+			auto_buffers[index].set_parameter("size", auto_buffer_size)
 	else:
 		var auto_buffer : MMGenAutoBuffer = MMGenAutoBuffer.new()
-		auto_buffer.name = "auto_buffer_%s" % input.name
+		auto_buffer.name = "auto_buffer_%s" % shader_model_preprocessed.inputs[index].name
 		auto_buffer.consumer_input = index
 		auto_buffer.parameters.size = get_auto_buffer_size()
 		auto_buffer.set_source(source)
@@ -645,9 +864,16 @@ func auto_buffers_changed() -> void:
 		generator = generator.get_parent()
 
 func source_changed(input_index : int) -> void:
-	# Structural changes upstream must regenerate the automatic buffer's shader
+	auto_buffer_decisions.erase(input_index)
 	if auto_buffers.has(input_index):
-		auto_buffers[input_index].update_shader()
+		var source : OutputPort = get_source(input_index)
+		if is_input_auto_buffered(input_index, source):
+			# Incremental recompilation: this node only samples the buffer's
+			# texture, so only the buffer's shader must be regenerated
+			auto_buffers[input_index].set_source(source)
+			auto_buffers[input_index].update_shader()
+			emit_signal("parameter_changed", "__input_changed__", input_index)
+			return
 	super.source_changed(input_index)
 
 ## Called by automatic buffers when their output changes (e.g. when they
@@ -657,7 +883,7 @@ func auto_buffer_output_changed(input_index : int) -> void:
 
 func generate_input_function(index : int, input: Dictionary, rv : ShaderCode, context : MMGenContext) -> void:
 	var genname = "o"+str(get_instance_id())
-	var source = get_function_input_source(index, input, get_source(index))
+	var source = get_generation_source(index, get_source(index))
 	if source == null:
 		return
 	var local_context = MMGenContext.new(context)
@@ -780,6 +1006,9 @@ func replace_input(input_name : String, suffix : String, parameters : String, va
 				return attributes[attribute_name]
 		if suffix == "texture" or suffix == "size":
 			return "(error: Cannot find attribute %s for input %s)" % [ suffix, input_name ]
+	if not (input_def.has("function") and input_def.function):
+		# Inputs inlined in the code can also be split into automatic buffers
+		source = get_generation_source(input, source)
 	if input_def.has("function") and input_def.function:
 		var function_name : String = "o%s_input_%s" % [ str(get_instance_id()), input_def.name ]
 		if suffix == "variation":

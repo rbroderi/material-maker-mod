@@ -45,14 +45,31 @@ Automatic buffers
 +++++++++++++++++
 
 When *Automatic Buffers* are enabled in the preferences (Graph tab), Material Maker inserts
-buffers by itself in front of node inputs that are sampled at arbitrary positions (such as
-blur, warp and edge detect inputs) when they depend on at least the configured number
-of nodes. The source is then rendered once into a texture, instead of being evaluated again
-for each sample. Its resolution is the node's *size* parameter if it has one, and the
-configured size otherwise. Inputs that are sampled only once, and inputs whose node
-creates variations of them (such as the Tiler and Splatter nodes), are never buffered
-automatically.
+buffers by itself where they make rendering cheaper:
+
+* in front of inputs that are sampled many times (blur, warp, normal map, edge detect...)
+  when their source is expensive to evaluate. The source is then rendered once into a
+  texture, instead of being evaluated again for each sample. The *minimum gain* sets how
+  much cheaper the buffered version must be estimated to be,
+
+* in front of any input whose source would make the generated shader too large (the
+  *shader budget*). This splits very large materials into several smaller shaders, and
+  editing a node only recompiles the part of the graph up to the next buffer.
+
+Automatic buffers use the node's *size* parameter as resolution if it has one, otherwise
+the size of the nodes after it (such as the Material node), or the configured size. Inputs
+whose node creates variations of them (such as the Tiler and Splatter nodes) and inputs in
+the loop of an Iterate Buffer are never buffered automatically.
 
 Automatic buffers are not saved with the graph. They are shown by the buffer icon of the
 node that uses them, and can be paused from its menu. This feature is experimental and
 disabled by default.
+
+Connection buffers
+++++++++++++++++++
+
+*Alt + right click* on a connection shows a menu to choose whether it is buffered
+*automatically*, *always* or *never*. This setting is saved with the graph, and *always*
+works even when automatic buffers are disabled. Buffered connections are marked with a
+blue (automatic) or orange (always) *B*, and connections that are never buffered with a
+grey *-*.
