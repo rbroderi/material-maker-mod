@@ -45,6 +45,18 @@ class API:
 	func add_menu_item(label : String, callable : Callable, menu : String = "Plugins", after : String = "") -> void:
 		MMPlugins.menu_items.append({ plugin=plugin_id, label=label, callable=callable, menu=menu, after=after })
 
+	## Adds an operation to function graphs (Pixel Processor nodes): operands
+	## are the keys of nodes that reference other nodes, and compile_callable
+	## receives the compiler (MMFunctionGraph.Compiler), the node id, the
+	## node, the operation and the operand ids, and returns the node's GLSL
+	## expression after setting its type in compiler.types (or calls
+	## compiler.error() and returns ""). globals are the global GLSL
+	## definitions the operation needs (added once per shader). Graphs that use
+	## an operation that is not available show an error.
+	func add_function_graph_op(op_name : String, operands : Array, compile_callable : Callable, globals : Array = []) -> void:
+		if not MMFunctionGraph.add_operation(op_name, operands, compile_callable, globals, plugin_id):
+			push_error("Plugin %s: cannot add function graph operation %s (invalid or existing name)" % [ plugin_id, op_name ])
+
 	## Adds a command line command (material_maker --plugin <name> [args]):
 	## callable receives the arguments (PackedStringArray) and returns an exit
 	## code (it can be a coroutine)
@@ -272,6 +284,7 @@ static func unload_plugins() -> void:
 
 ## Releases what plugins registered, and their scripts' instances
 static func clear_registrations() -> void:
+	MMFunctionGraph.remove_plugin_operations()
 	menu_items.clear()
 	commands.clear()
 	export_hooks.clear()

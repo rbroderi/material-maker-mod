@@ -97,7 +97,14 @@ static func build_shader_model(graph : Dictionary) -> Dictionary:
 	var variables : Dictionary = { pos="uv", size="vec2($size)", seed="$seed", function_prefix="$(name)_fn_" }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
 	if not result.ok:
-		return { errors=result.errors }
+		# Graphs that cannot be compiled (e.g. that need a plugin that is not
+		# enabled) get a model with their inputs and parameters, that outputs
+		# black, so loading and saving them keeps them unchanged
+		var invalid_model : Dictionary = { name="Pixel Processor", shortdesc="Pixel Processor", code="",
+			instance="vec4 $(name)_pp(vec2 uv) {\n\treturn vec4(0.0, 0.0, 0.0, 1.0);\n}\n",
+			inputs=model_inputs, parameters=model_parameters,
+			outputs=[ { rgba="$(name)_pp($uv)", type="rgba", shortdesc="Output", longdesc="The function graph is invalid" } ] }
+		return { errors=result.errors, invalid_model=invalid_model }
 	var instance : String = "\n".join(result.functions)+"vec4 $(name)_pp(vec2 uv) {\n"
 	for line in result.code:
 		instance += "\t%s\n" % line
@@ -141,6 +148,11 @@ func _deserialize(data : Dictionary) -> void:
 		var errors : PackedStringArray = set_function_graph(data.function_graph)
 		if not errors.is_empty():
 			push_error("Invalid function graph in %s: %s" % [ name, ", ".join(errors) ])
+			var result : Dictionary = build_shader_model(data.function_graph)
+			if result.has("invalid_model"):
+				function_graph = data.function_graph
+				function_graph_globals = PackedStringArray()
+				set_shader_model(result.invalid_model)
 
 ## Edits the function graph as JSON
 func edit(node, _tab : String = "") -> void:

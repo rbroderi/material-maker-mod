@@ -37,6 +37,18 @@ Maker starts, and **_disable()** when it quits. The API object adds:
 * menu items: **api.add_menu_item(label, callable, menu="Plugins", after="")**, in the
   **Plugins** menu, or in another menu (e.g. *File*) after one of its items (e.g. *Export
   material*)
+* function graph operations (Pixel Processor nodes): **api.add_function_graph_op(name,
+  operands, compile_callable, globals=[])**. **operands** are the keys of the node that
+  reference other nodes. **compile_callable** receives the compiler
+  (**MMFunctionGraph.Compiler**), the node id, the node, the operation and the operand ids,
+  sets the node's type in **compiler.types** and returns its GLSL expression
+  (**compiler.value_of(id)** is the expression of an operand and **compiler.types[id]** its
+  type), or calls **compiler.error(node_id, message)** and returns an empty string. It can add
+  statements before the node's to **compiler.code**, globals with
+  **compiler.add_global(definition)**, and read **compiler.variables** and **compiler.graph**
+  (the whole function graph). **globals** are GLSL definitions that are added once per shader
+  when the operation is used. Built-in operations cannot be replaced, and graphs that use an
+  operation that is not available (e.g. its plugin is disabled) show an error
 * command line commands, run with **--plugin <command> [arguments]**:
   **api.add_command(name, callable)**, called with the arguments and returning the exit code
 * export hooks, called after each material export with the material node, the exported file

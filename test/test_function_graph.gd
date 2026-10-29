@@ -124,6 +124,80 @@ func test_unknown_operations_are_rejected() -> void:
 	assert_false(r.ok)
 	assert_true(has_error_containing(r, "unknown operation teleport"))
 
+# An operation added by a plugin: twice(a), with a helper global
+const TWICE_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }\n"
+
+static func compile_twice(compiler : MMFunctionGraph.Compiler, node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+	if compiler.types[node.a] != "float":
+		compiler.error(node_id, "twice requires a float")
+		return ""
+	compiler.types[node_id] = "float"
+	return "mm_test_twice(%s)" % compiler.value_of(node.a)
+
+func test_plugin_operations() -> void:
+	var api : MMPlugins.API = MMPlugins.API.new()
+	api.plugin_id = "test_plugin"
+	api.add_function_graph_op("test_twice", [ "a" ], compile_twice, [ TWICE_GLOBAL ])
+	# Existing operations cannot be replaced
+	assert_false(MMFunctionGraph.add_operation("add", [ "a" ], compile_twice))
+	assert_false(MMFunctionGraph.add_operation("rand", [ "a" ], compile_twice))
+	assert_false(MMFunctionGraph.add_operation("test_twice", [ "a" ], compile_twice))
+	api.add_function_graph_op("add", [ "a" ], compile_twice)
+	assert_push_error("cannot add function graph operation add")
+	assert_true("test_twice" in MMFunctionGraph.get_operation_names())
+	assert_eq(MMFunctionGraph.get_operation("test_twice").operands, [ "a" ])
+	# Used in the main graph (twice, the second one's operand declared after
+	# it) and in a sub-function
+	var graph : Dictionary = {
+		functions={ f={ params=[ { name="x", type="float" } ], nodes={ x={ op="arg", name="x" }, out={ op="test_twice", a="x" } }, output="out" } },
+		nodes={ one={ op="float", value=1 }, a={ op="test_twice", a="one" }, out={ op="test_twice", a="z" }, z={ op="call", function="f", args=[ "a" ] } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.types.out, "float")
+	assert_string_contains("\n".join(r.code), "float fg_1 = mm_test_twice(fg_0); // a")
+	assert_string_contains(r.functions[0], "float fg_1 = mm_test_twice(fg_0); // out")
+	# The global is added once, although the operation is used 3 times
+	assert_eq(r.globals, PackedStringArray([ TWICE_GLOBAL ]))
+	# Pixel Processors declare it as a global
+	var model : Dictionary = MMGenPixelProcessor.build_shader_model({ inputs=[], parameters=[], nodes=graph.nodes, functions=graph.functions, output="out" })
+	assert_true(model.errors.is_empty(), str(model.errors))
+	assert_eq(model.globals, PackedStringArray([ TWICE_GLOBAL ]))
+	# Errors reported by the operation
+	r = compile({ v={ op="vec2", value=[ 1, 1 ] }, out={ op="test_twice", a="v" } }, "out")
+	assert_false(r.ok)
+	assert_eq(r.node_errors.get("out"), "twice requires a float")
+	# Unregistered (as when the plugin is not enabled): graphs that use it
+	# show an error
+	MMFunctionGraph.remove_plugin_operations("test_plugin")
+	assert_false("test_twice" in MMFunctionGraph.get_operation_names())
+	assert_true(MMFunctionGraph.get_operation("test_twice").is_empty())
+	r = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_false(r.ok)
+	assert_true(has_error_containing(r, "unknown operation test_twice"), str(r.errors))
+	# Built-in operations are kept
+	MMFunctionGraph.remove_plugin_operations()
+	assert_false(MMFunctionGraph.get_operation("rand").is_empty())
+
+func test_plugin_registrations_are_cleared() -> void:
+	MMFunctionGraph.add_operation("test_twice", [ "a" ], compile_twice, [], "test_plugin")
+	MMPlugins.clear_registrations()
+	assert_true(MMFunctionGraph.get_operation("test_twice").is_empty())
+
+func test_graph_with_unknown_operation_is_kept() -> void:
+	# e.g. a graph that needs a plugin that is not enabled
+	var graph : Dictionary = { version=2, inputs=[ { name="src", label="Source" } ], parameters=[ { name="k", label="K", min=0.0, max=1.0, default=0.5 } ],
+		nodes={ k={ op="param", name="k" }, out={ op="not_available", a="k" } }, output="out" }
+	var pixel_processor : MMGenPixelProcessor = MMGenPixelProcessor.new()
+	pixel_processor._deserialize({ function_graph=graph.duplicate(true) })
+	assert_push_error("unknown operation not_available")
+	assert_eq(pixel_processor.function_graph, graph)
+	assert_eq(pixel_processor.get_input_defs().map(func(i): return i.name), [ "src" ])
+	assert_true(pixel_processor.get_parameter_defs().any(func(p): return p.name == "k"))
+	assert_eq(pixel_processor._serialize({}).function_graph, graph)
+	pixel_processor.free()
+
 func test_invalid_input_index_is_rejected() -> void:
 	var r : Dictionary = compile({ uv={ op="pos" }, out={ op="sample", input=3, uv="uv" } }, "out")
 	assert_false(r.ok)

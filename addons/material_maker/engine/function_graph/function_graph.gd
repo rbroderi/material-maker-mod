@@ -12,7 +12,8 @@ class_name MMFunctionGraph
 # - parameter_expressions: a dictionary that maps parameter names to GLSL
 #   expressions (e.g. "$contrast")
 # - variables: GLSL expressions for "pos", "size" and "seed", and the prefix
-#   of generated function names ("function_prefix")
+#   of generated function names ("function_prefix"), and optionally the mode
+#   ("mode": "pixel" or "value", for operations added by plugins)
 # and returns { ok, code, value, functions, globals, types, node_errors, errors }:
 # - code is a list of GLSL statements and value the vec4 expression of the
 #   result (inside a function that has a vec2 uv argument),
@@ -82,9 +83,11 @@ const RAND_GLOBAL : String = """float mm_fg_rand(vec2 p, float seed) {
 # Operations other than the binary, unary and comparison operators above:
 # - operands: the keys of the node that reference other nodes (used to find
 #   dependencies; vector constructors and calls also have an args array),
-# - compile: the method of Compiler that types and compiles the node,
+# - compile: the method of Compiler that types and compiles the node, or a
+#   Callable for operations added by plugins (see add_operation),
 # - globals (optional): global GLSL definitions the operation requires.
-const OPERATIONS : Dictionary = {
+# It is not a constant, so plugins can add operations (and editors list them).
+static var OPERATIONS : Dictionary = {
 	"float": { operands=[], compile="compile_float" },
 	"int": { operands=[], compile="compile_int" },
 	"vec2": { operands=[], compile="compile_vector" },
@@ -121,6 +124,32 @@ static var re_identifier : RegEx = RegEx.create_from_string("^[a-zA-Z][a-zA-Z0-9
 static func is_identifier(s) -> bool:
 	return (s is String or s is StringName) and re_identifier.search(str(s)) != null
 
+## The names of all operations (the binary, unary and comparison operators,
+## then OPERATIONS, including those added by plugins)
+static func get_operation_names() -> Array:
+	return BINARY_OPS.keys()+UNARY_OPS.keys()+COMPARISON_OPS.keys()+OPERATIONS.keys()
+
+## Adds an operation (for plugins, see MMPlugins.API.add_function_graph_op):
+## - operands: the keys of the node that reference other nodes,
+## - compile_callable: called with the Compiler, the node id, the node, the
+##   operation and the operand ids, sets the node's type in compiler.types
+##   and returns its GLSL expression, or reports an error with
+##   compiler.error() and returns "" (it can also add statements before the
+##   node's to compiler.code, and globals with compiler.add_global()),
+## - globals: global GLSL definitions the operation requires (added once).
+## Returns false if the name is invalid or already used by an operation.
+static func add_operation(op : String, operands : Array, compile_callable : Callable, globals : Array = [], plugin : String = "") -> bool:
+	if not is_identifier(op) or op in get_operation_names():
+		return false
+	OPERATIONS[op] = { operands=operands.duplicate(), compile=compile_callable, globals=globals.duplicate(), plugin=plugin }
+	return true
+
+## Removes the operations added by a plugin (by all plugins if plugin is "")
+static func remove_plugin_operations(plugin : String = "") -> void:
+	for op in OPERATIONS.keys():
+		if OPERATIONS[op].has("plugin") and (plugin == "" or OPERATIONS[op].plugin == plugin):
+			OPERATIONS.erase(op)
+
 ## Returns the description of an operation in OPERATIONS, or an empty
 ## dictionary
 static func get_operation(op : String) -> Dictionary:
@@ -140,6 +169,9 @@ class Compiler:
 	# Arguments of the function being compiled: name -> { type, glsl_name }
 	var args : Dictionary = {}
 	var context : String = ""
+	# The whole function graph (e.g. for settings of operations added by
+	# plugins)
+	var graph : Dictionary = {}
 
 	var errors : PackedStringArray = PackedStringArray()
 	var node_errors : Dictionary = {}
@@ -239,7 +271,14 @@ class Compiler:
 		var operands : Array = get_operand_ids(node)
 		var operation : Dictionary = MMFunctionGraph.get_operation(op)
 		if not operation.is_empty():
-			var expression : String = call(operation.compile, node_id, node, op, operands)
+			var expression
+			if operation.compile is Callable:
+				expression = operation.compile.call(self, node_id, node, op, operands)
+			else:
+				expression = call(operation.compile, node_id, node, op, operands)
+			if not expression is String:
+				error(node_id, "operation %s did not return an expression" % op)
+				return ""
 			if expression != "":
 				for g in operation.get("globals", []):
 					add_global(g)
@@ -266,7 +305,7 @@ class Compiler:
 				return ""
 			types[node_id] = "bool"
 			return "(%s %s %s)" % [ value_of(node.a), COMPARISON_OPS[op], value_of(node.b) ]
-		error(node_id, "unknown operation %s" % op)
+		error(node_id, "unknown operation %s (it may need a plugin that is not installed or enabled)" % op)
 		return ""
 
 
@@ -549,6 +588,7 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 		compiler.parameter_expressions = parameter_expressions
 		compiler.variables = variables
 		compiler.functions_info = functions_info
+		compiler.graph = graph
 		var declarations : PackedStringArray = PackedStringArray([ "vec2 uv" ])
 		for p in f.get("params", []):
 			compiler.args[p.name] = { type=p.type, glsl_name="fa_"+p.name }
@@ -575,6 +615,7 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 	main.parameter_expressions = parameter_expressions
 	main.variables = variables
 	main.functions_info = functions_info
+	main.graph = graph
 	if not graph.has("nodes") or not graph.nodes is Dictionary:
 		main.error("", "the graph has no nodes")
 	elif not graph.has("output") or not graph.output is String:
