@@ -565,7 +565,7 @@ static func estimate_cost(port : OutputPort, memo : Dictionary) -> float:
 	if port == null:
 		return 0.0
 	var generator : MMGenBase = port.generator
-	if generator is MMGenTexture:
+	if is_texture_generator(generator):
 		return COST_TEXTURE_FETCH
 	if memo.has(generator):
 		return memo[generator]
@@ -588,6 +588,29 @@ static func estimate_cost(port : OutputPort, memo : Dictionary) -> float:
 			cost += sample_count*source_cost
 	memo[generator] = cost
 	return cost
+
+## Returns true if the generator's outputs are textures it renders (and not
+## code to inline)
+static func is_texture_generator(generator : MMGenBase) -> bool:
+	return generator is MMGenTexture or generator is MMGenIterateBufferV2 or generator is MMGenSbsFxMap
+
+## Returns true if port reads the loop states of an Iterate Buffer (i.e. it is
+## in a loop body), not counting what is read through buffers
+static func reads_loop_state(port : OutputPort, memo : Dictionary = {}) -> bool:
+	if port == null:
+		return false
+	var generator : MMGenBase = port.generator
+	if generator is MMGenIterateBuffer:
+		return port.output_index == 1
+	if generator is MMGenIterateBufferV2:
+		return port.output_index >= generator.get_state_count()
+	if is_texture_generator(generator) or memo.has(generator):
+		return false
+	memo[generator] = true
+	for i in generator.get_input_defs().size():
+		if reads_loop_state(generator.get_source(i), memo):
+			return true
+	return false
 
 ## Returns the buffer pin of the connection to an input: "" (automatic),
 ## "always" or "never"
@@ -620,7 +643,7 @@ func should_auto_buffer(index : int, source_cost : float, sample_count : float) 
 		if source.output_index < output_defs.size() and not output_defs[source.output_index].get("type", "rgba") in AUTO_BUFFER_TYPES:
 			return false
 		# Sources that are already textures gain nothing from a buffer
-		if source.generator is MMGenTexture:
+		if is_texture_generator(source.generator):
 			return false
 	# Inputs read through their attributes ($in.texture, $in.size) need the
 	# source's own texture
@@ -632,6 +655,10 @@ func should_auto_buffer(index : int, source_cost : float, sample_count : float) 
 		"never":
 			return false
 	if not mm_globals.get_config("auto_buffer"):
+		return false
+	# A buffer in a loop body would be rendered at each iteration, and each
+	# of its updates would restart the loop
+	if reads_loop_state(source):
 		return false
 	# Buffer when sampling the source repeatedly costs much more than
 	# rendering it once and sampling the result
