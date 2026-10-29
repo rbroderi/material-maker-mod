@@ -275,25 +275,6 @@ func get_connected_outputs(generator) -> Array:
 			rv.push_back(c.from_port)
 	return rv
 
-## Returns the buffer pin of the connection to an input: "" (automatic),
-## "always" or "never" (see design/hybrid_evaluator.md)
-func get_connection_buffer(to_name : String, to_port : int) -> String:
-	for c in connections:
-		if c.to == to_name and c.to_port == to_port:
-			return c.get("buffer", "")
-	return ""
-
-func set_connection_buffer(to_name : String, to_port : int, mode : String) -> void:
-	for c in connections:
-		if c.to == to_name and c.to_port == to_port:
-			if mode == "":
-				c.erase("buffer")
-			else:
-				c.buffer = mode
-			if has_node(NodePath(to_name)):
-				get_node(NodePath(to_name)).source_changed(to_port)
-			return
-
 func connect_children(from, from_port : int, to, to_port : int) -> bool:
 	if from == null or to == null:
 		return false
@@ -441,12 +422,6 @@ func check_input_connects(node) -> void:
 		emit_signal("connections_changed", removed_connections, [])
 		connections = new_connections
 
-## Copies the buffer pin of a connection to another one
-static func with_buffer_pin(connection : Dictionary, original : Dictionary) -> Dictionary:
-	if original.has("buffer"):
-		connection.buffer = original.buffer
-	return connection
-
 func create_subgraph(gens : Array) -> MMGenGraph:
 	# Remove material, gen_inputs and gen_outputs nodes
 	var generators = []
@@ -507,8 +482,7 @@ func create_subgraph(gens : Array) -> MMGenGraph:
 				outputs.push_back(src_name)
 				var type = new_graph.get_node(NodePath(c.from)).get_output_defs()[c.from_port].type
 				gen_outputs.ports.push_back( { name="port"+str(port_index), type=type } )
-			# Buffer pins stay on the connection to the node that reads the input
-			my_new_connections.push_back(with_buffer_pin({ from=new_graph.name, from_port=port_index, to=c.to, to_port=c.to_port }, c))
+			my_new_connections.push_back( { from=new_graph.name, from_port=port_index, to=c.to, to_port=c.to_port } )
 			new_graph_connections.push_back( { from=c.from, from_port=c.from_port, to="gen_outputs", to_port=port_index } )
 		elif names.find(c.to) != -1:
 			var port_index = inputs.find(src_name)
@@ -518,7 +492,7 @@ func create_subgraph(gens : Array) -> MMGenGraph:
 				var type = get_node(NodePath(c.from)).get_output_defs()[c.from_port].type
 				gen_inputs.ports.push_back( { name="port"+str(port_index), type=type } )
 			my_new_connections.push_back( { from=c.from, from_port=c.from_port, to=new_graph.name, to_port=port_index } )
-			new_graph_connections.push_back(with_buffer_pin({ from="gen_inputs", from_port=port_index, to=c.to, to_port=c.to_port }, c))
+			new_graph_connections.push_back( { from="gen_inputs", from_port=port_index, to=c.to, to_port=c.to_port } )
 		else:
 			my_new_connections.push_back(c)
 	connections = my_new_connections

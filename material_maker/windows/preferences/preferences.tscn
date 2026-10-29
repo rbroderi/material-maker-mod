@@ -664,58 +664,6 @@ options = PackedStringArray("Filter/Math", "Filter/Math/Vec3", "Filter/Blend", "
 button_name = "Edit List (#)"
 metadata/_custom_type_script = "uid://kac4whp71a8"
 
-[node name="AutoBuffer" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1764363091]
-layout_mode = 2
-
-[node name="LabelAutoBuffer" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBuffer" unique_id=322739184]
-layout_mode = 2
-text = "Automatic Buffers (experimental)"
-
-[node name="auto_buffer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBuffer" unique_id=1809378518 instance=ExtResource("1")]
-custom_minimum_size = Vector2(200, 0)
-layout_mode = 2
-size_flags_horizontal = 10
-tooltip_text = "Insert buffers automatically in front of inputs that are sampled many times and depend on many nodes. Applies to shaders generated afterwards."
-text = "On"
-flat = false
-config_variable = "auto_buffer"
-
-[node name="AutoBufferMinGain" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=782531660]
-layout_mode = 2
-
-[node name="LabelAutoBufferMinGain" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferMinGain" unique_id=1081417614]
-layout_mode = 2
-text = "Automatic Buffer Minimum Gain"
-
-[node name="auto_buffer_min_gain" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferMinGain" unique_id=835800855 instance=ExtResource("3")]
-custom_minimum_size = Vector2(200, 24)
-layout_mode = 2
-size_flags_horizontal = 10
-config_variable = "auto_buffer_min_gain"
-value = 2.0
-min_value = 1.0
-max_value = 16.0
-step = 0.5
-float_only = true
-
-[node name="AutoBufferShaderBudget" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=222173653]
-layout_mode = 2
-
-[node name="LabelAutoBufferShaderBudget" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferShaderBudget" unique_id=426936971]
-layout_mode = 2
-text = "Shader Budget (cost units)"
-
-[node name="auto_buffer_shader_budget" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferShaderBudget" unique_id=1969832147 instance=ExtResource("3")]
-custom_minimum_size = Vector2(200, 24)
-layout_mode = 2
-size_flags_horizontal = 10
-config_variable = "auto_buffer_shader_budget"
-value = 4000.0
-min_value = 100.0
-max_value = 100000.0
-step = 100.0
-float_only = true
-
 [node name="GpuMemoryBudget" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=1816139529]
 layout_mode = 2
 
@@ -757,23 +705,6 @@ popup/item_2/id = 2
 script = ExtResource("5_vp06c")
 config_variable = "release_buffers"
 
-[node name="AutoBufferSize" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer" unique_id=859498607]
-layout_mode = 2
-
-[node name="LabelAutoBufferSize" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferSize" unique_id=575972347]
-layout_mode = 2
-text = "Automatic Buffer Size (2^n)"
-
-[node name="auto_buffer_size" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Graph/VBoxContainer/AutoBufferSize" unique_id=373811601 instance=ExtResource("3")]
-custom_minimum_size = Vector2(200, 24)
-layout_mode = 2
-size_flags_horizontal = 10
-config_variable = "auto_buffer_size"
-value = 10.0
-min_value = 6.0
-max_value = 13.0
-step = 1.0
-float_only = true
 [node name="Export" type="ScrollContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer" unique_id=848471352]
 visible = false
 layout_mode = 2

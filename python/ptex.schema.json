@@ -78,7 +78,7 @@
 				"from_port": { "type": "integer", "minimum": 0 },
 				"to": { "type": "string" },
 				"to_port": { "type": "integer", "minimum": 0 },
-				"buffer": { "enum": [ "always", "never" ], "description": "Automatic buffer pin of the input" }
+				"buffer": { "enum": [ "always", "never" ], "description": "Buffer pin of the input, from older versions (ignored)" }
 			}
 		},
 		"parameters": {

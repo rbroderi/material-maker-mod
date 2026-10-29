@@ -256,8 +256,6 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 		if gennames.has(c.to):
 			c.to = gennames[c.to]
 		if gen_graph.connect_children(gen_graph.get_node(NodePath(c.from)), c.from_port, gen_graph.get_node(NodePath(c.to)), c.to_port):
-			if c.has("buffer"):
-				gen_graph.set_connection_buffer(c.to, c.to_port, c.buffer)
 			rv.connections.append(c)
 		else:
 			print("Cannot connect %s:%d to %s:%d" % [c.from, c.from_port, c.to, c.to_port])

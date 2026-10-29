@@ -168,8 +168,7 @@ static func show_changes(dialog : Window, text : TextEdit, preview_rects : Array
 	var changes : PackedStringArray = MMLibraryInstances.describe_changes(old_data, generators[1].serialize() if generators[1] is MMGenBase else new_data, item)
 	if is_instance_valid(dialog):
 		text.text = "\n".join(changes) if not changes.is_empty() else "Nothing this node uses changed in the library item"
-	# Render the outputs once the buffers they use (including the automatic
-	# buffers their shaders create) are rendered
+	# Render the outputs once the buffers they use are rendered
 	await wait_for_renders(holder)
 	for i in generators.size():
 		var texture : Texture2D = null

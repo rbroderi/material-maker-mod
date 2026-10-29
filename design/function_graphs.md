@@ -120,7 +120,7 @@ only use parameters and constants into a single GLSL expression (parameter funct
 
 - **Pixel Processor** (`MMGenPixelProcessor`): compiles its graph into a shader model
   (function inputs, float parameters, sub-functions and the main function as instance
-  code, `sd_rand`'s hash as a global). Previews, exports and automatic buffers work
+  code, `sd_rand`'s hash as a global). Previews and exports work
   unchanged. Only `function_graph` is serialized.
 - **Value Processor** (`MMGenValueProcessor`): same compilation in *value* mode (no `pos`
   or `size`). Its visible output samples a hidden **1×1 buffer** of the graph's raw

@@ -55,8 +55,7 @@ targets (glTF KHR, Godot 4, HDRP, Unreal Engine 5) stay in `material.mmg`.
 - **Argument parsing**: `VALUE_OPTIONS` table, shared with plugin options.
 - **Tool windows**: `MMToolWindow` (`windows/tool_window.gd`).
 - **Render to image**: `MMCliTools.render_output_texture()` and
-  `render_output_image()` (the library instance previews now wait for their
-  automatic buffers).
+  `render_output_image()`.
 - **OCIO view picker**: `MMColorManagement.create_view_picker()`.
 - **Generator walkers**: `MMCliTools.collect_generators(root, predicate)`.
 - **Library instances**: `strip_definition(value, for_diff)` (hashes are

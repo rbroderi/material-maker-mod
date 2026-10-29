@@ -200,7 +200,7 @@ func wait_for_rendering_device() -> RenderingDevice:
 		await get_tree().process_frame
 	return rendering_device
 
-# GPU memory budget (see MMTexture and design/hybrid_evaluator.md)
+# GPU memory budget (see MMTexture and design/gpu_memory_budget.md)
 
 var texture_budget_check_scheduled : bool = false
 ## GPU memory budget in MB set on the command line (--gpu-budget), used

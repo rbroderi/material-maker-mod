@@ -142,7 +142,7 @@ Tools menu
   on the disk and save a screenshot of the whole current graph (it will automatically
   pan the graph to create the screenshot).
 
-* *Show buffer render times* lists the buffers of the current graph (including automatic
+* *Show buffer render times* lists the buffers of the current graph (including value
   buffers and mesh maps) with their last rendering time and the GPU memory they use, and the
   render times of the previews: each visible 2D preview (the time of its shader at its size)
   and the 3D preview (the GPU time of a frame).

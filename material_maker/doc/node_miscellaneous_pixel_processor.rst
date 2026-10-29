@@ -65,9 +65,5 @@ Random numbers
 Notes
 +++++
 
-When *Automatic Buffers* are enabled in the preferences, inputs that depend on many nodes
-are sampled through an automatic buffer, which is much faster when the function graph
-samples them several times.
-
 The function graph format is described in ``design/function_graphs.md`` in the source
 repository.

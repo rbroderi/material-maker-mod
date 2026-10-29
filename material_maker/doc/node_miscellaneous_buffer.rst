@@ -72,31 +72,6 @@ under the node. An orange warning is shown when an 8 bits buffer stores grayscal
 heights) or feeds a node that computes normals or uses heights, because 256 levels are usually
 not enough for them (steps become visible in normal maps).
 
-Automatic buffers
-+++++++++++++++++
-
-When *Automatic Buffers* are enabled in the preferences (Graph tab), Material Maker inserts
-buffers by itself where they make rendering cheaper:
-
-* in front of inputs that are sampled many times (blur, warp, normal map, pixel processor...)
-  when their source is expensive to evaluate,
-
-* in front of any input whose source would make the generated shader too large (the
-  *shader budget*). This splits very large materials into several smaller shaders, and
-  editing a node only recompiles the part of the graph after it up to the next buffer.
-
-Automatic buffers use the resolution of the node they feed when it has a size parameter.
-They are not saved with the graph, and are listed in *Tools > Show buffer render times*.
-
-Connection buffers
-++++++++++++++++++
-
-*Alt + right click* on a connection shows a menu to choose whether it is buffered
-*automatically*, *always* or *never*. This setting is saved with the graph, and *always*
-works even when automatic buffers are disabled. Buffered connections are marked with a
-blue (automatic) or orange (always) *B*, and connections that are never buffered with a
-grey *-*.
-
 GPU memory budget
 +++++++++++++++++
 

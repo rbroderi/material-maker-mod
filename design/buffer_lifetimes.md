@@ -3,7 +3,7 @@
 Graphs converted from Substance Designer can have thousands of buffers (a Substance node is
 usually one pass). Material Maker kept every buffer's texture, so memory grew with the number of
 buffers: a static simulation of a converted graph with about 2,500 buffers needs 24.8 GiB at
-2048 px. The GPU memory budget (`hybrid_evaluator.md`) only moves textures to RAM.
+2048 px. The GPU memory budget (`gpu_memory_budget.md`) only moves textures to RAM.
 
 ## Releasing
 

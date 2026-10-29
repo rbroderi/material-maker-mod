@@ -25,7 +25,33 @@ const DEFAULT_VALUE_FUNCTION_GRAPH : Dictionary = {
 # Raw output of the function graph, sampled by the value buffer
 const RAW_OUTPUT : int = 1
 
-var value_buffer : MMGenAutoBuffer = null
+
+# The buffer that renders the raw output of its value processor (its parent).
+# It is not part of the graph and is never serialized.
+class ValueBuffer:
+	extends MMGenBuffer
+
+	func _init() -> void:
+		version = VERSION_SIMPLE
+		parameters.size = 0
+
+	func get_type_name() -> String:
+		return "Value Buffer"
+
+	func get_source(_input_index : int) -> OutputPort:
+		return OutputPort.new(get_parent(), RAW_OUTPUT)
+
+	func get_targets(_output_index : int) -> Array:
+		return []
+
+	func notify_output_change(_output_index : int) -> void:
+		# The value processor's output is this buffer's output
+		var processor = get_parent()
+		if processor != null:
+			processor.notify_output_change(0)
+
+
+var value_buffer : ValueBuffer = null
 
 
 func _init() -> void:
@@ -33,10 +59,8 @@ func _init() -> void:
 
 func _ready() -> void:
 	super._ready()
-	value_buffer = MMGenAutoBuffer.new()
+	value_buffer = ValueBuffer.new()
 	value_buffer.name = "value_buffer"
-	value_buffer.parameters.size = 0
-	value_buffer.set_source(OutputPort.new(self, RAW_OUTPUT))
 	add_child(value_buffer)
 
 func get_type() -> String:
@@ -56,7 +80,7 @@ func get_buffers(flags : int = BUFFERS_ALL) -> Array:
 
 func set_shader_model(data : Dictionary) -> void:
 	super.set_shader_model(data)
-	# The value buffer samples this node's raw output, that just changed
+	# The value buffer renders this node's raw output, that just changed
 	if value_buffer != null:
 		value_buffer.update_shader()
 

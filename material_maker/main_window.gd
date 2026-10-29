@@ -1533,8 +1533,8 @@ func show_buffer_render_times():
 		var memory : int = get_generator_gpu_memory(b)
 		total_memory += memory
 		if lines.size() < MAX_LISTED_BUFFERS:
-			# Prefix the buffer name with the groups (and, for automatic
-			# buffers, the node) that contain it
+			# Prefix the buffer name with the groups (and, for buffers that
+			# belong to a node, the node) that contain it
 			var path : PackedStringArray = PackedStringArray([ str(b.name) ])
 			var parent = b.get_parent()
 			while parent is MMGenBase and parent != graph_edit.top_generator:
