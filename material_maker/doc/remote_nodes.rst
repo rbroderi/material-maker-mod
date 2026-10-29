@@ -91,3 +91,19 @@ dollar prefix in parameter expressions of all nodes in the subgraph.
 
 It is possible to configure the lower and upper bound as well as the increment step
 by clicking the pencil button of the parameter.
+
+Presets
+~~~~~~~
+
+A preset stores the values of all widgets of a remote node under a name. The bar at the
+bottom of the remote node is used to manage presets:
+
+* the drop down button applies a preset
+* *Save* saves the current values as a preset (enter the name of an existing preset to
+  update it)
+* *Delete* deletes the selected preset
+* *Randomize* sets random values to all widgets (within their range, and snapped to their
+  step), which is useful to explore variations of a material. Use *Save* to keep a result.
+
+Applying, saving, deleting presets and randomizing can be undone. Presets are saved in the
+material file.

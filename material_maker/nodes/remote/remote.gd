@@ -9,9 +9,94 @@ var links = {}
 
 @onready var grid = $Controls
 
+var preset_list : OptionButton
+
 
 func _ready():
 	super._ready()
+	create_preset_bar()
+
+# Presets
+
+func create_preset_bar() -> void:
+	var bar : HBoxContainer = HBoxContainer.new()
+	bar.name = "Presets"
+	preset_list = OptionButton.new()
+	preset_list.tooltip_text = "Applies a preset (saved parameter values)"
+	preset_list.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	preset_list.item_selected.connect(on_preset_selected)
+	bar.add_child(preset_list)
+	for b in [ [ "Save", "Saves the current values as a preset", on_save_preset ],
+			[ "Delete", "Deletes the selected preset", on_delete_preset ],
+			[ "Randomize", "Sets random values to all parameters, to explore variations", on_randomize ] ]:
+		var button : Button = Button.new()
+		button.text = b[0]
+		button.tooltip_text = b[1]
+		button.pressed.connect(b[2])
+		bar.add_child(button)
+	add_child(bar)
+
+## Rebuilds the preset list, keeping the selected preset if it still exists
+func update_preset_list(selected_preset : String = get_selected_preset()) -> void:
+	if preset_list == null or generator == null:
+		return
+	preset_list.clear()
+	preset_list.add_item("Presets")
+	for preset_name in generator.get_preset_names():
+		preset_list.add_item(preset_name)
+		if preset_name == selected_preset:
+			preset_list.selected = preset_list.item_count-1
+
+func get_selected_preset() -> String:
+	if preset_list == null or preset_list.selected <= 0:
+		return ""
+	return preset_list.get_item_text(preset_list.selected)
+
+func on_preset_selected(index : int) -> void:
+	if index <= 0:
+		return
+	var preset_name : String = preset_list.get_item_text(index)
+	old_state = generator.serialize().duplicate(true)
+	generator.apply_preset(preset_name)
+	undo_redo_register_change("Apply preset", old_state)
+
+func on_save_preset() -> void:
+	var dialog : ConfirmationDialog = ConfirmationDialog.new()
+	dialog.title = "Save preset"
+	var line_edit : LineEdit = LineEdit.new()
+	line_edit.placeholder_text = "Preset name"
+	line_edit.text = get_selected_preset()
+	dialog.add_child(line_edit)
+	dialog.register_text_enter(line_edit)
+	dialog.confirmed.connect(func():
+		var preset_name : String = line_edit.text.strip_edges()
+		if preset_name != "":
+			save_preset(preset_name)
+		dialog.queue_free())
+	dialog.canceled.connect(dialog.queue_free)
+	mm_globals.main_window.add_dialog(dialog)
+	dialog.popup_centered(Vector2i(300, 80))
+	line_edit.grab_focus()
+
+func save_preset(preset_name : String) -> void:
+	old_state = generator.serialize().duplicate(true)
+	generator.save_preset(preset_name)
+	undo_redo_register_change("Save preset", old_state)
+	update_preset_list(preset_name)
+
+func on_delete_preset() -> void:
+	var preset_name : String = get_selected_preset()
+	if preset_name == "":
+		return
+	old_state = generator.serialize().duplicate(true)
+	generator.delete_preset(preset_name)
+	undo_redo_register_change("Delete preset", old_state)
+	update_preset_list("")
+
+func on_randomize() -> void:
+	old_state = generator.serialize().duplicate(true)
+	generator.randomize_parameters(randi())
+	undo_redo_register_change("Randomize parameters", old_state)
 
 
 func add_control(text : String, control : Control, is_named_param : bool, short_description : String = "", long_description : String = "") -> void:
@@ -101,6 +186,7 @@ func update_node() -> void:
 					control.add_separator()
 					control.add_item("<update "+current+">")
 					control.add_item("<remove "+current+">")
+	update_preset_list()
 	set_deferred("size", Vector2.ZERO)
 	initialize_properties()
 
