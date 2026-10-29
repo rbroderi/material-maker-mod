@@ -9,9 +9,10 @@ maximum of an image, measured by sampling it).
 .. image:: images/node_miscellaneous_value_processor.png
 	:align: center
 
-It is edited like the **Pixel Processor** node (see its documentation for the function graph
-format and the list of operations), but its function graph cannot use the pixel position
-(*pos* and *size*). It can sample its inputs at positions computed from its parameters,
+It is edited like the **Pixel Processor** node, in the function graph editor (see its
+documentation for the editor, the function graph format and the list of operations), but its
+function graph cannot use the pixel position (*pos* and *size*, that the editor does not
+offer). It can sample its inputs at positions computed from its parameters,
 or at many positions in a loop.
 
 The result is rendered into a 1x1 buffer, so nodes that use it only read a single texel

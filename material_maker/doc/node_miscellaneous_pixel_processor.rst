@@ -29,12 +29,35 @@ The **Pixel Processor** node has the float parameters declared in its function g
 (an *Amount* parameter by default, that blends the input with its inverse).
 If the function graph uses the *size* operation, a *Size* parameter is added.
 
-Editing the function graph
-++++++++++++++++++++++++++
+Function graph editor
++++++++++++++++++++++
 
-Click the node's edit button to edit its function graph as JSON. *OK* is only
-accepted when the function graph is valid; otherwise the errors are shown below
-the text (for example a missing node, a cycle or operands of incompatible types).
+Click the node's edit button to open the function graph editor:
+
+* *Add node* adds an operation (grouped by category). Connect a node's output to the
+  inputs of other nodes, and set constants and settings directly in the nodes.
+
+* *Set output* chooses the node whose value is the result of the graph.
+
+* Each node shows its type (float, vec2, vec3, vec4, int or bool). Nodes with errors are
+  shown in red, with the error in their tooltip (for example a missing operand, a cycle
+  or operands of incompatible types), and *Apply* and *OK* are disabled until the graph
+  is valid.
+
+* The side panel defines the node's inputs and parameters.
+
+* *Add function* creates a sub-function, with typed arguments, that can be used with the
+  *call* operation, or repeated with the *loop* operation (a loop function takes an
+  accumulator and the iteration index, and returns the new accumulator).
+
+* *Edit JSON* shows the function graph as text.
+
+* *Undo* and *Redo* (or Control+Z and Control+Y / Control+Shift+Z when no text field has
+  the focus) undo and redo changes in the editor. Each *Apply* (and *OK*) is a single
+  step in the material's undo history.
+
+Function graph format
++++++++++++++++++++++
 
 A function graph is a JSON object with these keys:
 

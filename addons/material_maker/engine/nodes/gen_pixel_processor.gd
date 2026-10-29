@@ -152,46 +152,22 @@ func _deserialize(data : Dictionary) -> void:
 		if not errors.is_empty():
 			push_error("Invalid function graph in %s: %s" % [ name, ", ".join(errors) ])
 
-## Edits the function graph as JSON
+## Edits the function graph in the function graph editor
 func edit(node, _tab : String = "") -> void:
-	var dialog : AcceptDialog = AcceptDialog.new()
-	dialog.title = tr("Function graph") + " - " + name
-	dialog.dialog_hide_on_ok = false
-	dialog.add_cancel_button(tr("Cancel"))
-	var vbox : VBoxContainer = VBoxContainer.new()
-	var text_edit : TextEdit = TextEdit.new()
-	text_edit.custom_minimum_size = Vector2(640, 520)
-	text_edit.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	text_edit.text = JSON.stringify(function_graph, "\t", false)
-	vbox.add_child(text_edit)
-	var errors_label : Label = Label.new()
-	errors_label.custom_minimum_size.x = 640
-	errors_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	errors_label.add_theme_color_override("font_color", Color(1.0, 0.4, 0.4))
-	vbox.add_child(errors_label)
-	dialog.add_child(vbox)
-	dialog.confirmed.connect(self.on_edit_confirmed.bind(node, dialog, text_edit, errors_label))
-	dialog.visibility_changed.connect(func():
-		if not dialog.visible:
-			dialog.queue_free())
-	mm_globals.main_window.add_dialog(dialog)
-	dialog.content_scale_factor = mm_globals.ui_scale_factor()
-	dialog.popup_centered()
+	var editor : Window = load("res://material_maker/windows/function_graph_editor/function_graph_editor.gd").new()
+	mm_globals.main_window.add_dialog(editor)
+	editor.graph_applied.connect(self.on_graph_applied.bind(node))
+	editor.edit(function_graph, get_mode(), "%s - %s" % [ tr(get_type_name()), name ])
 
-func on_edit_confirmed(node, dialog : AcceptDialog, text_edit : TextEdit, errors_label : Label) -> void:
-	var json : JSON = JSON.new()
-	if json.parse(text_edit.text) != OK:
-		errors_label.text = "line %d: %s" % [ json.get_error_line(), json.get_error_message() ]
-		return
-	if not json.data is Dictionary:
-		errors_label.text = tr("The function graph must be a JSON object")
-		return
-	var result : Dictionary = build_shader_model(json.data, get_mode())
+func on_graph_applied(graph : Dictionary, node) -> void:
+	var result : Dictionary = build_shader_model(graph, get_mode())
 	if not result.errors.is_empty():
-		errors_label.text = "\n".join(result.errors)
+		mm_globals.main_window.accept_dialog(tr("The function graph is invalid:")+"\n"+"\n".join(result.errors))
 		return
-	function_graph = json.data
+	# Each apply is a separate undo step
+	if node.edit_generator_prev_state.is_empty():
+		node.edit_generator_prev_state = get_parent().serialize().duplicate(true)
+	function_graph = graph
 	function_graph_globals = result.globals
 	node.update_shader_generator(result.model)
 	node.finalize_generator_update()
-	dialog.hide()
