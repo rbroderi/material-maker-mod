@@ -67,7 +67,8 @@ func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.Da
 func in_thread_get_texture() -> Texture2D:
 	if texture_needs_update:
 		var image : Image = in_thread_read_image()
-		texture.set_image.call_deferred(image)
+		if image != null:
+			texture.set_image.call_deferred(image)
 		texture_needs_update = false
 	return texture
 
@@ -98,20 +99,36 @@ func in_thread_read_image() -> Image:
 	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_COPY_TO_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 	var strip_rid : RID = rd.texture_create(fmt, RDTextureView.new(), [])
 	if not strip_rid.is_valid():
+		push_error("Failed to read back texture of size %dx%d" % [ texture_size.x, texture_size.y ])
 		return null
-	var image : Image = Image.create_empty(texture_size.x, texture_size.y, false, image_format)
+	var data : PackedByteArray = PackedByteArray()
 	var y : int = 0
 	while y < texture_size.y:
 		var height : int = min(strip_height, texture_size.y-y)
-		if rd.texture_copy(rid, strip_rid, Vector3(0, y, 0), Vector3.ZERO, Vector3(texture_size.x, height, 1), 0, 0, 0, 0) != OK:
-			push_error("Failed to read back texture of size %dx%d" % [ texture_size.x, texture_size.y ])
-			image = null
+		if rd.texture_copy(rid, strip_rid, Vector3(0, y, 0), Vector3.ZERO, Vector3(texture_size.x, height, 1), 0, 0, 0, 0) != OK or not append_strip(data, rd.texture_get_data(strip_rid, 0), row_size, strip_height, height):
+			data = PackedByteArray()
 			break
-		var strip : Image = Image.create_from_data(texture_size.x, strip_height, false, image_format, rd.texture_get_data(strip_rid, 0))
-		image.blit_rect(strip, Rect2i(0, 0, texture_size.x, height), Vector2i(0, y))
 		y += height
 	rd.free_rid(strip_rid)
-	return image
+	return image_from_strips(texture_size, image_format, data, row_size)
+
+## Appends the first rows of a strip read back from the rendering device to
+## the data of an image (strips are assembled as raw data, since
+## Image.blit_rect() fails for images of 4 GB or more, e.g. 16384x16384 RGBA
+## 32 bits floats)
+static func append_strip(data : PackedByteArray, strip_data : PackedByteArray, row_size : int, strip_height : int, height : int) -> bool:
+	if strip_data.size() != row_size*strip_height:
+		return false
+	data.append_array(strip_data if height == strip_height else strip_data.slice(0, row_size*height))
+	return true
+
+## The image of data assembled by append_strip(), or null (with an error) if
+## the data is incomplete
+static func image_from_strips(size : Vector2i, image_format : Image.Format, data : PackedByteArray, row_size : int) -> Image:
+	if data.size() != row_size*size.y:
+		push_error("Failed to read back texture of size %dx%d" % [ size.x, size.y ])
+		return null
+	return Image.create_from_data(size.x, size.y, false, image_format, data)
 
 func get_texture() -> Texture2D:
 	if texture_needs_update:
