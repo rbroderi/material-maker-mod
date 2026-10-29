@@ -29,6 +29,10 @@ var render_time : int = 0
 
 var local_size : int = 32
 
+## When not negative, the time of all renders ($time in shaders) instead of
+## the current time, to render animation frames
+static var fixed_time : float = -1.0
+
 
 func _init():
 	clear()
@@ -171,7 +175,7 @@ func in_thread_render_ext(textures : Array[MMTexture], size : Vector2i, output_p
 	var rd : RenderingDevice = mm_renderer.rendering_device
 	var rids : RIDs = RIDs.new()
 	var start_time = Time.get_ticks_msec()
-	set_parameter("elapsed_time", 0.001*float(start_time), true)
+	set_parameter("elapsed_time", 0.001*float(start_time) if fixed_time < 0.0 else fixed_time, true)
 	var status = render_2(rd, textures, output_parameters_values, size, rids)
 	rids.free_rids(rd)
 	render_time = Time.get_ticks_msec() - start_time

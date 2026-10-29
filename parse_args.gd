@@ -118,6 +118,10 @@ const VALUE_OPTIONS : Dictionary = {
 	"--variations": { key="variations", type=TYPE_INT, minimum=1 },
 	"--format": { key="format", type=TYPE_STRING },
 	"--node": { key="node", type=TYPE_STRING },
+	"--frames": { key="frames", type=TYPE_INT },
+	"--duration": { key="duration", type=TYPE_FLOAT },
+	"--columns": { key="columns", type=TYPE_INT },
+	"--separate-frames": { key="separate_frames", type=TYPE_BOOL },
 	"--show-window": { key="show_window", type=TYPE_BOOL },
 }
 
@@ -144,6 +148,10 @@ Options (they can also be given after "--"):
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
   --node <node[:output]>     node output of --render (outputs are numbered from 0)
   --format <format>          image format of --render (png, exr, jpg or webp)
+  --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
+  --duration <seconds>       duration of the animation of --frames (default: 1)
+  --columns <n>              columns of the sprite sheet of --frames (default: square sheet)
+  --separate-frames          --frames writes one file per frame (suffixed with _<frame>) instead of a sprite sheet
   --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position)
   --show-window              do not minimize the window
 """
@@ -338,10 +346,14 @@ func for_each_variation(gen : MMGenBase, options : Dictionary, callable : Callab
 func render_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
 	await MMCliTools.wait_for_renders(get_tree())
 	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), MMCliTools.spec_to_file_part(options.node), suffix, options.format ])
-	var error : String = await MMCliTools.render_node(gen, options.node, options.size, file_name)
+	var error : String
+	if options.has("frames"):
+		error = await MMCliTools.render_flipbook(gen, options.node, options.size, options.frames, options.duration, options.columns, options.separate_frames, file_name)
+	else:
+		error = await MMCliTools.render_node(gen, options.node, options.size, file_name)
 	if error != "":
 		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
-	else:
+	elif not options.get("separate_frames", false):
 		print("Rendered %s" % file_name)
 
 func render_files(files : Array, options : Dictionary) -> void:
@@ -353,7 +365,33 @@ func render_files(files : Array, options : Dictionary) -> void:
 		show_error("ERROR: incorrect size 0")
 		get_tree().quit(1)
 		return
+	var flipbook_error : String = check_flipbook_options(options)
+	if flipbook_error != "":
+		show_error("ERROR: "+flipbook_error)
+		get_tree().quit(1)
+		return
 	await process_graph_files(files, options, render_variation, "--render")
+
+## Checks the --frames, --duration, --columns and --separate-frames options
+## (and sets their defaults), returns an error message or ""
+func check_flipbook_options(options : Dictionary) -> String:
+	if not options.has("frames"):
+		for o in [ "duration", "columns", "separate_frames" ]:
+			if options.has(o):
+				return "--%s requires --frames <n>" % o.replace("_", "-")
+		return ""
+	options.duration = options.get("duration", 1.0)
+	options.columns = options.get("columns", 0)
+	options.separate_frames = options.get("separate_frames", false)
+	if options.frames < 1:
+		return "incorrect value for --frames: %d (at least 1 frame)" % options.frames
+	if options.duration <= 0.0:
+		return "incorrect value for --duration: %s (must be positive)" % options.duration
+	if options.columns < 0 or options.columns > options.frames:
+		return "incorrect value for --columns: %d (from 1 to the number of frames, or 0 for a square sheet)" % options.columns
+	if options.separate_frames and options.columns != 0:
+		return "--columns cannot be used with --separate-frames"
+	return ""
 
 func bake_files(files : Array[String], options : Dictionary) -> void:
 	if options.size == 0:
