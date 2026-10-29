@@ -126,6 +126,16 @@ static func is_identifier(s) -> bool:
 static func get_operation(op : String) -> Dictionary:
 	return OPERATIONS.get(op, {})
 
+## Replaces whole-word occurrences of word in s (without RegEx.sub, that
+## would interpret "$" in the replacement)
+static func replace_word(s : String, word : String, replacement : String) -> String:
+	var rv : String = ""
+	var position : int = 0
+	for m in RegEx.create_from_string("\\b%s\\b" % word).search_all(s):
+		rv += s.substr(position, m.get_start()-position)+replacement
+		position = m.get_end()
+	return rv+s.substr(position)
+
 
 class Compiler:
 	extends RefCounted
@@ -607,3 +617,64 @@ static func compile(graph : Dictionary, sample_expressions : Array, parameter_ex
 			globals.append(g)
 	return { ok=true, code=main.code, value=value, functions=function_definitions, globals=globals, types=main.types, node_errors={}, errors=errors,
 		function_types=function_types, function_node_errors=function_node_errors }
+
+# Operations that cannot be used in parameter functions
+const NON_EXPRESSION_OPS : Array[String] = [ "pos", "size", "sample", "rand", "call", "loop", "arg" ]
+
+## Compiles a function graph that only uses parameters and constants, and
+## whose output is a float, to a single GLSL expression (used for parameter
+## functions), returns { ok, expression, errors }
+static func compile_expression(graph : Dictionary, parameter_expressions : Dictionary) -> Dictionary:
+	var functions = graph.get("functions", {})
+	if functions is Dictionary and not functions.is_empty():
+		return { ok=false, errors=PackedStringArray([ "functions are not supported in parameter functions" ]) }
+	if graph.get("nodes") is Dictionary:
+		for n in graph.nodes.values():
+			if n is Dictionary and n.get("op", "") in NON_EXPRESSION_OPS:
+				return { ok=false, errors=PackedStringArray([ "%s is not supported in parameter functions" % n.op ]) }
+	var result : Dictionary = compile(graph, [], parameter_expressions, { pos="uv", size="vec2(1.0)", seed="0.0" })
+	if not result.ok:
+		return { ok=false, errors=result.errors }
+	if result.types[graph.output] != "float":
+		return { ok=false, errors=PackedStringArray([ "%s: the output of a parameter function must be a float" % graph.output ]) }
+	# Operations that need global definitions (such as integer modulo) can't
+	# be written as an expression
+	if not result.globals.is_empty():
+		return { ok=false, errors=PackedStringArray([ "integer modulo is not supported in parameter functions" ]) }
+	# Inline all statements into one expression, operands first
+	var re_statement : RegEx = RegEx.create_from_string("^\\w+ (fg_\\d+) = (.*); //")
+	var expressions : Dictionary = {}
+	var expression : String = ""
+	for line in result.code:
+		var m : RegExMatch = re_statement.search(line)
+		if m == null:
+			return { ok=false, errors=PackedStringArray([ "unsupported statement in a parameter function" ]) }
+		expression = m.get_string(2)
+		for name in expressions.keys():
+			var operand : String = expressions[name]
+			if not is_primary_expression(operand):
+				operand = "(%s)" % operand
+			expression = replace_word(expression, name, operand)
+		expressions[m.get_string(1)] = expression
+	return { ok=true, expression=expressions.values()[-1], errors=PackedStringArray() }
+
+static var re_atom : RegEx = RegEx.create_from_string("^[\\w.$]+$")
+static var re_function_name : RegEx = RegEx.create_from_string("^\\w*$")
+
+## Returns true if e can be used as an operand without parentheses: a name,
+## a positive number, a function call or an expression in parentheses
+static func is_primary_expression(e : String) -> bool:
+	if re_atom.search(e) != null:
+		return true
+	if not e.ends_with(")"):
+		return false
+	# Find the parenthesis that matches the last one
+	var depth : int = 0
+	for i in range(e.length()-1, -1, -1):
+		if e[i] == ")":
+			depth += 1
+		elif e[i] == "(":
+			depth -= 1
+			if depth == 0:
+				return re_function_name.search(e.substr(0, i)) != null
+	return false

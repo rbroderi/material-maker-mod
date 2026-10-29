@@ -81,3 +81,15 @@ Processor** can then use them to stretch the input's levels to the full range:
 		},
 		"output": "out"
 	}
+
+Parameter functions
++++++++++++++++++++
+
+Any float parameter that accepts expressions can also be defined with a function graph:
+right click the parameter to open the expression editor, and click *Function graph...*.
+Those function graphs can use constants, *time* and the graph's named parameters (with
+the *param* operation), but not the pixel position, inputs, random numbers or
+sub-functions, and their output must be a float. They are compiled to an expression that
+becomes the parameter's value. The function graph is saved with the node, so it can be
+edited again later (if the parameter was modified in another way, editing starts from its
+current value).

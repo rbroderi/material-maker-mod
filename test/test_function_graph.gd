@@ -323,3 +323,37 @@ func test_value_processor_node() -> void:
 	# The previous graph is kept
 	assert_eq(vp.function_graph.nodes.out.op, "sample")
 	vp.free()
+
+# Parameter functions
+
+func test_compile_expression() -> void:
+	var graph : Dictionary = { nodes={ s={ op="param", name="speed" }, two={ op="float", value=2 }, out={ op="mul", a="s", b="two" } }, output="out" }
+	var r : Dictionary = MMFunctionGraph.compile_expression(graph, { speed="$speed" })
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.expression, "($speed*2.000000000)")
+
+func test_compile_expression_parenthesizes_operands() -> void:
+	var graph : Dictionary = { nodes={
+		s={ op="param", name="speed" }, m={ op="float", value=-1 }, sum={ op="add", a="s", b="m" },
+		two={ op="float", value=2 }, prod={ op="mul", a="sum", b="two" }, out={ op="sin", a="prod" } }, output="out" }
+	var r : Dictionary = MMFunctionGraph.compile_expression(graph, { speed="$speed" })
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.expression, "sin((($speed+(-1.000000000))*2.000000000))")
+
+func test_compile_expression_rejects_pixel_operations() -> void:
+	var r : Dictionary = MMFunctionGraph.compile_expression({ nodes={ p={ op="pos" }, out={ op="swizzle", a="p", components="x" } }, output="out" }, {})
+	assert_false(r.ok)
+
+func test_compile_expression_requires_a_float_output() -> void:
+	var r : Dictionary = MMFunctionGraph.compile_expression({ nodes={ out={ op="vec2", value=[ 1, 2 ] } }, output="out" }, {})
+	assert_false(r.ok)
+	r = MMFunctionGraph.compile_expression({ nodes={ out={ op="int", value=1 } }, output="out" }, {})
+	assert_false(r.ok)
+
+func test_compile_expression_rejects_globals() -> void:
+	# Integer modulo needs a global function, that an expression can't declare
+	var graph : Dictionary = { nodes={ a={ op="int", value=7 }, b={ op="int", value=3 }, m={ op="mod", a="a", b="b" }, out={ op="to_float", a="m" } }, output="out" }
+	assert_false(MMFunctionGraph.compile_expression(graph, {}).ok)
+
+func test_replace_word() -> void:
+	assert_eq(MMFunctionGraph.replace_word("fg_1+fg_10*fg_1", "fg_1", "($x)"), "($x)+fg_10*($x)")

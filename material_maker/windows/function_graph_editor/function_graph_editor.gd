@@ -8,7 +8,9 @@ class_name MMFunctionGraphEditor
 # The function graph IR is the editor's model: every change is applied to it,
 # and the graph view is rebuilt from it after structural changes. Modes:
 # - "pixel": pixel processors (inputs, parameters, sub-functions),
-# - "value": value processors (same, without the pixel position and size).
+# - "value": value processors (same, without the pixel position and size),
+# - "expression": parameter functions (named parameters and constants only,
+#   compiled to a single expression).
 
 
 signal graph_applied(graph : Dictionary)
@@ -30,6 +32,8 @@ const SLOT_COLOR : Color = Color(0.6, 0.7, 0.9)
 
 var graph : Dictionary = {}
 var graph_mode : String = "pixel"
+# Named parameters that can be used in expression mode
+var expression_parameters : Array = []
 # "" for the main graph, or the name of the edited sub-function
 var scope : String = ""
 var compile_types : Dictionary = {}
@@ -45,6 +49,8 @@ var history_index : int = -1
 var history_timer : Timer
 var side_panel : VBoxContainer
 var scope_selector : OptionButton
+# Controls hidden in expression mode, that has no sub-functions
+var function_controls : Array[Control] = []
 var add_menu : MenuButton
 var status_label : Label
 var apply_button : Button
@@ -59,9 +65,9 @@ func _init() -> void:
 	scope_selector = OptionButton.new()
 	scope_selector.item_selected.connect(on_scope_selected)
 	toolbar.add_child(scope_selector)
-	add_button(toolbar, "Add function", add_function)
-	add_button(toolbar, "Remove function", remove_function)
-	toolbar.add_child(VSeparator.new())
+	var separator : VSeparator = VSeparator.new()
+	function_controls = [ scope_selector, add_button(toolbar, "Add function", add_function), add_button(toolbar, "Remove function", remove_function), separator ]
+	toolbar.add_child(separator)
 	add_menu = MenuButton.new()
 	add_menu.text = "Add node"
 	add_menu.flat = false
@@ -110,13 +116,17 @@ func _init() -> void:
 	history_timer.timeout.connect(record_state)
 	add_child(history_timer)
 
-## Starts editing a function graph
-func edit(g : Dictionary, m : String, window_title : String = "") -> void:
+## Starts editing a function graph. In expression mode, parameters are the
+## names that param nodes can use.
+func edit(g : Dictionary, m : String, window_title : String = "", parameters : Array = []) -> void:
 	graph_mode = m
+	expression_parameters = parameters
 	set_graph(g)
 	if window_title != "":
 		title = window_title
 	scope = ""
+	for c in function_controls:
+		c.visible = graph_mode != "expression"
 	rebuild_add_menu()
 	# The first state of the history is recorded when the view is built,
 	# with the positions of the nodes
@@ -133,9 +143,10 @@ func set_graph(g : Dictionary) -> void:
 		graph.nodes = {}
 	if not graph.get("output") is String:
 		graph.output = ""
-	for k in [ "inputs", "parameters" ]:
-		if not graph.get(k) is Array:
-			graph[k] = []
+	if graph_mode != "expression":
+		for k in [ "inputs", "parameters" ]:
+			if not graph.get(k) is Array:
+				graph[k] = []
 
 #
 # Undo/redo
@@ -342,6 +353,8 @@ func new_node(op : String) -> Dictionary:
 	return node
 
 func get_parameter_names() -> Array:
+	if graph_mode == "expression":
+		return expression_parameters
 	return graph.get("parameters", []).map(func(p): return p.get("name", ""))
 
 #
@@ -388,6 +401,8 @@ func rebuild_add_menu() -> void:
 		submenu.name = category
 		for op in categories[category]:
 			if graph_mode == "value" and op in PIXEL_ONLY_OPS:
+				continue
+			if graph_mode == "expression" and op in MMFunctionGraph.NON_EXPRESSION_OPS:
 				continue
 			submenu.add_item(op)
 		if submenu.item_count == 0:
@@ -572,7 +587,13 @@ func update_status() -> void:
 	else:
 		compile_types = result.get("function_types", {}).get(scope, {})
 		compile_node_errors = result.get("function_node_errors", {}).get(scope, {})
-	errors = MMGenPixelProcessor.build_shader_model(graph, graph_mode).errors
+	var expression : String = ""
+	if graph_mode == "expression":
+		var expression_result : Dictionary = MMFunctionGraph.compile_expression(graph, parameter_expressions)
+		errors = expression_result.errors
+		expression = expression_result.get("expression", "")
+	else:
+		errors = MMGenPixelProcessor.build_shader_model(graph, graph_mode).errors
 	var output : String = scope_data().get("output", "")
 	for c in graph_edit.get_children():
 		if not c is GraphNode:
@@ -592,10 +613,10 @@ func update_status() -> void:
 			c.self_modulate = Color(0.6, 1.0, 0.6) if node_id == output else Color.WHITE
 			c.tooltip_text = ""
 	if errors.is_empty():
-		status_label.text = "OK"
+		status_label.text = "OK: %s" % expression if expression != "" else "OK"
 	else:
 		status_label.text = "%d error(s): %s" % [ errors.size(), errors[0] ]
-	status_label.tooltip_text = "\n".join(errors)
+	status_label.tooltip_text = "\n".join(errors) if not errors.is_empty() else expression
 	apply_button.disabled = not errors.is_empty()
 	ok_button.disabled = not errors.is_empty()
 
@@ -687,6 +708,8 @@ func on_scope_selected(index : int) -> void:
 	rebuild_view()
 
 func add_function() -> void:
+	if graph_mode == "expression":
+		return
 	var functions : Dictionary = get_functions()
 	var index : int = 1
 	while functions.has("function%d" % index):
@@ -732,7 +755,13 @@ func do_rebuild_panel() -> void:
 	for c in side_panel.get_children():
 		side_panel.remove_child(c)
 		c.queue_free()
-	if scope == "":
+	if graph_mode == "expression":
+		add_section_title("Available parameters")
+		var label : Label = Label.new()
+		label.text = ", ".join(expression_parameters) if not expression_parameters.is_empty() else "(none)"
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD
+		side_panel.add_child(label)
+	elif scope == "":
 		add_section_title("Inputs")
 		for i in graph.inputs.size():
 			add_list_row(graph.inputs, i, [ "name", "label" ], [])

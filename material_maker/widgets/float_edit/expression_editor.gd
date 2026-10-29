@@ -24,6 +24,64 @@ func edit_parameter(wt : String, value : String, o : Object, m : String, ep : Ar
 	popup_centered()
 	editor.set_caret_column(editor.text.length())
 	editor.grab_focus()
+	add_function_graph_button()
+
+# Parameter functions: a float parameter's expression can be defined by a
+# function graph, that is stored in the generator so it can be edited again
+
+## Returns the generator whose float parameter is edited, or null
+func find_parameter_generator() -> MMGenBase:
+	var node = object
+	while node is Node:
+		if node.get("generator") is MMGenBase:
+			var generator : MMGenBase = node.generator
+			if generator.get_parameter_def(object.name).get("type", "") == "float":
+				return generator
+			return null
+		node = node.get_parent()
+	return null
+
+## Returns the names the function graph can use, and their expressions
+func get_parameter_function_variables(generator : MMGenBase) -> Dictionary:
+	var rv : Dictionary = { time="$time" }
+	var parent = generator.get_parent()
+	if parent != null and parent.has_method("get_named_parameters"):
+		for n in parent.get_named_parameters().keys():
+			rv[n] = "$"+n
+	return rv
+
+func add_function_graph_button() -> void:
+	var generator : MMGenBase = find_parameter_generator()
+	if generator == null:
+		return
+	var button : Button = Button.new()
+	button.text = "Function graph..."
+	button.tooltip_text = "Define this parameter with a function graph"
+	button.pressed.connect(edit_function_graph.bind(generator))
+	var buttons : HBoxContainer = $MarginContainer/VBoxContainer/HBoxContainer
+	buttons.add_child(button)
+	buttons.move_child(button, 0)
+
+func edit_function_graph(generator : MMGenBase) -> void:
+	var parameter_name : String = object.name
+	var variables : Dictionary = get_parameter_function_variables(generator)
+	var graph = generator.parameter_functions.get(parameter_name)
+	var current : String = editor.text.strip_edges()
+	# The stored graph is only used if the parameter was not modified since
+	if not graph is Dictionary or MMFunctionGraph.compile_expression(graph, variables).get("expression") != current:
+		graph = { nodes={ out={ op="float", value=current.to_float() if current.is_valid_float() else 0.0 } }, output="out" }
+	var function_graph_editor = load("res://material_maker/windows/function_graph_editor/function_graph_editor.gd").new()
+	mm_globals.main_window.add_dialog(function_graph_editor)
+	function_graph_editor.graph_applied.connect(on_function_graph_applied.bind(generator, parameter_name, variables))
+	function_graph_editor.edit(graph, "expression", "Parameter function - %s" % parameter_name, variables.keys())
+
+func on_function_graph_applied(graph : Dictionary, generator : MMGenBase, parameter_name : String, variables : Dictionary) -> void:
+	var result : Dictionary = MMFunctionGraph.compile_expression(graph, variables)
+	if not result.ok or not is_instance_valid(self) or not is_instance_valid(generator):
+		return
+	editor.text = result.expression
+	generator.parameter_functions[parameter_name] = graph
+	await check_self_reference_apply()
 
 func check_self_reference_apply() -> bool:
 	var value : String = editor.text.replace("\n", "").strip_edges()
