@@ -513,9 +513,16 @@ func generate_parameter_declarations(rv : ShaderCode) -> void:
 # Connections can also be pinned to "always" (buffered even when automatic
 # buffers are disabled) or "never".
 #
+# The weights of texture fetches and buffers were calibrated against the GPU
+# times of 128 library nodes rendered at 1024 and 4096 (Radeon 780M, see
+# test/calibration): a function call costs about 0.0004 ns per pixel, a
+# texture fetch about 0.02 ns, and a pass that renders a node into a buffer
+# about 1.5 ns per pixel at 1024 (writing the texture and the fixed time of
+# the pass), so memory traffic dominates.
+#
 
-const COST_TEXTURE_FETCH : float = 1.0
-const COST_BUFFER_OVERHEAD : float = 16.0
+const COST_TEXTURE_FETCH : float = 48.0
+const COST_BUFFER_OVERHEAD : float = 3500.0
 const COST_OTHER_GENERATOR : float = 10.0
 const DEFAULT_LOOP_ITERATIONS : float = 16.0
 

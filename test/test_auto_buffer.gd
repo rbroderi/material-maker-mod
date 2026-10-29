@@ -72,9 +72,9 @@ func test_decisions() -> void:
 		parameters=[], code="", instance=""
 	})
 	# Sampling an expensive source many times is buffered
-	assert_true(shader.should_auto_buffer(0, 1000.0, 8.0))
+	assert_true(shader.should_auto_buffer(0, 4000.0, 8.0))
 	# Sampling it once is not, unless it exceeds the shader budget
-	assert_false(shader.should_auto_buffer(0, 1000.0, 1.0))
+	assert_false(shader.should_auto_buffer(0, 4000.0, 1.0))
 	assert_true(shader.should_auto_buffer(0, 5000.0, 1.0))
 	# Cheap sources are never buffered
 	assert_false(shader.should_auto_buffer(0, 3.0, 8.0))
@@ -124,15 +124,15 @@ func test_buffer_size_follows_the_nodes_downstream() -> void:
 func test_graph_decisions_and_pins() -> void:
 	var graph : MMGenGraph = MMGenGraph.new()
 	autofree(graph)
-	var source : MMGenShader = add_to_graph(graph, make_shader(make_expensive_model(200)), "source")
+	var source : MMGenShader = add_to_graph(graph, make_shader(make_expensive_model(1000)), "source")
 	var blur : MMGenShader = add_to_graph(graph, make_shader(BLUR_MODEL), "blur")
 	assert_true(graph.connect_children(source, 0, blur, 0))
 	var port : MMGenBase.OutputPort = blur.get_source(0)
-	assert_gt(MMGenShader.estimate_cost(port, {}), 200.0)
+	assert_gt(MMGenShader.estimate_cost(port, {}), 1000.0)
 	# An expensive source sampled 25 times is buffered
 	assert_true(blur.is_input_auto_buffered(0, port))
 	# The blur's own cost counts the buffered input as texture fetches
-	assert_lt(MMGenShader.estimate_cost(MMGenBase.OutputPort.new(blur, 0), {}), 25.0*200.0)
+	assert_lt(MMGenShader.estimate_cost(MMGenBase.OutputPort.new(blur, 0), {}), 25.0*1000.0)
 	# Pins override the decision, and are kept with the connection
 	graph.set_connection_buffer("blur", 0, "never")
 	assert_eq(graph.get_connection_buffer("blur", 0), "never")
