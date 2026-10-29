@@ -69,3 +69,18 @@ static func load_mesh(path : String) -> ArrayMesh:
 	if mesh:
 		mesh.set_meta("file_path", path)
 	return mesh
+
+## The surfaces of a mesh merged into a single surface, for tools that use
+## only one surface (mesh maps). Returns the mesh itself if it has a single
+## surface.
+static func merge_surfaces(mesh : Mesh) -> Mesh:
+	if mesh == null or mesh.get_surface_count() < 2:
+		return mesh
+	var surface_tool : SurfaceTool = SurfaceTool.new()
+	for s in mesh.get_surface_count():
+		if mesh.surface_get_primitive_type(s) == Mesh.PRIMITIVE_TRIANGLES:
+			surface_tool.append_from(mesh, s, Transform3D.IDENTITY)
+	var merged : ArrayMesh = surface_tool.commit()
+	if mesh.has_meta("file_path"):
+		merged.set_meta("file_path", mesh.get_meta("file_path"))
+	return merged

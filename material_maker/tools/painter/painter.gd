@@ -1,6 +1,9 @@
 extends Node
 
 var mesh : Mesh
+## The painted mesh with all its surfaces merged into one, for the view to
+## texture and texture to view pipelines (that render a single surface)
+var view_mesh : Mesh
 
 var texture_size : float = 0
 
@@ -170,13 +173,13 @@ func update_view_textures():
 		return
 	
 	# Generate v2t texture
-	v2t_pipeline.mesh = mesh
+	v2t_pipeline.mesh = view_mesh
 	v2t_pipeline.set_parameter("transform", projection)
 	await v2t_pipeline.render(viewport_size, 3, v2t_texture, true)
 	view_to_texture_image = (await v2t_texture.get_texture()).get_image()
 	
 	# Generate t2v texture
-	t2v_pipeline.mesh = mesh
+	t2v_pipeline.mesh = view_mesh
 	t2v_pipeline.set_parameter("viewport_size", viewport_size)
 	t2v_pipeline.set_parameter("transform", projection)
 	t2v_pipeline.set_parameter("v2t", v2t_texture)
@@ -200,6 +203,9 @@ func update_textures() -> void:
 
 func set_mesh(m : Mesh):
 	mesh = m
+	# All surfaces are painted (they share the same texture set). Mesh maps
+	# are generated from a merged copy of the mesh too (see MMMapGenerator).
+	view_mesh = MMMeshLoader.merge_surfaces(m)
 	update_textures()
 
 func has_id_map() -> bool:
