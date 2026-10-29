@@ -1423,9 +1423,18 @@ func show_buffer_render_times():
 		return
 	buffers.sort_custom(func(a, b): return a.rendering_time > b.rendering_time)
 	var total_time : int = 0
+	var gpu_total : int = 0
+	var ram_total : int = 0
+	# Textures counted in the totals (several mesh maps can share one)
+	var counted : Dictionary = {}
 	var lines : PackedStringArray = PackedStringArray()
 	for b in buffers:
 		total_time += b.rendering_time
+		var memory : Dictionary = get_generator_texture_memory(b)
+		if memory.has("texture") and not counted.has(memory.texture):
+			counted[memory.texture] = true
+			gpu_total += memory.gpu
+			ram_total += memory.ram
 		if lines.size() < MAX_LISTED_BUFFERS:
 			# Prefix the node name with the groups that contain it
 			var path : PackedStringArray = PackedStringArray([ str(b.name) ])
@@ -1433,12 +1442,34 @@ func show_buffer_render_times():
 			while parent is MMGenGraph and parent != graph_edit.top_generator:
 				path.insert(0, parent.get_type_name())
 				parent = parent.get_parent()
-			lines.push_back("%6d ms   %s" % [ b.rendering_time, "/".join(path) ])
+			var line : String = "%6d ms  %7.1f MB   %s" % [ b.rendering_time, max(memory.gpu, memory.ram)/BYTES_PER_MB, "/".join(path) ]
+			if memory.ram > 0:
+				line += " " + tr("(in RAM)")
+			lines.push_back(line)
 	if buffers.size() > MAX_LISTED_BUFFERS:
 		lines.push_back("...")
 	var text : String = tr("%d buffer(s), %d ms in total (last render of each)") % [ buffers.size(), total_time ]
+	text += "\n" + tr("Buffer textures: %.1f MB on the GPU") % (gpu_total/BYTES_PER_MB)
+	if ram_total > 0:
+		text += tr(", %.1f MB spilled to RAM") % (ram_total/BYTES_PER_MB)
+	var gpu_memory : Dictionary = MMTexture.get_gpu_memory_usage()
+	var budget : float = float(mm_globals.get_config("gpu_memory_budget"))
+	text += "\n" + tr("All textures on the GPU: %.1f MB in %d texture(s), budget: %s") % [ gpu_memory.bytes/BYTES_PER_MB, gpu_memory.count, (tr("%d MB") % budget) if budget > 0.0 else tr("unlimited") ]
 	text += "\n\n" + "\n".join(lines)
 	accept_dialog(text)
+
+const BYTES_PER_MB : float = 1048576.0
+
+## Returns the memory used by the texture a generator renders to (buffers,
+## mesh maps): gpu (in the rendering device) and ram (spilled to RAM because
+## of the GPU memory budget), in bytes, and the texture
+func get_generator_texture_memory(generator : MMGenBase) -> Dictionary:
+	for property in [ "texture", "current_map" ]:
+		var t = generator.get(property)
+		if t is MMTexture:
+			var ram : int = t.spilled_image.get_data_size() if t.spilled_image != null else 0
+			return { texture=t, gpu=t.get_gpu_size(), ram=ram }
+	return { gpu=0, ram=0 }
 
 ## Adds to rv the buffers under root (in groups too) and the other
 ## generators that reported a rendering time
