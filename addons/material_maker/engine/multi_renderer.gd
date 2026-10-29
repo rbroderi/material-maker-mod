@@ -166,6 +166,45 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 func create_rendering_device():
 	rendering_device = RenderingServer.create_local_rendering_device()
 
+# GPU memory budget (see MMTexture)
+
+var texture_budget_check_scheduled : bool = false
+var texture_budget_check_running : bool = false
+var texture_budget_check_again : bool = false
+var texture_budget_retry_scheduled : bool = false
+
+func request_texture_budget_check() -> void:
+	if not texture_budget_check_scheduled:
+		texture_budget_check_scheduled = true
+		check_texture_budget.call_deferred()
+
+## Spills the least recently used textures of the rendering device to RAM
+## when they use more than the gpu_memory_budget preference (in MB, 0 means
+## no limit)
+func check_texture_budget() -> void:
+	texture_budget_check_scheduled = false
+	if texture_budget_check_running:
+		# Check again when the current check is done
+		texture_budget_check_again = true
+		return
+	var budget_mb : float = float(mm_globals.get_config("gpu_memory_budget"))
+	if budget_mb <= 0.0:
+		return
+	var budget : int = int(budget_mb*1048576.0)
+	texture_budget_check_running = true
+	texture_budget_check_again = true
+	while texture_budget_check_again:
+		texture_budget_check_again = false
+		await MMTexture.enforce_budget(budget)
+	texture_budget_check_running = false
+	if MMTexture.get_gpu_memory_usage().bytes > budget and not texture_budget_retry_scheduled and is_inside_tree():
+		# Textures that were used recently are not spilled: check again
+		# when they are idle
+		texture_budget_retry_scheduled = true
+		await get_tree().create_timer(0.001*MMTexture.SPILL_MIN_IDLE_MS).timeout
+		texture_budget_retry_scheduled = false
+		request_texture_budget_check()
+
 func destroy_rendering_device():
 	pass
 
