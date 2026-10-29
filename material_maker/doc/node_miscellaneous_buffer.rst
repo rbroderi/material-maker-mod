@@ -69,7 +69,7 @@ Connection buffers
 ++++++++++++++++++
 
 *Alt + right click* on a connection shows a menu to choose whether it is buffered
-*automatically*, *always* or *never*. This setting is saved with the graph, and *always*
-works even when automatic buffers are disabled. Buffered connections are marked with a
-blue (automatic) or orange (always) *B*, and connections that are never buffered with a
-grey *-*.
+*automatically*, *always* or *never*. This setting is saved with the graph (and kept when
+nodes are grouped), and *always* works even when automatic buffers are disabled. Buffered
+connections are marked with a blue (automatic) or orange (always) *B*, and connections that
+are never buffered with a grey *-*.

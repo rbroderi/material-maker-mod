@@ -1538,8 +1538,18 @@ func simplify_graph(graph):
 		if ! new_connections.has(c.to):
 			new_connections[c.to] = {}
 		new_connections[c.to][c.to_port] = { from=c.from, from_port=c.from_port }
+		# Keep buffer pins, so undo and redo restore them
+		if c.has("buffer"):
+			new_connections[c.to][c.to_port].buffer = c.buffer
 	graph.connections = new_connections
 	return graph
+
+## Returns a connection of a simplified graph (with its buffer pin)
+func simplified_connection(cp : Dictionary, to : String, to_port) -> Dictionary:
+	var rv : Dictionary = { from=cp.from, from_port=cp.from_port, to=to, to_port=to_port }
+	if cp.has("buffer"):
+		rv.buffer = cp.buffer
+	return rv
 
 func undoredo_step_actions(parent_path : String, prev : Dictionary, next : Dictionary, top : bool = true) -> Dictionary:
 	if prev.type != next.type:
@@ -1592,19 +1602,19 @@ func undoredo_step_actions(parent_path : String, prev : Dictionary, next : Dicti
 						var pcp = pc[pcpn]
 						if nc.has(pcpn):
 							var ncp = nc[pcpn]
-							if pcp.from != ncp.from or pcp.from_port != ncp.from_port:
-								undo_add_connections.push_back({ from=pcp.from, from_port=pcp.from_port, to=pcn, to_port=pcpn})
-								redo_remove_connections.push_back({ from=pcp.from, from_port=pcp.from_port, to=pcn, to_port=pcpn})
-								undo_remove_connections.push_back({ from=ncp.from, from_port=ncp.from_port, to=pcn, to_port=pcpn})
-								redo_add_connections.push_back({ from=ncp.from, from_port=ncp.from_port, to=pcn, to_port=pcpn})
+							if pcp.from != ncp.from or pcp.from_port != ncp.from_port or pcp.get("buffer", "") != ncp.get("buffer", ""):
+								undo_add_connections.push_back(simplified_connection(pcp, pcn, pcpn))
+								redo_remove_connections.push_back(simplified_connection(pcp, pcn, pcpn))
+								undo_remove_connections.push_back(simplified_connection(ncp, pcn, pcpn))
+								redo_add_connections.push_back(simplified_connection(ncp, pcn, pcpn))
 						else:
-							undo_add_connections.push_back({ from=pcp.from, from_port=pcp.from_port, to=pcn, to_port=pcpn})
-							redo_remove_connections.push_back({ from=pcp.from, from_port=pcp.from_port, to=pcn, to_port=pcpn})
+							undo_add_connections.push_back(simplified_connection(pcp, pcn, pcpn))
+							redo_remove_connections.push_back(simplified_connection(pcp, pcn, pcpn))
 				else:
 					for pcpn in pc.keys():
 						var pcp = pc[pcpn]
-						undo_add_connections.push_back({ from=pcp.from, from_port=pcp.from_port, to=pcn, to_port=pcpn})
-						redo_remove_connections.push_back({ from=pcp.from, from_port=pcp.from_port, to=pcn, to_port=pcpn})
+						undo_add_connections.push_back(simplified_connection(pcp, pcn, pcpn))
+						redo_remove_connections.push_back(simplified_connection(pcp, pcn, pcpn))
 			# Check all connections in next
 			for ncn in next.connections.keys():
 				var nc = next.connections[ncn]
@@ -1613,13 +1623,13 @@ func undoredo_step_actions(parent_path : String, prev : Dictionary, next : Dicti
 					for ncpn in nc.keys():
 						var ncp = nc[ncpn]
 						if ! pc.has(ncpn):
-							undo_remove_connections.push_back({ from=ncp.from, from_port=ncp.from_port, to=ncn, to_port=ncpn})
-							redo_add_connections.push_back({ from=ncp.from, from_port=ncp.from_port, to=ncn, to_port=ncpn})
+							undo_remove_connections.push_back(simplified_connection(ncp, ncn, ncpn))
+							redo_add_connections.push_back(simplified_connection(ncp, ncn, ncpn))
 				else:
 					for ncpn in nc.keys():
 						var ncp = nc[ncpn]
-						undo_remove_connections.push_back({ from=ncp.from, from_port=ncp.from_port, to=ncn, to_port=ncpn})
-						redo_add_connections.push_back({ from=ncp.from, from_port=ncp.from_port, to=ncn, to_port=ncpn})
+						undo_remove_connections.push_back(simplified_connection(ncp, ncn, ncpn))
+						redo_add_connections.push_back(simplified_connection(ncp, ncn, ncpn))
 			if ! undo_remove_connections.is_empty():
 				undo_actions.push_back({ type="remove_connections", parent=parent_path, connections=undo_remove_connections })
 			if ! redo_remove_connections.is_empty():

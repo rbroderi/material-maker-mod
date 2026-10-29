@@ -155,3 +155,36 @@ func test_cost_of_groups_includes_their_content() -> void:
 	var source : MMGenShader = add_to_graph(group, make_shader(make_expensive_model(300)), "source")
 	assert_true(group.connect_children(source, 0, outputs, 0))
 	assert_gt(MMGenShader.estimate_cost(MMGenBase.OutputPort.new(group, 0), {}), 300.0)
+
+func test_pins_are_kept_when_grouping() -> void:
+	var graph : MMGenGraph = MMGenGraph.new()
+	autofree(graph)
+	var source : MMGenShader = add_to_graph(graph, make_shader(make_expensive_model(200)), "source")
+	var blur : MMGenShader = add_to_graph(graph, make_shader(BLUR_MODEL), "blur")
+	var blur2 : MMGenShader = add_to_graph(graph, make_shader(BLUR_MODEL), "blur2")
+	assert_true(graph.connect_children(source, 0, blur, 0))
+	assert_true(graph.connect_children(blur, 0, blur2, 0))
+	graph.set_connection_buffer("blur", 0, "always")
+	graph.set_connection_buffer("blur2", 0, "never")
+	# Grouping blur: its input comes from the group's inputs, and its output
+	# goes out of the group
+	var group : MMGenGraph = graph.create_subgraph([ blur ])
+	assert_not_null(group)
+	assert_eq(group.get_connection_buffer("blur", 0), "always")
+	assert_eq(graph.get_connection_buffer("blur2", 0), "never")
+	assert_eq(graph.get_connection_buffer(group.name, 0), "")
+	assert_eq(blur.get_buffer_pin(0), "always")
+	assert_eq(blur2.get_buffer_pin(0), "never")
+	# Pins are saved with the grouped connections
+	var data : Dictionary = graph.serialize()
+	var pins : Array = []
+	for n in data.nodes:
+		if n.name == group.name:
+			for c in n.connections:
+				if c.has("buffer"):
+					pins.append("%s.%d:%s" % [ c.to, c.to_port, c.buffer ])
+	for c in data.connections:
+		if c.has("buffer"):
+			pins.append("%s.%d:%s" % [ c.to, c.to_port, c.buffer ])
+	pins.sort()
+	assert_eq(pins, [ "blur.0:always", "blur2.0:never" ])
