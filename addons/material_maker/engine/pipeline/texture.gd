@@ -17,7 +17,10 @@ func _init() -> void:
 func _notification(what : int) -> void:
 	match what:
 		NOTIFICATION_PREDELETE:
-			if mm_renderer:
+			# Most textures never get a rendering device texture (e.g. the
+			# Material node's preview textures, recreated on every shader
+			# update): don't make them wait for the rendering thread
+			if rid.is_valid() and mm_renderer:
 				await mm_renderer.thread_run(in_thread_free_rid, [rid, rd])
 
 static func in_thread_free_rid(texture_rid, rendering_device):
