@@ -455,10 +455,35 @@ func api_export(params : Dictionary):
 		return fail("the graph has no material node")
 	if not params.target in material.get_export_profiles():
 		return fail("unknown export target '%s'" % params.target)
+	var tiles : PackedInt32Array = get_udim_tiles(material, params.get("udim", false))
+	if method_error != "":
+		return null
 	DirAccess.make_dir_recursive_absolute(params.prefix.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
-	await material.export_material(params.prefix, params.target, size, true)
+	await material.export_material(params.prefix, params.target, size, true, tiles)
 	return true
+
+## The UDIM tiles of the udim parameter of export: true for the graph's
+## tiles, or a list of tiles ("1001-1004,1011" or [ 1001, 1002 ])
+func get_udim_tiles(material : MMGenMaterial, udim) -> PackedInt32Array:
+	if udim is bool:
+		return material.get_graph_udim_tiles() if udim else PackedInt32Array()
+	var list : String
+	if udim is String:
+		list = udim
+	elif udim is Array:
+		for t in udim:
+			if not (t is int or t is float):
+				fail("UDIM tiles must be numbers")
+				return PackedInt32Array()
+		list = ",".join(udim.map(func(t): return str(int(t))))
+	else:
+		fail("parameter 'udim' must be a boolean, a string or a list")
+		return PackedInt32Array()
+	var tiles : PackedInt32Array = MMCliTools.parse_udim_tiles(list)
+	if tiles.is_empty():
+		fail("incorrect UDIM tiles '%s' (e.g. \"1001-1004,1011\", from 1001 to 1999)" % str(udim))
+	return tiles
 
 func api_undo(_params : Dictionary):
 	var graph_edit : MMGraphEdit = get_graph_edit()

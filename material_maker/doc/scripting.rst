@@ -65,8 +65,10 @@ graph (and in **list_nodes**).
   (outputs are numbered from 0, as with **--render** on the command line)
 * **render_queue()** lists the buffers that are not rendered yet, to diagnose renders that never
   finish
-* **list_export_targets()** and **export(target, prefix, size)** export the material (prefix is
-  the path of the exported files without extension, and size 0 uses the Material node's size)
+* **list_export_targets()** and **export(target, prefix, size, udim)** export the material (prefix is
+  the path of the exported files without extension, and size 0 uses the Material node's size).
+  **udim** exports UDIM tiles (see :ref:`export-section`): true for the tiles of the graph, or a
+  list such as "1001-1004,1011" or [1001, 1002]
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 

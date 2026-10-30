@@ -208,10 +208,12 @@ class MaterialMaker:
     def list_export_targets(self):
         return self.call("list_export_targets")
 
-    def export(self, target, prefix, size=0):
+    def export(self, target, prefix, size=0, udim=None):
         """Exports the material; prefix is the path of the files without
-        extension (size 0 uses the Material node's size)"""
-        return self.call("export", target=target, prefix=_path(prefix), size=size)
+        extension (size 0 uses the Material node's size). udim exports UDIM
+        tiles: True for the graph's tiles, or a list such as "1001-1004,1011"
+        or [1001, 1002]"""
+        return self.call("export", **_given(target=target, prefix=_path(prefix), size=size, udim=udim))
 
     def undo(self):
         """Undoes the last change (with the user interface only)"""
