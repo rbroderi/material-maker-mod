@@ -102,7 +102,7 @@ func get_parameter_defs() -> Array:
 		{ name="high_texture", type="file", label="High poly texture", filters=[ "*.png,*.jpg,*.exr,*.tga,*.webp;Image file" ], default="",
 			longdesc="Texture of the high poly mesh (in its UV space), for the Transferred texture map" },
 		{ name="udim", type="float", label="UDIM tile", min=1001, max=1100, step=1, default=1001,
-			longdesc="The UDIM tile of the current mesh's UV layout that is baked (1001 is the [0, 1] square)" },
+			longdesc="The UDIM tile of the current mesh's UV layout that is baked (1001 is the [0, 1] square, 1002 is on its right and 1011 above it)" },
 	]
 
 func get_map_definition() -> Dictionary:
@@ -143,10 +143,6 @@ func get_image_parameter(parameter_name : String) -> Texture2D:
 		loaded_images[key] = ImageTexture.create_from_image(image) if image != null else null
 	return loaded_images[key]
 
-## The baked UDIM tile: the tile of UDIM exports, else the udim parameter
-func get_udim_tile() -> int:
-	return udim_tile if udim_tile != 0 else int(get_parameter("udim"))
-
 ## The current mesh, with its parts as separate surfaces when matching by name
 func get_low_mesh() -> Mesh:
 	if not get_parameter("match_by_name") or not current_mesh.has_meta("file_path"):
@@ -171,8 +167,9 @@ func generate_map() -> MMTexture:
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
-	# Several parameters are set at once when loading, so bake only once
-	if n != "map" and not update_pending:
+	# Several parameters are set at once when loading, so bake only once (the
+	# map and the UDIM tile update the map right away, see MMGenMeshMap)
+	if n != "map" and n != "udim" and not update_pending:
 		update_pending = true
 		deferred_update.call_deferred()
 
