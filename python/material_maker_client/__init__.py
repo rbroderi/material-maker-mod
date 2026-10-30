@@ -190,6 +190,30 @@ class MaterialMaker:
         values = dict(values or {}, **kwargs)
         return self.call("set_parameters", values=values)
 
+    # Presets of the remote nodes
+
+    def list_presets(self):
+        """Returns the names of the presets of the graph's remote nodes"""
+        return self.call("list_presets")
+
+    def apply_preset(self, name):
+        """Applies a preset to the remote nodes that have it"""
+        return self.call("apply_preset", name=name)
+
+    def save_preset(self, name, node=None):
+        """Saves the current values of a remote node as a preset (node is
+        needed when the graph has several remote nodes)"""
+        return self.call("save_preset", **_given(name=name, node=node))
+
+    def delete_preset(self, name, node=None):
+        """Deletes a preset (by default, from all remote nodes)"""
+        return self.call("delete_preset", **_given(name=name, node=node))
+
+    def randomize_parameters(self, seed=None, node=None):
+        """Sets random values (within their ranges) to the parameters of a
+        remote node (by default, of all of them), and returns the seed"""
+        return self.call("randomize_parameters", **_given(seed=seed, node=node))
+
     def reseed(self, offset=1):
         """Changes the seeds of all nodes that are not locked"""
         return self.call("reseed", offset=offset)

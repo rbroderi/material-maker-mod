@@ -86,6 +86,33 @@ static func get_remote_parameter_name(remote : MMGenRemote, parameter_name : Str
 			return w.name
 	return ""
 
+## The remote nodes of a graph (not those of its subgraphs)
+static func get_remote_nodes(graph : MMGenBase) -> Array[MMGenRemote]:
+	var remotes : Array[MMGenRemote] = []
+	for c in graph.get_children():
+		if c is MMGenRemote:
+			remotes.append(c)
+	return remotes
+
+## The names of the presets of the remote nodes of a graph, sorted
+static func get_preset_names(graph : MMGenBase) -> PackedStringArray:
+	var names : PackedStringArray = PackedStringArray()
+	for r in get_remote_nodes(graph):
+		for n in r.get_preset_names():
+			if not n in names:
+				names.append(n)
+	names.sort()
+	return names
+
+## Applies a preset to all the remote nodes of a graph that have it. Returns
+## false if none has it.
+static func apply_preset(graph : MMGenBase, preset_name : String) -> bool:
+	var found : bool = false
+	for r in get_remote_nodes(graph):
+		if r.apply_preset(preset_name):
+			found = true
+	return found
+
 ## Unlocked seeds are offset by the golden ratio (modulo 1) for each step, so
 ## successive seeds are well distributed
 const SEED_OFFSET : float = 0.6180339887

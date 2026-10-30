@@ -46,6 +46,8 @@ Options
   %n and %N the material name, %a and %A its author)
 * **--size <size>** is the size of generated images (2048 by default). With **--export-material**,
   0 uses the size of the Material node
+* **--preset <name>** applies a preset of the graph's remote nodes before rendering. A graph
+  that has no such preset is skipped with an error, and Material Maker exits with code 1
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example
   --set Hue=0.5), or a node name and a parameter name (for example --set Perlin:scale_x=8).
@@ -60,12 +62,16 @@ Options
 * **--rpc-port <port>** is the port of the JSON-RPC server (7680 by default). When used without
   **--rpc**, Material Maker starts with its user interface and a server
 
-**--set**, **--seed** and **--variations** work with **--export-material** and **--render**.
+**--preset**, **--set**, **--seed** and **--variations** work with **--export-material** and
+**--render**. They are applied in this order: the preset first, then the **--set** values (so they
+override the preset's values), then the seeds of each variation (presets only hold the values of
+remote parameters, not seeds).
 
 Examples
 --------
 
  material_maker --export-material --target "Godot/Godot 4 Standard" -o out materials/*.ptex
  material_maker --render --node Material:0 --set Hue=0.3 --variations 4 --size 1024 -o out bricks.ptex
+ material_maker --export-material --preset Mossy --set Hue=0.1 -o out bricks.ptex
  material_maker --list-parameters bricks.ptex
  material_maker --bake --maps normal,curvature --size 2048 -o maps model.obj

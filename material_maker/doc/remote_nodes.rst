@@ -106,4 +106,4 @@ bottom of the remote node is used to manage presets:
   step), which is useful to explore variations of a material. Use *Save* to keep a result.
 
 Applying, saving, deleting presets and randomizing can be undone. Presets are saved in the
-material file.
+material file. They can also be applied from the command line (**--preset**) and managed from scripts (see :ref:`scripting-section`).

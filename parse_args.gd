@@ -1,5 +1,8 @@
 extends Node
 
+## Set when a graph is skipped because of an error, to exit with code 1
+var failed : bool = false
+
 func show_error(message : String):
 	print(message)
 
@@ -56,13 +59,15 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			from_website = true
 		if gen != null:
 			add_child(gen)
-			apply_graph_options(gen, f, options)
+			if not apply_graph_options(gen, f, options):
+				gen.queue_free()
+				continue
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
 	if not export_list.is_empty():
 		print(",\n".join(PackedStringArray(export_list)))
-	get_tree().quit()
+	get_tree().quit(1 if failed else 0)
 
 ## Exports the materials of a graph (called for each variation, with the
 ## suffix of its files)
@@ -114,6 +119,7 @@ const VALUE_OPTIONS : Dictionary = {
 	"-t": { key="target", type=TYPE_STRING }, "--target": { key="target", type=TYPE_STRING },
 	"-o": { key="output_dir", type=TYPE_STRING }, "--output-dir": { key="output_dir", type=TYPE_STRING },
 	"--output-file": { key="output_file", type=TYPE_STRING },
+	"--preset": { key="preset", type=TYPE_STRING },
 	"--seed": { key="seed", type=TYPE_INT },
 	"--variations": { key="variations", type=TYPE_INT, minimum=1 },
 	"--format": { key="format", type=TYPE_STRING },
@@ -141,6 +147,7 @@ Options (they can also be given after "--"):
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels (default: 2048; with --export-material, 0 uses
                              the Material node's size)
+  --preset <name>            apply a preset of the graph's remote nodes (before --set values)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
@@ -304,19 +311,30 @@ func expand_files(files : Array[String]) -> Array:
 	return expanded_files
 
 ## Loads a graph, adds it to the tree and applies parameter overrides
+## (returns null if the graph cannot be loaded or has no such preset)
 func load_graph(f : String, options : Dictionary) -> MMGenBase:
 	var gen = await mm_loader.load_gen(f)
 	if gen == null:
 		show_error("ERROR: cannot load %s" % f)
 		return null
 	add_child(gen)
-	apply_graph_options(gen, f, options)
+	if not apply_graph_options(gen, f, options):
+		gen.queue_free()
+		return null
 	return gen
 
-## Applies --set values
-func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
+## Applies --preset, then --set values (so they override the preset's).
+## Seeds are changed afterwards, for each variation. Returns false (and
+## marks the run as failed) if the graph has no such preset.
+func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> bool:
+	if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
+		var presets : PackedStringArray = MMCliTools.get_preset_names(gen)
+		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(presets) if not presets.is_empty() else "none" ])
+		failed = true
+		return false
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
 		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	return true
 
 ## Loads each graph and calls variation (suffix, gen, f, options) for each of
 ## its variations, then quits. mode is the option named in the error message
@@ -333,7 +351,7 @@ func process_graph_files(files : Array, options : Dictionary, variation : Callab
 		await for_each_variation(gen, options, variation.bind(gen, f, options))
 		gen.queue_free()
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(1 if failed else 0)
 
 ## Calls callable once per variation, after changing the seeds, with the
 ## suffix of the variation's files

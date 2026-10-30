@@ -385,6 +385,111 @@ func api_disconnect(params : Dictionary):
 		graph.disconnect_children_by_name(params.from, from_port, params.to, to_port)
 		return true)
 
+# Presets (of the remote nodes of the current graph)
+
+## The remote node given by the optional "node" parameter, or the only remote
+## node of the graph (sets an error and returns null if there is none)
+func get_remote_node(graph : MMGenGraph, params : Dictionary) -> MMGenRemote:
+	if params.has("node"):
+		if not require(params, [ "node" ]):
+			return null
+		var generator : MMGenBase = get_generator(graph, params.node)
+		if generator != null and not generator is MMGenRemote:
+			fail("node '%s' is not a remote node" % params.node)
+			return null
+		return generator as MMGenRemote
+	var remotes : Array[MMGenRemote] = MMCliTools.get_remote_nodes(graph)
+	if remotes.is_empty():
+		fail("the graph has no remote node")
+		return null
+	if remotes.size() > 1:
+		fail("the graph has several remote nodes (%s), choose one with 'node'" % ", ".join(PackedStringArray(remotes.map(func(r): return r.name))))
+		return null
+	return remotes[0]
+
+## Applies a change to remote nodes, recorded (as one step) as the user
+## interface does
+func change_remote_nodes(action_name : String, remotes : Array, change : Callable) -> void:
+	var graph_edit : MMGraphEdit = get_graph_edit()
+	if graph_edit != null:
+		graph_edit.undoredo.start_group()
+	for r : MMGenRemote in remotes:
+		var prev : Dictionary = r.serialize().duplicate(true)
+		change.call(r)
+		if graph_edit != null:
+			graph_edit.undoredo_create_step(action_name, r.get_hier_name(), prev, r.serialize().duplicate(true))
+			var node : Node = graph_edit.get_node_or_null(NodePath("node_"+r.name))
+			if node != null and node.has_method("update_preset_list"):
+				node.update_preset_list()
+	if graph_edit != null:
+		graph_edit.undoredo.end_group()
+		graph_edit.send_changed_signal()
+
+func api_list_presets(_params : Dictionary):
+	return Array(MMCliTools.get_preset_names(await get_graph()))
+
+## Applies a preset to all the remote nodes that have it
+func api_apply_preset(params : Dictionary):
+	if not require(params, [ "name" ]):
+		return null
+	var graph : MMGenGraph = await get_graph()
+	var remotes : Array = MMCliTools.get_remote_nodes(graph).filter(func(r): return r.presets.has(params.name))
+	if remotes.is_empty():
+		var presets : PackedStringArray = MMCliTools.get_preset_names(graph)
+		return fail("no preset '%s' (presets: %s)" % [ params.name, ", ".join(presets) if not presets.is_empty() else "none" ])
+	change_remote_nodes("Apply preset", remotes, func(r): r.apply_preset(params.name))
+	return true
+
+## Saves the current values of a remote node as a preset (an existing preset
+## with this name is replaced)
+func api_save_preset(params : Dictionary):
+	if not require(params, [ "name" ]):
+		return null
+	var preset_name : String = params.name.strip_edges()
+	if preset_name == "":
+		return fail("the preset name is empty")
+	var remote : MMGenRemote = get_remote_node(await get_graph(), params)
+	if remote == null:
+		return null
+	change_remote_nodes("Save preset", [ remote ], func(r): r.save_preset(preset_name))
+	return true
+
+## Deletes a preset of a remote node (by default, of all the remote nodes
+## that have it)
+func api_delete_preset(params : Dictionary):
+	if not require(params, [ "name" ]):
+		return null
+	var graph : MMGenGraph = await get_graph()
+	var remotes : Array = MMCliTools.get_remote_nodes(graph)
+	if params.has("node"):
+		var remote : MMGenRemote = get_remote_node(graph, params)
+		if remote == null:
+			return null
+		remotes = [ remote ]
+	remotes = remotes.filter(func(r): return r.presets.has(params.name))
+	if remotes.is_empty():
+		return fail("no preset '%s'" % params.name)
+	change_remote_nodes("Delete preset", remotes, func(r): r.delete_preset(params.name))
+	return true
+
+## Sets random values to the parameters of a remote node (by default, of all
+## the remote nodes, each with the next seed), and returns the seed
+func api_randomize_parameters(params : Dictionary):
+	var random_seed : int = get_int(params, "seed", randi())
+	if method_error != "":
+		return null
+	var graph : MMGenGraph = await get_graph()
+	var remotes : Array = MMCliTools.get_remote_nodes(graph)
+	if params.has("node"):
+		var remote : MMGenRemote = get_remote_node(graph, params)
+		if remote == null:
+			return null
+		remotes = [ remote ]
+	if remotes.is_empty():
+		return fail("the graph has no remote node")
+	change_remote_nodes("Randomize parameters", remotes, func(r): r.randomize_parameters(random_seed+remotes.find(r)))
+	return random_seed
+
 ## Changes the seeds of all nodes that are not locked (cannot be undone)
 func api_reseed(params : Dictionary):
 	var offset : int = get_int(params, "offset", 1)
