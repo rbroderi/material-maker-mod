@@ -494,6 +494,10 @@ func process_option_unreal5(s : String, is_declaration : bool = false, declarati
 		# function of hlsl_defs.tmpl does not compile in Unreal 5)
 		s = RegEx.create_from_string("inline\\s+float4\\s+textureLod\\s*\\([^)]*\\)\\s*\\{[^}]*\\}").sub(s, "")
 		s = s.replace("// EngineSpecificDefinitions", "#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, lod)");
+		# Definitions are member functions of a struct, and FXC (Shader Model
+		# 5) rejects member functions whose body starts with a block (as
+		# the functions of 2 point curves do)
+		s = RegEx.create_from_string("(\\)\\s*\\{[ \\t]*\\n)(\\s*\\{)").sub(s, "$1;$2", true)
 		for d in preprocess_option_unreal5(s):
 			s = s.replace(d.strings[0], d.strings[1]+" "+d.strings[2]+d.strings[3]+";")
 	else:
@@ -692,10 +696,17 @@ func process_uids(template : String) -> String:
 ## line are fully procedural: buffers generate their input's code instead of
 ## being textures (iterate buffers are still textures).
 func process_export_shader(template : String, custom_script : String) -> Dictionary:
+	# process_shader deletes the preview's textures and creates those of the
+	# template (export templates have none): keep the preview's textures
+	var saved_preview_textures : Dictionary = preview_textures
+	preview_textures = {}
 	var inline_buffers : bool = template.contains("$inline_buffers\n")
 	MMGenBuffer.inline_buffers = inline_buffers
 	var result : Dictionary = process_shader(template.replace("$inline_buffers\n", ""), custom_script, true)
 	MMGenBuffer.inline_buffers = false
+	for t in preview_textures.keys():
+		mm_deps.delete_buffer(preview_textures[t].buffer)
+	preview_textures = saved_preview_textures
 	return result
 
 func create_file_from_template(template : String, file_name : String, export_context : Dictionary) -> Error:
@@ -784,9 +795,6 @@ func export_material_with_profile(prefix : String, profile : String, size : int 
 		preview_texture_dependencies[t] = generated_dependencies[t]
 	await do_export_material(prefix, profile, size, command_line, height, tiles)
 	preview_texture_dependencies = saved_dependencies
-	# Generating code replaced the preview's textures
-	if not command_line:
-		update()
 	await MMPlugins.call_export_hooks(self, prefix, profile)
 
 ## Waits until the render queue is empty. The queue's size does not change
