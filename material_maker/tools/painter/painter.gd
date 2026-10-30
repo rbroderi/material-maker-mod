@@ -154,6 +154,8 @@ func _ready():
 	await v2t_pipeline.set_shader(vertex_shader, fragment_shader)
 	
 	t2v_pipeline = MMMeshRenderingPipeline.new()
+	# Drawn in UV space, where mirrored UV islands are back faces
+	t2v_pipeline.cull_mode = RenderingDevice.POLYGON_CULL_DISABLED
 	vertex_shader = preload("res://material_maker/tools/painter/shaders/t2v_vertex.tres").text
 	fragment_shader = preload("res://material_maker/tools/painter/shaders/t2v_fragment.tres").text
 	t2v_pipeline.add_parameter_or_texture("viewport_size", "vec2", viewport_size)
