@@ -29,6 +29,7 @@ const LayerPaint = preload("res://material_maker/panels/paint/layer_types/layer_
 const LayerProcedural = preload("res://material_maker/panels/paint/layer_types/layer_procedural.gd")
 const LayerMask = preload("res://material_maker/panels/paint/layer_types/layer_mask.gd")
 const LAYER_TYPES : Array = [ LayerPaint, LayerProcedural, LayerMask ]
+const MMDependencies = preload("res://addons/material_maker/engine/dependencies.gd")
 
 const CHANNELS : Array = [ "albedo", "metallic", "roughness", "emission", "normal", "depth", "occlusion" ]
 
@@ -204,17 +205,34 @@ void main() {
 }
 """
 
-## Adds a paint layer with the maps of a material graph (.ptex): graph outputs
-## become paintable pixels (the layer can then be painted over or erased)
-func add_layer_from_material(path : String) -> bool:
+## Adds a paint layer with the maps of a material graph (.ptex), rendered at
+## the project's texture size: graph outputs become paintable pixels (the
+## layer can then be painted over, erased or masked). Returns an error
+## message, or an empty string if the layer was created
+func add_layer_from_material(path : String) -> String:
 	var generator : MMGenBase = await mm_loader.load_gen(path)
 	if generator == null:
-		return false
+		return "Cannot load %s" % path.get_file()
+	# Mesh Map nodes use the painted mesh
+	var painted_mesh = get_parent().get("painted_mesh")
+	var mesh : Mesh = painted_mesh.mesh if painted_mesh != null else null
+	if generator is MMGenGraph and mesh != null:
+		generator.current_mesh = mesh
 	add_child(generator)
-	var material : MMGenBase = MMCliTools.find_material_node(generator)
-	var ok : bool = material != null
-	if ok:
-		await MMCliTools.wait_for_renders(get_tree())
+	var error : String = ""
+	# Static PBR Material nodes only (other materials don't have the maps of
+	# paint layers)
+	var material : MMGenBase = null
+	for c in generator.get_children():
+		if c.has_method("get_export_profiles") and c.get_output_defs(true).size() >= 5:
+			material = c
+			break
+	if material == null:
+		error = "%s has no Static PBR Material node" % path.get_file()
+	else:
+		if generator is MMGenGraph and mesh != null:
+			await MMCliTools.set_graph_mesh(generator, mesh)
+		await wait_for_renders(generator, material)
 		var size : Vector2i = Vector2i(int(texture_size), int(texture_size))
 		var compute : MMComputeShader = MMComputeShader.new()
 		compute.clear()
@@ -225,8 +243,7 @@ func add_layer_from_material(path : String) -> bool:
 		for c in [ "albedo", "mr", "emission", "normal", "do" ]:
 			outputs.append({ name=c+"_out", type=MMPipeline.TEXTURE_TYPE_RGBA16F })
 			textures.append(MMTexture.new())
-		ok = await compute.set_shader_ext(PACK_SHADER, outputs) and await compute.render_ext(textures, size)
-		if ok:
+		if await compute.set_shader_ext(PACK_SHADER, outputs) and await compute.render_ext(textures, size):
 			var layer : MMPaintLayer = LayerPaint.new()
 			layer.name = path.get_file().get_basename()
 			layer.index = get_unused_layer_index()
@@ -239,9 +256,27 @@ func add_layer_from_material(path : String) -> bool:
 			layers.push_front(layer)
 			select_layer(layer)
 			_on_layers_changed()
+		else:
+			error = "Cannot render the maps of %s" % path.get_file()
 	remove_child(generator)
 	generator.queue_free()
-	return ok
+	return error
+
+## Waits until the buffers of a graph (e.g. Buffer nodes) have been rendered
+## for a few frames. Other graphs' buffers, and the preview textures of the
+## material node (excluded), are ignored
+func wait_for_renders(graph : MMGenBase, excluded : MMGenBase, max_frames : int = 6000) -> void:
+	var idle_frames : int = 0
+	for i in max_frames:
+		await get_tree().process_frame
+		var pending : bool = false
+		for b in mm_deps.buffers.values():
+			if b.status != MMDependencies.Buffer.Updated and b.status != MMDependencies.Buffer.Error and b.object is Node and b.object != excluded and graph.is_ancestor_of(b.object):
+				pending = true
+				break
+		idle_frames = 0 if pending else idle_frames+1
+		if idle_frames >= 10:
+			return
 
 func duplicate_layer(source_layer : MMLayer) -> void:
 	var layers_array : Array = find_parent_array(source_layer)

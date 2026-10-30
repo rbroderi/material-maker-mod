@@ -42,7 +42,19 @@ func _on_add_layer_menu(id):
 		dialog.add_filter("*.ptex;Procedural Textures File")
 		dialog.current_dir = mm_globals.config.get_value("path", "project", mm_globals.get_home_directory())
 		var files = await dialog.select_files()
-		if files.size() != 1 or not await layers.add_layer_from_material(files[0]):
+		if files.size() != 1:
+			return
+		var error : String = await layers.add_layer_from_material(files[0])
+		if error != "":
+			var error_dialog : AcceptDialog = AcceptDialog.new()
+			add_child(error_dialog)
+			var content_scale_factor : float = mm_globals.ui_scale_factor()
+			error_dialog.content_scale_factor = content_scale_factor
+			error_dialog.min_size = error_dialog.get_contents_minimum_size() * content_scale_factor
+			error_dialog.title = "Layer from material failed!"
+			error_dialog.dialog_text = error
+			error_dialog.connect("popup_hide", Callable(error_dialog, "queue_free"))
+			error_dialog.popup_centered()
 			return
 	else:
 		layers.add_layer(id)
