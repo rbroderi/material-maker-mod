@@ -109,6 +109,9 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 						continue
 					print("Using target ", best_target, " (and not ", target, ")")
 			var target_file_name : String = target_file
+			if suffix != "" and not target_file_name.contains("%f"):
+				# Variations must not overwrite each other
+				target_file_name += suffix
 			target_file_name = target_file_name.replace("%f", basename+suffix)
 			target_file_name = target_file_name.replace("%N", mat_name)
 			target_file_name = target_file_name.replace("%A", mat_author)
@@ -185,6 +188,9 @@ const VALUE_OPTIONS : Dictionary = {
 	"--strict": { key="strict", type=TYPE_BOOL },
 }
 
+## Image formats of --render (plugins add others)
+const RENDER_FORMATS : Array[String] = [ "png", "exr", "jpg", "webp" ]
+
 const HELP : String = """Material Maker command line
 
   material_maker --export-material [options] <files>   export materials for an engine
@@ -196,20 +202,20 @@ const HELP : String = """Material Maker command line
   material_maker --rpc-port <port>   start the user interface with a JSON-RPC server
   material_maker -- --help   show this help
 
-Options:
+Options (they can also be given after "--"):
   --target <target>          export target (e.g. "Godot/Godot 4 Standard", "MaterialX/Standard Surface")
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels, or <width>x<height> for non-square outputs of --render,
                              --export-material and plugin modes (buffers stay square). --export-material
-                             uses the Material node's size by default, and --size also sets it (so
-                             buffers sized relative to the output follow it)
+                             uses the Material node's size by default (or with --size 0), and --size also
+                             sets it (so buffers sized relative to the output follow it)
   --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
-  --format <format>          image format of --render (png or exr), or the format of plugin modes
+  --format <format>          image format of --render (png, exr, jpg or webp), or the format of plugin modes
   --color-space <space>      OCIO color space of exported color maps (albedo, emission), e.g. ACEScg
   --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
   --duration <seconds>       duration of the animation of --frames (default: 1)
@@ -300,25 +306,39 @@ func _ready():
 	var i = 0
 	while i < args.size():
 		var arg : String = args[i]
-		var value : String = args[i+1] if i+1 < args.size() else ""
+		var has_value : bool = i+1 < args.size()
+		var value : String = args[i+1] if has_value else ""
 		var option : Dictionary = VALUE_OPTIONS.get(arg, MMPlugins.cli_options.get(arg, {}))
 		if not option.is_empty():
 			if option.type == TYPE_BOOL:
 				options[option.key] = true
 			else:
+				if not has_value:
+					show_error("ERROR: %s needs a value" % arg)
+					get_tree().quit(1)
+					return
+				if (option.type == TYPE_INT and not value.is_valid_int()) or (option.type == TYPE_FLOAT and not value.is_valid_float()):
+					show_error("ERROR: incorrect value for %s: %s" % [ arg, value ])
+					get_tree().quit(1)
+					return
 				var converted = type_convert(value, option.type)
 				options[option.key] = max(option.minimum, converted) if option.has("minimum") else converted
 				i += 1
 			i += 1
 			continue
+		if arg in [ "--size", "--set", "--color-space", "--maps" ] and not has_value:
+			show_error("ERROR: %s needs a value" % arg)
+			get_tree().quit(1)
+			return
 		match arg:
 			"--size":
-				# A size, or width x height (e.g. 2048x1024) for non-square outputs
+				# A size, or width x height (e.g. 2048x1024) for non-square
+				# outputs. 0 is the Material node's size with --export-material.
 				var dimensions : PackedStringArray = value.to_lower().split("x")
 				options.size = int(dimensions[0])
-				options.size_given = true
+				options.size_given = options.size > 0
 				output_height = int(dimensions[1]) if dimensions.size() == 2 else 0
-				if options.size <= 0 or dimensions.size() > 2 or (dimensions.size() == 2 and output_height <= 0):
+				if not dimensions[0].is_valid_int() or options.size < 0 or dimensions.size() > 2 or (dimensions.size() == 2 and (options.size == 0 or not dimensions[1].is_valid_int() or output_height <= 0)):
 					show_error("ERROR: incorrect size "+value)
 					get_tree().quit(1)
 					return
@@ -335,7 +355,13 @@ func _ready():
 			"--show-window":
 				pass
 			_:
-				if not arg in CLI_MODES and not MMPlugins.cli_modes.has(arg):
+				if arg in CLI_MODES or MMPlugins.cli_modes.has(arg):
+					pass
+				elif arg.begins_with("-") and arg.length() > 1 and mode != "--plugin":
+					show_error("ERROR: unknown option %s (see material_maker -- --help)" % arg)
+					get_tree().quit(1)
+					return
+				else:
 					files.push_back(arg)
 		i += 1
 	if options.has("gpu_budget"):
@@ -348,7 +374,8 @@ func _ready():
 	match mode:
 		"--export", "--export-material":
 			print("Exporting...")
-			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, options.size, options)
+			# (--size 0 uses the Material node's size, as without --size)
+			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, options.size if options.size > 0 else 2048, options)
 		"--render":
 			await render_files(expand_files(files), options)
 		"--bake":
@@ -584,9 +611,23 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 		print("Rendered %s" % file_name)
 
 func render_files(files : Array, options : Dictionary) -> void:
+	# (and the image formats of plugins)
+	var formats : Array = RENDER_FORMATS+MMPlugins.image_formats.keys()
+	if not options.format in formats:
+		show_error("ERROR: unknown image format %s (formats: %s)" % [ options.format, ", ".join(formats) ])
+		get_tree().quit(1)
+		return
+	if options.size == 0:
+		show_error("ERROR: incorrect size 0")
+		get_tree().quit(1)
+		return
 	await process_graph_files(files, options, render_variation, "--render")
 
 func bake_files(files : Array[String], options : Dictionary) -> void:
+	if options.size == 0:
+		show_error("ERROR: incorrect size 0")
+		get_tree().quit(1)
+		return
 	if options.has("high") and options.maps == MMCliTools.DEFAULT_BAKE_MAPS:
 		options.maps = MMCliTools.DEFAULT_HIGH_POLY_MAPS
 	for f in files:

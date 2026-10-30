@@ -28,8 +28,10 @@ needs **xvfb-run** (from the *xvfb* package), that provides a virtual one.
  material_maker -- --help
 
 Input files are .ptex files (wildcards are accepted), or MaterialX files (.mtlx) that are
-imported (see :ref:`export-section`). Godot handles some short options
-itself (such as **-t** and **--help**), so they only reach Material Maker after **--**.
+imported (see :ref:`export-section`). The mode and options can be given before or after **--**
+(for example material_maker -- --render --node Material:0 bricks.ptex). Godot handles some short
+options itself (such as **-t** and **--help**), so they only reach Material Maker after **--**.
+Unknown options and incorrect values are errors (Material Maker exits with code 1).
 
 Modes
 -----
@@ -63,8 +65,9 @@ Options
   **--export-mmr**, **<width>x<height>** (for example 2048x1024) generates non-square outputs:
   the graph is stretched to the image's shape, and buffers keep their sizes. Without a height,
   exports use the Material node's aspect ratio. **--export-material** uses the Material node's size
-  when **--size** is not given (2048 before), and a power of 2 **--size** also sets the Material
-  node's size, so buffers sized relative to the output follow it
+  when **--size** is not given (2048 before) or is 0, and a power of 2 **--size** also sets the
+  Material node's size, so buffers sized relative to the output follow it. **--render** and
+  **--bake** use 2048 by default
 * **--gpu-budget <MB>** sets a GPU memory budget: the least recently used textures are moved to the
   main memory above it (see the *GPU memory budget* preference)
 * **--low-memory** frees the texture of each buffer when all the buffers that read it are rendered (it is
@@ -80,7 +83,8 @@ Options
   Values are numbers, true/false, colors (#rrggbb or #rrggbbaa) or JSON
 * **--seed <n>** changes the seeds of all nodes whose seed is not locked
 * **--variations <n>** generates n variations with different seeds, whose files are suffixed with _v<i>
-* **--format <png|exr>** is the image format of **--render**
+* **--format <format>** is the image format of **--render** (png, exr, jpg or webp, png by default,
+  or a format added by a plugin)
 * **--color-space <space>** converts exported color maps (albedo and emission) to an
   OpenColorIO color space (for example ACEScg), when OpenColorIO support is built
 * **--frames <n>** makes **--render** render n frames of an animated material ($time going
