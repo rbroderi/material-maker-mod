@@ -211,6 +211,7 @@ func init_project(mesh : Mesh, mesh_file_path : String, resolution : int, projec
 	layers.add_layer()
 	model_path = mesh_file_path
 	set_object(mi, true)
+	mi.free()
 	set_project_path(project_file_path)
 	initialize_layers_history()
 
@@ -818,6 +819,7 @@ func load_project(file_name) -> bool:
 	mi.mesh = mesh
 	mi.set_surface_override_material(0, StandardMaterial3D.new())
 	set_object(mi)
+	mi.free()
 	set_project_path(file_name)
 	if data.has("settings"):
 		set_settings(data.settings)
