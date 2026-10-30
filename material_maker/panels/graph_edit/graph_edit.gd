@@ -1552,13 +1552,11 @@ func undoredo_step_actions(parent_path : String, prev : Dictionary, next : Dicti
 				undo_actions.push_back({ type="add_to_graph", parent=parent_path, generators=undo_add_nodes, connections=undo_add_connections })
 			if ! redo_add_nodes.is_empty() or ! redo_add_connections.is_empty():
 				redo_actions.push_back({ type="add_to_graph", parent=parent_path, generators=redo_add_nodes, connections=redo_add_connections })
-		"remote","ios","portal":
-			var generator_path = parent_path.left(parent_path.rfind("/"))
+		_:
+			# Other nodes are updated in place, so they keep their connections
+			var generator_path = parent_path.left(maxi(parent_path.rfind("/"), 0))
 			undo_actions.push_back({ type="update_generator", parent=generator_path, name=next.name, data=prev })
 			redo_actions.push_back({ type="update_generator", parent=generator_path, name=prev.name, data=next })
-		_:
-			print("ERROR: Unsupported node type %s in undoredo_step_actions" % prev.type)
-			return {}
 	if false and top:
 		print("Undo actions:")
 		print(undo_actions)
