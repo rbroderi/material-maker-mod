@@ -28,7 +28,16 @@ roughness, emissive, normal, ambient occlusion, depth maps and subsurface scatte
 The coat, coat roughness, anisotropy, sheen and transmission inputs are multiplied by
 the corresponding parameters, and when they are not connected the parameter value is used
 alone. In the 3D preview, they are shown using Godot's clear coat, anisotropy, rim and
-back light. The export targets don't use them yet.
+back light. Like in the preview, a channel is only used when its parameter is above 0:
+
+* the Godot 4 exports set the clear coat, anisotropy, rim and back light properties
+  of the material, with a texture for each connected input,
+* the Unity HDRP export sets the coat mask and anisotropy (with their textures when the
+  inputs are connected),
+* the Unreal Engine 5 export uses the anisotropy and one shading model: clear coat if the
+  coat is used, otherwise cloth if the sheen is used, otherwise subsurface for the transmission.
+
+The other export targets don't use these channels.
 
 Outputs
 +++++++
