@@ -202,11 +202,100 @@ static var busy : bool = false
 ## single surface)
 static var merged_meshes : Dictionary = {}
 
-static func get_map(mesh : Mesh, map : String, size : int = 2048, force_generate : bool = false) -> MMTexture:
+## A mesh with a single surface: the mesh itself, or its surfaces merged
+static func get_single_surface_mesh(mesh : Mesh) -> Mesh:
 	if mesh != null and mesh.get_surface_count() > 1:
 		if not merged_meshes.has(mesh):
 			merged_meshes[mesh] = MMMeshLoader.merge_surfaces(mesh)
-		mesh = merged_meshes[mesh]
+		return merged_meshes[mesh]
+	return mesh
+
+## Copies of meshes whose UVs are moved so that a UDIM tile is the [0, 1]
+## square, by mesh instance id and tile
+static var tile_meshes : Dictionary = {}
+const MAX_TILE_MESHES : int = 8
+
+## The mesh used to bake a UDIM tile (1001 is the [0, 1] square, 1002 is on
+## its right and 1011 above it): a copy of the mesh with UVs moved by whole
+## tiles, so that the faces of the tile are in [0, 1] and the faces of other
+## tiles are outside of the map. The geometry is unchanged, so rays still hit
+## the whole mesh (ambient occlusion, thickness) and positions keep the
+## bounding box of the whole mesh. Godot's V axis points down (V = 1-v of
+## mesh files), so tile rows go towards negative V.
+static func get_tile_mesh(mesh : Mesh, tile : int) -> Mesh:
+	if mesh == null or tile == 1001:
+		return mesh
+	var key : String = "%d:%d" % [ mesh.get_instance_id(), tile ]
+	if not tile_meshes.has(key):
+		# Only the most recent tile meshes are kept, and the maps generated
+		# for the others are freed
+		while tile_meshes.size() >= MAX_TILE_MESHES:
+			var old_key : String = tile_meshes.keys()[0]
+			forget_mesh(tile_meshes[old_key])
+			tile_meshes.erase(old_key)
+		tile_meshes[key] = create_tile_mesh(mesh, tile)
+	return tile_meshes[key]
+
+## A copy of a mesh with UVs moved for a UDIM tile (see get_tile_mesh()),
+## with the same surfaces (and primitive types), surface names and metadata
+static func create_tile_mesh(mesh : Mesh, tile : int) -> Mesh:
+	var offset : Vector2 = Vector2((tile-1001)%10, -((tile-1001)/10))
+	var rv : ArrayMesh = ArrayMesh.new()
+	for s in mesh.get_surface_count():
+		var arrays : Array = mesh.surface_get_arrays(s)
+		if arrays[Mesh.ARRAY_TEX_UV] != null:
+			var uvs : PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+			for i in uvs.size():
+				uvs[i] -= offset
+			arrays[Mesh.ARRAY_TEX_UV] = uvs
+		rv.add_surface_from_arrays(mesh.surface_get_primitive_type(s), arrays)
+		if mesh is ArrayMesh:
+			rv.surface_set_name(s, mesh.surface_get_name(s))
+	for m in mesh.get_meta_list():
+		rv.set_meta(m, mesh.get_meta(m))
+	return rv
+
+## The UDIM tile of a UV (with Godot's V axis, see get_tile_mesh())
+static func udim_tile(uv : Vector2) -> int:
+	return 1001+int(floor(uv.x))+10*int(floor(1.0-uv.y))
+
+## UDIM tiles of meshes, by mesh instance id (finding them reads all faces)
+static var mesh_udim_tiles : Dictionary = {}
+
+## The UDIM tiles used by the UVs of a mesh (sorted). The tile of a face is
+## the tile of its center, since vertices can be on tile borders.
+static func udim_tiles(mesh : Mesh) -> PackedInt32Array:
+	if mesh == null:
+		return PackedInt32Array()
+	var id : int = mesh.get_instance_id()
+	if mesh_udim_tiles.has(id):
+		return mesh_udim_tiles[id]
+	var tiles : Dictionary = {}
+	for s in mesh.get_surface_count():
+		if mesh.surface_get_primitive_type(s) != Mesh.PRIMITIVE_TRIANGLES:
+			continue
+		var arrays : Array = mesh.surface_get_arrays(s)
+		if arrays[Mesh.ARRAY_TEX_UV] == null:
+			continue
+		var uvs : PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var indices : PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(uvs.size()))
+		for f in indices.size()/3:
+			var center : Vector2 = (uvs[indices[3*f]]+uvs[indices[3*f+1]]+uvs[indices[3*f+2]])/3.0
+			tiles[udim_tile(center)] = true
+	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
+	rv.sort()
+	mesh_udim_tiles[id] = rv
+	return rv
+
+## Forgets the maps generated for a mesh that is not used anymore
+static func forget_mesh(mesh : Mesh) -> void:
+	if merged_meshes.has(mesh):
+		mesh_maps.erase(merged_meshes[mesh])
+		merged_meshes.erase(mesh)
+	mesh_maps.erase(mesh)
+
+static func get_map(mesh : Mesh, map : String, size : int = 2048, force_generate : bool = false) -> MMTexture:
+	mesh = get_single_surface_mesh(mesh)
 	if mesh == null or size <= 0 or mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV] == null:
 		if error_texture == null:
 			error_texture = MMTexture.new()

@@ -204,50 +204,6 @@ static func match_parts(low_mesh : Mesh, high_mesh : Mesh) -> Dictionary:
 			unmatched.append(name)
 	return { surface_parts=surface_parts, unmatched=unmatched }
 
-## UDIM tiles used by the UV layout of a mesh (1001 is the [0, 1] square).
-## Godot's V axis points down (V = 1-v of the mesh files), so tile rows are
-## counted from the top.
-static func udim_tiles(mesh : Mesh) -> PackedInt32Array:
-	var tiles : Dictionary = {}
-	for s in mesh.get_surface_count():
-		var uvs = mesh.surface_get_arrays(s)[Mesh.ARRAY_TEX_UV]
-		var indices = mesh.surface_get_arrays(s)[Mesh.ARRAY_INDEX]
-		if uvs == null:
-			continue
-		if indices == null:
-			indices = range(uvs.size())
-		# The tile of a triangle is the tile of its center (vertices can be on
-		# tile borders)
-		for f in indices.size()/3:
-			var center : Vector2 = (uvs[indices[3*f]]+uvs[indices[3*f+1]]+uvs[indices[3*f+2]])/3.0
-			tiles[udim_tile(center)] = true
-	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
-	rv.sort()
-	return rv
-
-static func udim_tile(uv : Vector2) -> int:
-	return 1001+int(floor(uv.x))+10*int(floor(1.0-uv.y))
-
-## A copy of a mesh whose UVs are shifted so a UDIM tile is the [0, 1] square
-## (triangles of other tiles are outside of it)
-static func udim_tile_mesh(mesh : Mesh, tile : int) -> Mesh:
-	var offset : Vector2 = Vector2((tile-1001)%10, -((tile-1001)/10))
-	if offset == Vector2():
-		return mesh
-	var rv : ArrayMesh = ArrayMesh.new()
-	for s in mesh.get_surface_count():
-		var arrays : Array = mesh.surface_get_arrays(s)
-		if arrays[Mesh.ARRAY_TEX_UV] != null:
-			var uvs : PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
-			for i in uvs.size():
-				uvs[i] -= offset
-			arrays[Mesh.ARRAY_TEX_UV] = uvs
-		rv.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
-		rv.surface_set_name(s, mesh.surface_get_name(s) if mesh is ArrayMesh else "")
-	if mesh.has_meta("file_path"):
-		rv.set_meta("file_path", mesh.get_meta("file_path"))
-	return rv
-
 ## Jitter offsets (in pixels) of anti-aliasing passes: a rotated grid for
 ## up to 4 samples, then a Halton sequence
 static func get_jitter(sample : int) -> Vector2:
@@ -309,6 +265,9 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 		var seams : MMTexture = await MMMapGenerator.get_map(low, "seams", size)
 		while busy:
 			await mm_globals.get_tree().process_frame
+		# The same map may have been baked while waiting
+		if baked_maps.has(key):
+			return baked_maps[key]
 		busy = true
 		var texture : MMTexture = MMTexture.new()
 		var start_time : int = Time.get_ticks_msec()

@@ -10,10 +10,9 @@ var timer : Timer
 var filetime : int = 0
 var current_mesh : Mesh = null
 var current_map : MMTexture = null
-## The UDIM tile generated in UDIM exports (0 for the [0, 1] square), and
-## the meshes whose UVs are shifted for tiles
+## The UDIM tile generated in UDIM exports (0 for the node's own tile, see
+## get_udim_tile())
 var udim_tile : int = 0
-var udim_meshes : Dictionary = {}
 
 
 const MESH_MAPS : Array[Dictionary] = [
@@ -116,32 +115,20 @@ func get_map_definition() -> Dictionary:
 	return MESH_MAPS[get_parameter("map")]
 
 func generate_map() -> MMTexture:
-	return await MMMapGenerator.get_map(get_udim_mesh(current_mesh, udim_tile), get_map_definition().map)
+	return await MMMapGenerator.get_map(MMMapGenerator.get_tile_mesh(current_mesh, get_udim_tile()), get_map_definition().map)
 
-## A mesh whose UVs are shifted so a UDIM tile is the [0, 1] square (the
-## mesh itself for tile 0)
-func get_udim_mesh(mesh : Mesh, tile : int) -> Mesh:
-	if mesh == null or tile == 0:
-		return mesh
-	var key : String = "%d:%d" % [ mesh.get_instance_id(), tile ]
-	if not udim_meshes.has(key):
-		udim_meshes[key] = MMHighPolyBaker.udim_tile_mesh(mesh, tile)
-	return udim_meshes[key]
-
-## UDIM tiles of meshes, by instance id (finding them reads all triangles)
-static var mesh_udim_tiles : Dictionary = {}
+## The baked UDIM tile (see MMMapGenerator.get_tile_mesh()): the tile of UDIM
+## exports, else 1001 (High Poly Bake nodes have a parameter for it)
+func get_udim_tile() -> int:
+	return udim_tile if udim_tile != 0 else 1001
 
 func get_udim_tiles() -> PackedInt32Array:
-	if current_mesh == null:
-		return PackedInt32Array()
-	var id : int = current_mesh.get_instance_id()
-	if not mesh_udim_tiles.has(id):
-		mesh_udim_tiles[id] = MMHighPolyBaker.udim_tiles(current_mesh)
-	return mesh_udim_tiles[id]
+	return MMMapGenerator.udim_tiles(current_mesh)
 
 func set_udim_tile(tile : int) -> void:
-	if tile != udim_tile:
-		udim_tile = tile
+	var old_udim_tile : int = get_udim_tile()
+	udim_tile = tile
+	if get_udim_tile() != old_udim_tile:
 		await update_map()
 
 func update_map() -> void:
@@ -171,6 +158,9 @@ func get_texture_parameter_name() -> String:
 	var mesh_id : String = "nomesh"
 	if current_mesh:
 		mesh_id = "mesh_%d" % abs(current_mesh.get_instance_id())
+		# Each tile has its own texture
+		if get_udim_tile() != 1001:
+			mesh_id += "_%d" % get_udim_tile()
 	return mesh_id+"_"+get_map_definition().map
 
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:

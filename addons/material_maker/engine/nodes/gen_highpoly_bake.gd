@@ -66,8 +66,6 @@ const MAX_LOADED_MESHES : int = 4
 ## Loaded images (skew maps and high poly textures), by path and modification time
 static var loaded_images : Dictionary = {}
 const MAX_LOADED_IMAGES : int = 4
-## Meshes of the baked UDIM tile, by slot (see cached())
-var tile_meshes : Dictionary = {}
 var update_pending : bool = false
 
 
@@ -110,12 +108,6 @@ func get_parameter_defs() -> Array:
 func get_map_definition() -> Dictionary:
 	return BAKE_MAPS[get_parameter("map")]
 
-## A value cached in tile_meshes[slot], created again when its key changes
-func cached(slot : String, key : String, loader : Callable):
-	if not tile_meshes.has(slot) or tile_meshes[slot].key != key:
-		tile_meshes[slot] = { key=key, value=loader.call() }
-	return tile_meshes[slot].value
-
 ## A cache key that changes when the file changes
 static func file_key(path : String) -> String:
 	return "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
@@ -151,12 +143,9 @@ func get_image_parameter(parameter_name : String) -> Texture2D:
 		loaded_images[key] = ImageTexture.create_from_image(image) if image != null else null
 	return loaded_images[key]
 
-## The current mesh, with the UVs of the baked UDIM tile in [0, 1] (cached, so
-## bakes of the same tile are not done again). UDIM exports choose the tile.
-func get_tile_mesh() -> Mesh:
-	var low : Mesh = get_low_mesh()
-	var tile : int = udim_tile if udim_tile != 0 else int(get_parameter("udim"))
-	return cached("tile_mesh", "tile:%d:%d" % [ low.get_instance_id(), tile ], func(): return MMHighPolyBaker.udim_tile_mesh(low, tile))
+## The baked UDIM tile: the tile of UDIM exports, else the udim parameter
+func get_udim_tile() -> int:
+	return udim_tile if udim_tile != 0 else int(get_parameter("udim"))
 
 ## The current mesh, with its parts as separate surfaces when matching by name
 func get_low_mesh() -> Mesh:
@@ -177,7 +166,7 @@ func generate_map() -> MMTexture:
 		var texture : Texture2D = get_image_parameter(p)
 		if texture != null:
 			options[p] = texture
-	return await MMHighPolyBaker.bake(get_tile_mesh(), high, get_map_definition().map, 1 << int(get_parameter("size")),
+	return await MMHighPolyBaker.bake(MMMapGenerator.get_tile_mesh(get_low_mesh(), get_udim_tile()), high, get_map_definition().map, 1 << int(get_parameter("size")),
 		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"), options)
 
 func set_parameter(n : String, v) -> void:

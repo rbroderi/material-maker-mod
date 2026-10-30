@@ -411,10 +411,11 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 				continue
 		baked_maps.append(m)
 	# With --udim, each UDIM tile of the mesh is baked to <prefix>_<map>.<tile>.png
-	var tiles : PackedInt32Array = MMHighPolyBaker.udim_tiles(mesh) if options.get("udim", false) else PackedInt32Array([ 0 ])
+	var tiles : PackedInt32Array = MMMapGenerator.udim_tiles(mesh) if options.get("udim", false) else PackedInt32Array([ 0 ])
 	for tile in tiles:
-		var tile_mesh : Mesh = MMHighPolyBaker.udim_tile_mesh(mesh, tile) if tile != 0 else mesh
-		var tile_cage : Mesh = MMHighPolyBaker.udim_tile_mesh(cage_mesh, tile) if tile != 0 and cage_mesh != null else cage_mesh
+		var tile_mesh : Mesh = MMMapGenerator.get_tile_mesh(mesh, tile) if tile != 0 else mesh
+		# Only the vertices of the cage are used (its UVs don't matter)
+		var tile_cage : Mesh = cage_mesh
 		for m in baked_maps:
 			var texture : MMTexture
 			if m in MMHighPolyBaker.MAPS and high_mesh != null:
