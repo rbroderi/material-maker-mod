@@ -22,14 +22,42 @@ func _on_Add_pressed():
 	var menu = preload("res://material_maker/panels/layers/add_layer_menu.tscn").instantiate()
 	add_child(menu)
 	var button_rect = %Buttons/Add.get_global_rect()
+	# Layers can also be created from the maps of a material graph
+	menu.add_separator()
+	menu.add_item("Layer from material...", ADD_LAYER_FROM_MATERIAL)
 	menu.connect("id_pressed", Callable(self, "_on_add_layer_menu"))
 	menu.connect("id_pressed", Callable(menu, "queue_free"))
 	menu.connect("popup_hide", Callable(menu, "queue_free"))
 	menu.popup(Rect2(Vector2(button_rect.position.x, button_rect.end.y) *
 		mm_globals.ui_scale_factor(), Vector2(0, 0)))
 
+const ADD_LAYER_FROM_MATERIAL : int = 100
+
 func _on_add_layer_menu(id):
-	layers.add_layer(id)
+	if id == ADD_LAYER_FROM_MATERIAL:
+		var dialog = preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instantiate()
+		dialog.min_size = Vector2(500, 500)
+		dialog.access = FileDialog.ACCESS_FILESYSTEM
+		dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILE
+		dialog.add_filter("*.ptex;Procedural Textures File")
+		dialog.current_dir = mm_globals.config.get_value("path", "project", mm_globals.get_home_directory())
+		var files = await dialog.select_files()
+		if files.size() != 1:
+			return
+		var error : String = await layers.add_layer_from_material(files[0])
+		if error != "":
+			var error_dialog : AcceptDialog = AcceptDialog.new()
+			add_child(error_dialog)
+			var content_scale_factor : float = mm_globals.ui_scale_factor()
+			error_dialog.content_scale_factor = content_scale_factor
+			error_dialog.min_size = error_dialog.get_contents_minimum_size() * content_scale_factor
+			error_dialog.title = "Layer from material failed!"
+			error_dialog.dialog_text = error
+			error_dialog.connect("popup_hide", Callable(error_dialog, "queue_free"))
+			error_dialog.popup_centered()
+			return
+	else:
+		layers.add_layer(id)
 	layers.get_parent().initialize_layers_history()
 
 func _on_Duplicate_pressed():

@@ -29,6 +29,7 @@ const LayerPaint = preload("res://material_maker/panels/paint/layer_types/layer_
 const LayerProcedural = preload("res://material_maker/panels/paint/layer_types/layer_procedural.gd")
 const LayerMask = preload("res://material_maker/panels/paint/layer_types/layer_mask.gd")
 const LAYER_TYPES : Array = [ LayerPaint, LayerProcedural, LayerMask ]
+const MMDependencies = preload("res://addons/material_maker/engine/dependencies.gd")
 
 const CHANNELS : Array = [ "albedo", "metallic", "roughness", "emission", "normal", "depth", "occlusion" ]
 
@@ -175,6 +176,112 @@ func add_layer(layer_type : int = 0) -> void:
 		layer.set(c, texture)
 	layers_array.push_front(layer)
 	select_layer(layer)
+
+const PACK_SHADER : String = """#version 450
+
+// Packs the outputs of a Static PBR Material into the channels of a paint
+// layer (see MMPaintLayer): albedo, metallic/roughness, emission, normal and
+// depth/occlusion, fully opaque
+
+layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+@DECLARATIONS
+
+layout(set = 3, binding = 0, std140) restrict buffer MM {
+	int mm_chunk_y;
+};
+
+void main() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy)+ivec2(0, mm_chunk_y);
+	vec2 uv = (vec2(pixel)+vec2(0.5))/vec2(imageSize(albedo_out));
+	vec4 orm = textureLod(orm_in, uv, 0.0);
+	imageStore(albedo_out, pixel, vec4(textureLod(albedo_in, uv, 0.0).rgb, 1.0));
+	imageStore(mr_out, pixel, vec4(orm.b, orm.g, 1.0, 1.0));
+	imageStore(emission_out, pixel, vec4(textureLod(emission_in, uv, 0.0).rgb, 1.0));
+	// The Material's normal output is converted for engines, paint layers
+	// use Material Maker's convention
+	vec3 normal = textureLod(normal_in, uv, 0.0).rgb;
+	imageStore(normal_out, pixel, vec4(1.0-normal.x, normal.y, 1.0-normal.z, 1.0));
+	imageStore(do_out, pixel, vec4(textureLod(depth_in, uv, 0.0).r, orm.r, 1.0, 1.0));
+}
+"""
+
+## Adds a paint layer with the maps of a material graph (.ptex), rendered at
+## the project's texture size: graph outputs become paintable pixels (the
+## layer can then be painted over, erased or masked). Returns an error
+## message, or an empty string if the layer was created
+func add_layer_from_material(path : String) -> String:
+	var generator : MMGenBase = await mm_loader.load_gen(path)
+	if generator == null:
+		return "Cannot load %s" % path.get_file()
+	# Mesh Map nodes use the painted mesh
+	var painted_mesh = get_parent().get("painted_mesh")
+	if generator is MMGenGraph and painted_mesh != null:
+		generator.current_mesh = painted_mesh.mesh
+	add_child(generator)
+	var error : String = ""
+	var material : MMGenBase = null
+	for c in generator.get_children():
+		if c.has_method("get_export_profiles") and c.get_output_defs(true).size() >= 5:
+			material = c
+			break
+	if material == null:
+		error = "%s has no Static PBR Material node" % path.get_file()
+	else:
+		await update_mesh_maps(generator)
+		await wait_for_renders(generator, material)
+		var size : Vector2i = Vector2i(int(texture_size), int(texture_size))
+		var compute : MMComputeShader = MMComputeShader.new()
+		compute.clear()
+		for o in [ [ "albedo_in", 0 ], [ "orm_in", 1 ], [ "emission_in", 2 ], [ "normal_in", 3 ], [ "depth_in", 4 ] ]:
+			compute.add_parameter_or_texture(o[0], "sampler2D", await material.render_output_to_texture(o[1], size))
+		var outputs : Array[Dictionary] = []
+		var textures : Array[MMTexture] = []
+		for c in [ "albedo", "mr", "emission", "normal", "do" ]:
+			outputs.append({ name=c+"_out", type=MMPipeline.TEXTURE_TYPE_RGBA16F })
+			textures.append(MMTexture.new())
+		if await compute.set_shader_ext(PACK_SHADER, outputs) and await compute.render_ext(textures, size):
+			var layer : MMPaintLayer = LayerPaint.new()
+			layer.name = path.get_file().get_basename()
+			layer.index = get_unused_layer_index()
+			layer.hidden = false
+			var channels : Array = layer.get_channels()
+			for i in channels.size():
+				var image : Image = (await textures[i].get_texture()).get_image()
+				image.convert(Image.FORMAT_RGBAH)
+				layer.set(channels[i], ImageTexture.create_from_image(image))
+			layers.push_front(layer)
+			select_layer(layer)
+			_on_layers_changed()
+		else:
+			error = "Cannot render the maps of %s" % path.get_file()
+	remove_child(generator)
+	generator.queue_free()
+	return error
+
+## Generates the maps of the Mesh Map nodes of a graph
+func update_mesh_maps(graph : MMGenBase) -> void:
+	for c in graph.get_children():
+		if c is MMGenMeshMap:
+			await c.update_map()
+		elif c is MMGenGraph:
+			await update_mesh_maps(c)
+
+## Waits until the buffers of a graph (e.g. Buffer nodes) have been rendered
+## for a few frames. Other graphs' buffers, and the preview textures of the
+## material node (excluded), are ignored
+func wait_for_renders(graph : MMGenBase, excluded : MMGenBase, max_frames : int = 6000) -> void:
+	var idle_frames : int = 0
+	for i in max_frames:
+		await get_tree().process_frame
+		var pending : bool = false
+		for b in mm_deps.buffers.values():
+			if b.status != MMDependencies.Buffer.Updated and b.status != MMDependencies.Buffer.Error and b.object is Node and b.object != excluded and graph.is_ancestor_of(b.object):
+				pending = true
+				break
+		idle_frames = 0 if pending else idle_frames+1
+		if idle_frames >= 10:
+			return
 
 func duplicate_layer(source_layer : MMLayer) -> void:
 	var layers_array : Array = find_parent_array(source_layer)
