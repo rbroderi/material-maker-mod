@@ -87,7 +87,9 @@ with floats implicitly (`to_float`, `to_int`).
 ### Operations added by plugins
 
 Plugins add operations with `MMPlugins.API.add_function_graph_op(name, operands,
-compile_callable, globals)` (stored by `MMFunctionGraph.add_operation()`):
+compile_callable, globals)`, stored by `MMFunctionGraph.add_operation()` in the same
+`OPERATIONS` table as built-in operations (with a `plugin` key and a Callable instead of a
+method name), so `get_operation()` finds them and editors list them:
 
 - `operands` are the keys of the node that reference other nodes (dependencies),
 - `compile_callable(compiler, node_id, node, op, operands)` sets

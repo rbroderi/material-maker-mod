@@ -83,9 +83,12 @@ const RAND_GLOBAL : String = """float mm_fg_rand(vec2 p, float seed) {
 # Operations other than the binary, unary and comparison operators above:
 # - operands: the keys of the node that reference other nodes (used to find
 #   dependencies; vector constructors and calls also have an args array),
-# - compile: the method of Compiler that types and compiles the node,
-# - globals (optional): global GLSL definitions the operation requires.
-const OPERATIONS : Dictionary = {
+# - compile: the method of Compiler that types and compiles the node, or a
+#   Callable for operations added by plugins (see add_operation),
+# - globals (optional): global GLSL definitions the operation requires,
+# - plugin: the plugin that added the operation (only for those).
+# It is not a constant, so plugins can add operations (and editors list them).
+static var OPERATIONS : Dictionary = {
 	"float": { operands=[], compile="compile_float" },
 	"int": { operands=[], compile="compile_int" },
 	"vec2": { operands=[], compile="compile_vector" },
@@ -119,9 +122,10 @@ const OPERATIONS : Dictionary = {
 
 static var re_identifier : RegEx = RegEx.create_from_string("^[a-zA-Z][a-zA-Z0-9_]*$")
 
-## Operations added by plugins (see add_operation): op -> { operands,
-## compile, globals, plugin }
-static var plugin_operations : Dictionary = {}
+## The names of all operations (the binary, unary and comparison operators,
+## then OPERATIONS, including those added by plugins)
+static func get_operation_names() -> Array:
+	return BINARY_OPS.keys()+UNARY_OPS.keys()+COMPARISON_OPS.keys()+OPERATIONS.keys()
 
 ## Adds an operation (for plugins, see MMPlugins.API.add_function_graph_op):
 ## - operands: the keys of the node that reference other nodes,
@@ -131,35 +135,30 @@ static var plugin_operations : Dictionary = {}
 ##   compiler.error() and returns "" (it can also add statements before the
 ##   node's to compiler.code, and globals with compiler.add_global()),
 ## - globals: global GLSL definitions the operation requires (added once).
-## Returns false if an operation with that name already exists.
+## Returns false if the name is invalid or already used by an operation.
 static func add_operation(op : String, operands : Array, compile_callable : Callable, globals : Array = [], plugin : String = "") -> bool:
-	if not is_identifier(op) or is_builtin_operation(op) or plugin_operations.has(op):
+	if not is_identifier(op) or op in get_operation_names():
 		return false
-	plugin_operations[op] = { operands=operands.duplicate(), compile=compile_callable, globals=globals.duplicate(), plugin=plugin }
+	OPERATIONS[op] = { operands=operands.duplicate(), compile=compile_callable, globals=globals.duplicate(), plugin=plugin }
 	return true
 
-## Removes the operations added by a plugin (all of them if plugin is "")
+## Removes the operations added by a plugin (by all plugins if plugin is "")
 static func remove_plugin_operations(plugin : String = "") -> void:
-	for op in plugin_operations.keys():
-		if plugin == "" or plugin_operations[op].plugin == plugin:
-			plugin_operations.erase(op)
+	for op in OPERATIONS.keys():
+		if OPERATIONS[op].has("plugin") and (plugin == "" or OPERATIONS[op].plugin == plugin):
+			OPERATIONS.erase(op)
 
-static func is_builtin_operation(op : String) -> bool:
-	return BINARY_OPS.has(op) or UNARY_OPS.has(op) or COMPARISON_OPS.has(op) or OPERATIONS.has(op)
-
-## The names of all operations, built-in ones first
-static func get_operation_names() -> Array:
-	return BINARY_OPS.keys()+UNARY_OPS.keys()+COMPARISON_OPS.keys()+OPERATIONS.keys()+plugin_operations.keys()
+## Returns true if op was added by a plugin
+static func is_plugin_operation(op : String) -> bool:
+	return get_operation(op).has("plugin")
 
 static func is_identifier(s) -> bool:
 	return (s is String or s is StringName) and re_identifier.search(str(s)) != null
 
-## Returns the description of an operation in OPERATIONS (or added by a
-## plugin), or an empty dictionary
+## Returns the description of an operation in OPERATIONS, or an empty
+## dictionary
 static func get_operation(op : String) -> Dictionary:
-	if OPERATIONS.has(op):
-		return OPERATIONS[op]
-	return plugin_operations.get(op, {})
+	return OPERATIONS.get(op, {})
 
 ## Replaces whole-word occurrences of word in s (without RegEx.sub, that
 ## would interpret "$" in the replacement)
@@ -285,9 +284,16 @@ class Compiler:
 		var node : Dictionary = nodes[node_id]
 		var op : String = node.get("op", "")
 		var operands : Array = get_operand_ids(node)
-		if OPERATIONS.has(op):
-			var operation : Dictionary = OPERATIONS[op]
-			var expression : String = call(operation.compile, node_id, node, op, operands)
+		var operation : Dictionary = MMFunctionGraph.get_operation(op)
+		if not operation.is_empty():
+			var expression
+			if operation.compile is Callable:
+				expression = operation.compile.call(self, node_id, node, op, operands)
+			else:
+				expression = call(operation.compile, node_id, node, op, operands)
+			if not expression is String:
+				error(node_id, "operation %s did not return an expression" % op)
+				return ""
 			if expression != "":
 				for g in operation.get("globals", []):
 					add_global(g)
@@ -314,16 +320,6 @@ class Compiler:
 				return ""
 			types[node_id] = "bool"
 			return "(%s %s %s)" % [ value_of(node.a), COMPARISON_OPS[op], value_of(node.b) ]
-		if MMFunctionGraph.plugin_operations.has(op):
-			var operation : Dictionary = MMFunctionGraph.plugin_operations[op]
-			var expression = operation.compile.call(self, node_id, node, op, operands)
-			if not expression is String:
-				error(node_id, "operation %s did not return an expression" % op)
-				return ""
-			if expression != "":
-				for g in operation.globals:
-					add_global(g)
-			return expression
 		error(node_id, "unknown operation %s (it may need a plugin that is not installed or enabled)" % op)
 		return ""
 
@@ -675,7 +671,7 @@ static func compile_expression(graph : Dictionary, parameter_expressions : Dicti
 		return { ok=false, errors=PackedStringArray([ "functions are not supported in parameter functions" ]) }
 	if graph.get("nodes") is Dictionary:
 		for n in graph.nodes.values():
-			if n is Dictionary and (n.get("op", "") in [ "pos", "size", "sample", "rand", "loop", "call" ] or plugin_operations.has(n.get("op", ""))):
+			if n is Dictionary and (n.get("op", "") in [ "pos", "size", "sample", "rand", "loop", "call" ] or is_plugin_operation(str(n.get("op", "")))):
 				return { ok=false, errors=PackedStringArray([ "%s is not supported in parameter functions" % n.op ]) }
 	var result : Dictionary = compile(graph, [], parameter_expressions, { pos="uv", size="vec2(1.0)", seed="0.0" })
 	if not result.ok:

@@ -231,9 +231,7 @@ func get_slot_keys(node : Dictionary) -> Array:
 		return [ "a", "b" ]
 	if MMFunctionGraph.UNARY_OPS.has(op):
 		return [ "a" ]
-	if MMFunctionGraph.plugin_operations.has(op):
-		return MMFunctionGraph.plugin_operations[op].operands
-	return MMFunctionGraph.OPERANDS.get(op, [])
+	return MMFunctionGraph.get_operation(op).get("operands", [])
 
 ## Returns the slots of a vector constructor, each one either
 ## { node=id } or { value=float }
@@ -391,7 +389,7 @@ func rebuild_add_menu() -> void:
 		var submenu : PopupMenu = PopupMenu.new()
 		submenu.name = category
 		for op in categories[category]:
-			if graph_mode == "expression" and (op in NON_EXPRESSION_OPS or MMFunctionGraph.plugin_operations.has(op)):
+			if graph_mode == "expression" and (op in NON_EXPRESSION_OPS or MMFunctionGraph.is_plugin_operation(op)):
 				continue
 			if graph_mode == "value" and op in PIXEL_ONLY_OPS:
 				continue

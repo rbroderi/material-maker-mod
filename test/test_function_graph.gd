@@ -303,41 +303,72 @@ func test_compile_expression_rejects_globals() -> void:
 	var graph : Dictionary = { nodes={ a={ op="int", value=7 }, b={ op="int", value=3 }, m={ op="mod", a="a", b="b" }, out={ op="to_float", a="m" } }, output="out" }
 	assert_false(MMFunctionGraph.compile_expression(graph, {}).ok)
 
-# A plugin operation: scale(a) = a*2.0, with a helper global
-const DUMMY_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }
+# An operation added by a plugin: twice(a), with a helper global
+const TWICE_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }
 "
 
-static func compile_dummy(compiler : MMFunctionGraph.Compiler, node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
+static func compile_twice(compiler : MMFunctionGraph.Compiler, node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
 	if compiler.types[node.a] != "float":
-		compiler.error(node_id, "dummy requires a float")
+		compiler.error(node_id, "twice requires a float")
 		return ""
 	compiler.types[node_id] = "float"
 	return "mm_test_twice(%s)" % compiler.value_of(node.a)
 
-func test_plugin_operation() -> void:
-	assert_true(MMFunctionGraph.add_operation("test_dummy", [ "a" ], compile_dummy, [ DUMMY_GLOBAL ], "test"))
-	# Built-in and existing operations cannot be replaced
-	assert_false(MMFunctionGraph.add_operation("add", [ "a" ], compile_dummy, [], "test"))
-	assert_false(MMFunctionGraph.add_operation("test_dummy", [ "a" ], compile_dummy, [], "test"))
-	assert_true("test_dummy" in MMFunctionGraph.get_operation_names())
+func test_plugin_operations() -> void:
+	var api : MMPlugins.API = MMPlugins.API.new()
+	api.plugin_id = "test_plugin"
+	api.add_function_graph_op("test_twice", [ "a" ], compile_twice, [ TWICE_GLOBAL ])
+	# Existing operations cannot be replaced
+	assert_false(MMFunctionGraph.add_operation("add", [ "a" ], compile_twice))
+	assert_false(MMFunctionGraph.add_operation("rand", [ "a" ], compile_twice))
+	assert_false(MMFunctionGraph.add_operation("test_twice", [ "a" ], compile_twice))
+	api.add_function_graph_op("add", [ "a" ], compile_twice)
+	assert_push_error("cannot add function graph operation add")
+	assert_true("test_twice" in MMFunctionGraph.get_operation_names())
+	assert_eq(MMFunctionGraph.get_operation("test_twice").operands, [ "a" ])
+	assert_true(MMFunctionGraph.is_plugin_operation("test_twice"))
+	assert_false(MMFunctionGraph.is_plugin_operation("rand"))
+	# Used in the main graph (twice, the second one's operand declared after
+	# it) and in a sub-function
 	var graph : Dictionary = {
-		functions={ f={ params=[ { name="x", type="float" } ], nodes={ x={ op="arg", name="x" }, out={ op="test_dummy", a="x" } }, output="out" } },
-		nodes={ one={ op="float", value=1 }, a={ op="test_dummy", a="one" }, b={ op="call", function="f", args=[ "a" ] }, out={ op="test_dummy", a="b" } },
+		functions={ f={ params=[ { name="x", type="float" } ], nodes={ x={ op="arg", name="x" }, out={ op="test_twice", a="x" } }, output="out" } },
+		nodes={ one={ op="float", value=1 }, a={ op="test_twice", a="one" }, out={ op="test_twice", a="z" }, z={ op="call", function="f", args=[ "a" ] } },
 		output="out"
 	}
 	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
 	assert_true(r.ok, str(r.errors))
+	assert_eq(r.types.out, "float")
 	assert_string_contains("
-".join(r.code), "mm_test_twice(fg_0)")
+".join(r.code), "float fg_1 = mm_test_twice(fg_0); // a")
+	assert_string_contains(r.functions[0], "float fg_1 = mm_test_twice(fg_0); // out")
 	# The global is added once, although the operation is used 3 times
-	assert_eq(Array(r.globals), [ DUMMY_GLOBAL ])
-	assert_false(MMFunctionGraph.compile({ nodes={ v={ op="vec2", value=[ 1, 1 ] }, out={ op="test_dummy", a="v" } }, output="out" }, [], {}, VARIABLES).ok)
-	assert_false(MMFunctionGraph.compile_expression({ nodes={ one={ op="float", value=1 }, out={ op="test_dummy", a="one" } }, output="out" }, {}).ok)
-	MMFunctionGraph.remove_plugin_operations("test")
-	assert_false("test_dummy" in MMFunctionGraph.get_operation_names())
+	assert_eq(r.globals, PackedStringArray([ TWICE_GLOBAL ]))
+	# Pixel Processors declare it as a global
+	var model : Dictionary = MMGenPixelProcessor.build_shader_model({ inputs=[], parameters=[], nodes=graph.nodes, functions=graph.functions, output="out" })
+	assert_true(model.errors.is_empty(), str(model.errors))
+	assert_eq(model.globals, PackedStringArray([ TWICE_GLOBAL ]))
+	# Errors reported by the operation
+	r = compile({ v={ op="vec2", value=[ 1, 1 ] }, out={ op="test_twice", a="v" } }, "out")
+	assert_false(r.ok)
+	assert_eq(r.node_errors.get("out"), "twice requires a float")
+	# Not available in parameter functions
+	assert_false(MMFunctionGraph.compile_expression({ nodes={ one={ op="float", value=1 }, out={ op="test_twice", a="one" } }, output="out" }, {}).ok)
+	# Unregistered (as when the plugin is not enabled): graphs that use it
+	# show an error
+	MMFunctionGraph.remove_plugin_operations("test_plugin")
+	assert_false("test_twice" in MMFunctionGraph.get_operation_names())
+	assert_true(MMFunctionGraph.get_operation("test_twice").is_empty())
 	r = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
 	assert_false(r.ok)
-	assert_true(has_error_containing(r, "unknown operation test_dummy"), str(r.errors))
+	assert_true(has_error_containing(r, "unknown operation test_twice"), str(r.errors))
+	# Built-in operations are kept
+	MMFunctionGraph.remove_plugin_operations()
+	assert_false(MMFunctionGraph.get_operation("rand").is_empty())
+
+func test_plugin_registrations_are_cleared() -> void:
+	MMFunctionGraph.add_operation("test_twice", [ "a" ], compile_twice, [], "test_plugin")
+	MMPlugins.clear_registrations()
+	assert_true(MMFunctionGraph.get_operation("test_twice").is_empty())
 
 func test_graph_with_unknown_operation_is_kept() -> void:
 	# e.g. a graph that needs a plugin that is not enabled
