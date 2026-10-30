@@ -28,8 +28,9 @@ roughness, emissive, normal, ambient occlusion, depth maps and subsurface scatte
 The coat, coat roughness, anisotropy, sheen and transmission inputs are multiplied by
 the corresponding parameters, and when they are not connected the parameter value is used
 alone. In the 3D preview, they are shown using Godot's clear coat, anisotropy, rim and
-back light, and they are exported to MaterialX (standard surface and OpenPBR) and, for
-coat and coat roughness, to USD.
+back light. A channel is only shown when its parameter is above 0 (Godot's
+lighting changes as soon as a material sets one of these properties, even to 0). They are
+exported to MaterialX (standard surface and OpenPBR) and, for coat and coat roughness, to USD.
 
 Outputs
 +++++++
@@ -58,3 +59,8 @@ The **Material** node provides the following parameters:
 * The value of the depth property of the material. The input depth map is multiplied by this value.
 
 * The strength of the subsurface scattering effect.
+
+* The strength and roughness of the clear coat, the anisotropy of the specular highlight,
+  the strength of the sheen (a soft rim light, used for fabrics) and the transmission
+  (light coming through thin surfaces such as leaves). The corresponding inputs are
+  multiplied by these values.

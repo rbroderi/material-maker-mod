@@ -105,24 +105,30 @@ const ASSIGNMENTS : Dictionary = {
 static func is_enabled() -> bool:
 	return mm_globals.has_config(SETTING) and mm_globals.get_config(SETTING)
 
-## Modifies a Material node's (processed) preview shader. Shaders that do not
-## set the coat, anisotropy, sheen and transmission are not modified.
-static func apply(code : String) -> String:
+## Modifies a Material node's (processed) preview shader. Shaders whose
+## template (before its $if blocks are processed) does not set the coat,
+## anisotropy, sheen and transmission are not modified. The template only
+## writes the channels that are used, so the others default to 0.
+static func apply(code : String, template : String) -> String:
+	for builtin in ASSIGNMENTS.keys():
+		if not template.contains(builtin+" = "):
+			return code
+	if not code.contains("void vertex()") or not code.contains("void fragment() {"):
+		return code
 	var lines : PackedStringArray = code.split("\n")
-	var found : int = 0
 	var rv : PackedStringArray = PackedStringArray()
 	for l in lines:
 		if l.begins_with("void vertex()"):
 			rv.append(VARYINGS)
 		rv.append(l)
+		if l.begins_with("void fragment() {"):
+			for builtin in ASSIGNMENTS.keys():
+				rv.append("\t%s = %s;" % [ ASSIGNMENTS[builtin], "vec3(0.0)" if builtin == "BACKLIGHT" else "0.0" ])
+			rv.append("\tmm_openpbr_tangent = TANGENT;")
+			rv.append("\tmm_openpbr_binormal = BINORMAL;")
+			continue
 		var stripped : String = l.strip_edges()
 		for builtin in ASSIGNMENTS.keys():
 			if stripped.begins_with(builtin+" = ") and stripped.ends_with(";"):
 				rv.append("\t%s = %s" % [ ASSIGNMENTS[builtin], stripped.substr(builtin.length()+3) ])
-				found += 1
-				if builtin == "CLEARCOAT":
-					rv.append("\tmm_openpbr_tangent = TANGENT;")
-					rv.append("\tmm_openpbr_binormal = BINORMAL;")
-	if found < ASSIGNMENTS.size() or not code.contains("void vertex()"):
-		return code
 	return "\n".join(rv)+"\n"+LIGHT
