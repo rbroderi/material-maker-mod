@@ -364,12 +364,11 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		if buffer_name.ends_with("_tex") and int(buffer_name.get_slice("_v2_o", 1).to_int()) >= get_state_count():
 			await get_tree().process_frame
 			mm_deps.dependency_update(buffer_name, null, true)
-		elif buffer_name.ends_with("_tex") and not is_rendering and current_iteration > get_iterations() and is_buffer_updated(buffer_name_init) and is_buffer_updated(buffer_name_loop):
+		elif buffer_name.ends_with("_tex"):
 			# The final state was invalidated after the iterations were done
 			# (e.g. the first and last iterations were rendered in the same
 			# update), so it would otherwise never be updated
-			var k : int = int(buffer_name.get_slice("_v2_o", 1).to_int())
-			mm_deps.dependency_update(buffer_name, states[k], true)
+			publish_final_states()
 		return true
 	if is_rendering:
 		return true
@@ -383,6 +382,8 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		await get_tree().process_frame
 		mm_deps.dependency_update(buffer_name, null, true)
 		is_rendering = false
+		# Final states requested during this frame were not published
+		publish_final_states()
 		return true
 	var check_current_iteration : int = current_iteration
 	var dimensions : Vector2i = get_buffer_dimensions()
@@ -420,6 +421,17 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		if not loop_reads_states:
 			mm_deps.buffer_invalidate(buffer_name_loop)
 	return status
+
+## Publishes the final states that were requested, if the iterations are done
+func publish_final_states() -> void:
+	if is_rendering or current_iteration <= get_iterations() or not is_buffer_updated(buffer_name_init) or not is_buffer_updated(buffer_name_loop):
+		return
+	for k in get_state_count():
+		var buffer_name : String = get_output_buffer_name(k)
+		if mm_deps.buffers.has(buffer_name):
+			var buffer = mm_deps.buffers[buffer_name]
+			if buffer.status == buffer.Updating or buffer.status == buffer.UpdatingInvalidated:
+				mm_deps.dependency_update(buffer_name, states[k], true)
 
 func is_buffer_updated(buffer_name : String) -> bool:
 	if not mm_deps.buffers.has(buffer_name):
