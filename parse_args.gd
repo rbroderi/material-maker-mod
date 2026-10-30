@@ -242,8 +242,7 @@ Options (they can also be given after "--"):
                              custom mesh), for --export-material and --render
   --software-raytracing      bake --high maps with the software ray caster (by default, hardware
                              ray tracing is used when the GPU supports it)
-  --show-window              do not minimize the window (with --headless, builds without headless.patch
-                             run again with a hidden window, using xvfb-run when there is no display)
+  --show-window              do not minimize the window
   --rpc-port <port>          port of the JSON-RPC server (localhost only, default 7680)
   --gpu-budget <MB>          GPU memory budget: the least recently used textures are moved to RAM above it
   --strict                   fail when a graph has nodes of unknown types (by default they are kept
@@ -294,6 +293,8 @@ func _ready():
 			get_tree().quit(run_with_hidden_window())
 			return
 		rd.free()
+	if OS.has_environment(RUN_AGAIN_VARIABLE):
+		quit_with_parent_process()
 	if not headless and not "--show-window" in args:
 		get_window().mode = Window.MODE_MINIMIZED
 	# Plugins add nodes, export targets, RPC methods and commands
@@ -422,22 +423,26 @@ func get_help() -> String:
 		lines.append("  %-26s %s" % [ o+" <value>" if MMPlugins.cli_options[o].type != TYPE_BOOL else o, MMPlugins.cli_options[o].help ])
 	return HELP+"\n"+"\n".join(lines)
 
+## Set in the environment of the process started by run_with_hidden_window
+const RUN_AGAIN_VARIABLE : String = "MATERIAL_MAKER_RUN_WITHOUT_HEADLESS"
+
 const PIPE_CHUNK : int = 4096
 
 ## Runs Material Maker again without --headless (its window is minimized in
 ## command line modes), under xvfb-run on Linux systems without a display,
 ## relays its output and returns its exit code
 func run_with_hidden_window() -> int:
+	if OS.has_environment(RUN_AGAIN_VARIABLE):
+		# This is already the process run again, still without rendering device
+		printerr("ERROR: Material Maker needs a GPU, and cannot create a rendering device")
+		return 1
+	# Godot's own options (such as --headless and --path) are not in
+	# OS.get_cmdline_args()
 	var args : PackedStringArray = OS.get_cmdline_args()
-	var i : int = 0
-	while i < args.size():
-		if args[i] == "--headless":
-			args.remove_at(i)
-		elif args[i] == "--display-driver" and i+1 < args.size() and args[i+1] == "headless":
-			args.remove_at(i)
-			args.remove_at(i)
-		else:
-			i += 1
+	if not OS.has_feature("template"):
+		args = PackedStringArray([ "--path", ProjectSettings.globalize_path("res://") ]) + args
+	if OS.is_stdout_verbose():
+		args.insert(0, "--verbose")
 	if not OS.get_cmdline_user_args().is_empty():
 		args.append("--")
 		args.append_array(OS.get_cmdline_user_args())
@@ -449,9 +454,11 @@ func run_with_hidden_window() -> int:
 			printerr("and there is no display for a hidden window: install xvfb-run, or use a Material Maker")
 			printerr("build with headless rendering (see material_maker/misc/headless.patch).")
 			return 1
-		args = PackedStringArray([ "-a", command ]) + args
+		# Some versions of xvfb-run default to an 8 bits screen
+		args = PackedStringArray([ "-a", "-s", "-screen 0 1280x1024x24", command ]) + args
 		command = "xvfb-run"
-	print("This Godot build cannot render with --headless, running with a hidden window instead")
+	print("This Godot build cannot render with --headless, running again with a hidden window")
+	OS.set_environment(RUN_AGAIN_VARIABLE, "1")
 	var process : Dictionary = OS.execute_with_pipe(command, args)
 	if process.is_empty():
 		printerr("ERROR: cannot run ", command)
@@ -485,6 +492,22 @@ static func relay_pipe(pipe : FileAccess, error : bool) -> void:
 			printerr(pending.get_string_from_utf8())
 		else:
 			print(pending.get_string_from_utf8())
+
+var stdin_thread : Thread = null
+
+## In the process started by run_with_hidden_window, quits when its parent
+## exits (for example when it is killed by a timeout): its standard input is
+## a pipe from the parent, that is closed then
+func quit_with_parent_process() -> void:
+	if OS.get_stdin_type() != OS.STD_HANDLE_PIPE:
+		return
+	stdin_thread = Thread.new()
+	stdin_thread.start(func():
+		while OS.read_buffer_from_stdin(PIPE_CHUNK).size() > 0:
+			pass
+		(func():
+			printerr("ERROR: the --headless process exited, quitting")
+			get_tree().quit(1)).call_deferred())
 
 var rpc_server : MMRpcServer = null
 
