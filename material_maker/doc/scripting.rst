@@ -139,9 +139,10 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   **api.add_cli_mode(mode, callable, usage, options)**. The callable receives the command line
   tool (whose **process_graph_files(files, options, variation, mode)** loads each graph, applies
   **--set**, **--preset**, **--seed** and **--variations**, and calls **variation(suffix, graph,
-  file, options)**), the files and the options. **options** maps the mode's own options to
-  **{ key, type, help }** (type is TYPE_INT, TYPE_FLOAT, TYPE_STRING, or TYPE_BOOL for flags), and
-  **usage** and the options' help are shown by **--help**
+  file, options)**, and **expand_files(files)** expands wildcards), the files and the options.
+  **options** maps the mode's own options to **{ key, type, help }** (type is TYPE_INT,
+  TYPE_FLOAT, TYPE_STRING, or TYPE_BOOL for flags, and an optional **minimum**), that are checked
+  like the built-in options, and **usage** and the options' help are shown by **--help**
 * sections of the 2D preview's export menu: **api.add_export_menu_section(callable)**, that
   receives the export menu (with **get_generator()**, **get_output()** and
   **export_notification(text)**) and returns a Control, whose optional
@@ -222,7 +223,10 @@ use them to write each repeated subgraph once (for example sbsar2ptex's
 **sbs_<material>_<node>** types).
 
 The **list_plugins** JSON-RPC method lists the plugins, and the RPC methods and commands they add.
-The **material_maker/plugins/example** folder contains an example plugin (disabled by default).
+The **material_maker/plugins/example** folder contains an example plugin (disabled by default)
+that adds a node, a menu item, an import format (.stripes files), an RPC method, a command, a
+command line mode (**--example-thumbnails**), a section of the 2D preview's export menu and an
+export hook.
 Several features of Material Maker are bundled plugins, enabled by default, that can be disabled
 in *Tools > Plugins...*: **materialx_import** (MaterialX import), **runtime_export** (runtime
 packages, **--export-mmr**), **volume_export** (volumes, **--export-volume**), **export_targets**

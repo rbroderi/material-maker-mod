@@ -51,7 +51,12 @@ Modes
   (the material's size is used unless **--size** is given)
 * **--rpc** starts a JSON-RPC server to control Material Maker from scripts (see :ref:`scripting-section`)
 * **--plugin <command> [arguments]** runs a command added by a plugin (see :ref:`scripting-section`),
-  for example **--plugin axf_import material.axf output_dir** to import an AxF material
+  for example **--plugin axf_import material.axf output_dir** to import an AxF material. The
+  arguments that follow the command are passed to it (they are not options of Material Maker)
+
+Plugins can also add modes (such as **--export-volume**, or **--example-thumbnails** in the
+example plugin) and their options, that are listed by **material_maker -- --help** when the
+plugin is enabled. Wildcards also match the files of formats that plugins import.
 
 Options
 -------
