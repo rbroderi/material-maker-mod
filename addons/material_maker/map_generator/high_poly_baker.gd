@@ -277,6 +277,9 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 		var seams : MMTexture = await MMMapGenerator.get_map(low, "seams", size)
 		while busy:
 			await mm_globals.get_tree().process_frame
+		# The same map may have been baked while waiting
+		if baked_maps.has(key):
+			return baked_maps[key]
 		busy = true
 		var texture : MMTexture = MMTexture.new()
 		var start_time : int = Time.get_ticks_msec()

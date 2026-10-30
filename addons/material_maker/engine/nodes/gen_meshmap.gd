@@ -105,14 +105,20 @@ func get_description() -> String:
 func get_parameter_defs() -> Array:
 	return [
 		{ name="map", type="enum", values=MESH_MAPS, label="Map", default=0 },
+		{ name="udim", type="float", label="UDIM tile", min=1001, max=1100, step=1, default=1001,
+			longdesc="The UDIM tile of the current mesh's UV layout that is baked (1001 is the [0, 1] square, 1002 is on its right and 1011 above it)" },
 	]
 
 ## The definition of the current map (subclasses define other maps)
 func get_map_definition() -> Dictionary:
 	return MESH_MAPS[get_parameter("map")]
 
+## The baked UDIM tile (see MMMapGenerator.get_tile_mesh())
+func get_udim_tile() -> int:
+	return int(get_parameter("udim"))
+
 func generate_map() -> MMTexture:
-	return await MMMapGenerator.get_map(current_mesh, get_map_definition().map)
+	return await MMMapGenerator.get_map(MMMapGenerator.get_tile_mesh(current_mesh, get_udim_tile()), get_map_definition().map)
 
 func update_map() -> void:
 	current_map = await generate_map()
@@ -120,8 +126,9 @@ func update_map() -> void:
 	mm_deps.dependency_update(get_texture_parameter_name(), current_map, true)
 
 func set_parameter(n : String, v) -> void:
+	var old_udim_tile : int = get_udim_tile()
 	super.set_parameter(n, v)
-	if n == "map":
+	if n == "map" or (n == "udim" and get_udim_tile() != old_udim_tile):
 		update_map()
 
 func get_output_defs(_show_hidden : bool = false) -> Array:
@@ -137,6 +144,8 @@ func get_texture_parameter_name() -> String:
 	var mesh_id : String = "nomesh"
 	if current_mesh:
 		mesh_id = "mesh_%d" % abs(current_mesh.get_instance_id())
+		if get_udim_tile() != 1001:
+			mesh_id += "_%d" % get_udim_tile()
 	return mesh_id+"_"+get_map_definition().map
 
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:

@@ -65,6 +65,11 @@ The **High Poly Bake** node has the following parameters:
   for big high poly meshes (no bounding volume hierarchy is built on the CPU). It needs a GPU and
   driver that support Vulkan ray tracing pipelines: otherwise a warning is shown and rays are cast
   by a compute shader, as when this option is off. Both give the same maps, up to rounding
+* **UDIM tile** is the UDIM tile (1001 to 1100) of the current mesh's UV layout that is baked,
+  for meshes whose UVs span several tiles: 1001 is the [0, 1] square, 1002 is on its right and
+  1011 above it. Only the faces of this tile are baked, with UVs relative to the tile. Distances
+  and positions are still relative to the bounding box of the whole mesh, so the maps of all
+  tiles match
 
 Maps are extended past the borders of UV islands, so they don't show seams when they are
 mipmapped or filtered. UV islands can be mirrored.

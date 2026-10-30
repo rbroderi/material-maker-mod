@@ -104,6 +104,8 @@ func get_parameter_defs() -> Array:
 			longdesc="Texture of the high poly mesh (in its UV space), for the Transferred texture map" },
 		{ name="hardware", type="boolean", label="Hardware ray tracing", default=false,
 			longdesc="Cast rays with the GPU's ray tracing hardware (much faster for big high poly meshes), when the GPU and driver support Vulkan ray tracing pipelines" },
+		{ name="udim", type="float", label="UDIM tile", min=1001, max=1100, step=1, default=1001,
+			longdesc="The UDIM tile of the current mesh's UV layout that is baked (1001 is the [0, 1] square, 1002 is on its right and 1011 above it)" },
 	]
 
 func get_map_definition() -> Dictionary:
@@ -166,13 +168,14 @@ func generate_map() -> MMTexture:
 		var texture : Texture2D = get_image_parameter(p)
 		if texture != null:
 			options[p] = texture
-	return await MMHighPolyBaker.bake(get_low_mesh(), high, get_map_definition().map, 1 << int(get_parameter("size")),
+	return await MMHighPolyBaker.bake(MMMapGenerator.get_tile_mesh(get_low_mesh(), get_udim_tile()), high, get_map_definition().map, 1 << int(get_parameter("size")),
 		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"), options)
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
-	# Several parameters are set at once when loading, so bake only once
-	if n != "map" and not update_pending:
+	# Several parameters are set at once when loading, so bake only once (the
+	# map and the UDIM tile update the map right away, see MMGenMeshMap)
+	if n != "map" and n != "udim" and not update_pending:
 		update_pending = true
 		deferred_update.call_deferred()
 
