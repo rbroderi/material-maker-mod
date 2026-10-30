@@ -47,6 +47,15 @@ var previous_layout : Dictionary
 func _ready() -> void:
 	previous_width = size.x
 
+func _notification(what : int) -> void:
+	if what == NOTIFICATION_PREDELETE:
+		# Panels hidden by the current layout (e.g. the 3D preview in paint
+		# mode) are kept out of the tree, so they are not freed with it.
+		# Free them now: when they leak, Godot can crash at exit.
+		for panel in panels.values():
+			if is_instance_valid(panel) and panel.get_parent() == null:
+				panel.free()
+
 func toggle_side_panels() -> void:
 	if not previous_layout.is_empty():
 		$FlexibleLayout.init(previous_layout)
