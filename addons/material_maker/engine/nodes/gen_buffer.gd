@@ -154,7 +154,15 @@ func get_adjusted_uv(uv : String) -> String:
 	else:
 		return "fract(%s)" % uv
 
+## When true (while exporting fully procedural shaders), buffers generate the
+## code of their input instead of reading their texture
+static var inline_buffers : bool = false
+
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
+	if inline_buffers:
+		var source : OutputPort = get_source(0)
+		if source != null:
+			return source.generator.get_shader_code(uv, source.output_index, context)
 	var genname = "o"+str(get_instance_id())
 	var shader_code = _get_shader_code_lod(uv, output_index, context, is_greyscale, -1.0 if output_index == 0 else parameters.lod)
 	shader_code.add_uniform("%s_tex_size" % genname, "float", pow(2, get_parameter("size")))

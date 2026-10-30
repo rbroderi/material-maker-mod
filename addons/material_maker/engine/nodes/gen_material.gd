@@ -401,6 +401,17 @@ func process_option_float_uniform_to_const(s : String, is_declaration : bool = f
 	s = s.replace("uniform int", "const int")
 	return s
 
+## Uniforms become global variables (for shading languages, such as MaterialX's
+## GLSL functions, that cannot declare uniforms)
+func process_option_uniform_to_global(s : String, is_declaration : bool = false) -> String:
+	return RegEx.create_from_string("(?m)^uniform\\s+").sub(s, "", true)
+
+## Uniform arrays become constants (Godot shaders cannot have default values
+## for uniform arrays), other uniforms keep their values as defaults
+func process_option_array_uniform_to_const(s : String, is_declaration : bool = false) -> String:
+	var re : RegEx = RegEx.create_from_string("(?m)^uniform(\\s+\\w+\\s+\\w+\\s*\\[\\d*\\]\\s*=)")
+	return re.sub(s, "const$1", true)
+
 func process_option_rename_buffers(s : String, is_declaration : bool = false) -> String:
 	var index : int = 1
 	for t in export_texture_dependencies.keys():
@@ -444,6 +455,10 @@ func process_option_unreal5(s : String, is_declaration : bool = false, declarati
 		# reject its tex2D call)
 		s = RegEx.create_from_string("inline\\s+float4\\s+textureLod\\s*\\([^)]*\\)\\s*\\{[^}]*\\}").sub(s, "")
 		s = s.replace("// EngineSpecificDefinitions", "#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, lod)");
+		# Definitions are member functions of a struct, and FXC (Shader Model
+		# 5) rejects member functions whose body starts with a block (as
+		# the functions of 2 point curves do)
+		s = RegEx.create_from_string("(\\)\\s*\\{[ \\t]*\\n)(\\s*\\{)").sub(s, "$1;$2", true)
 		for d in preprocess_option_unreal5(s):
 			s = s.replace(d.strings[0], d.strings[1]+" "+d.strings[2]+d.strings[3]+";")
 	else:
@@ -633,13 +648,30 @@ func process_uids(template : String) -> String:
 		template = template.replace(result.strings[0], uid)
 	return template
 
+## Generates the code of an export template. Templates with a $inline_buffers
+## line are fully procedural: buffers generate their input's code instead of
+## being textures (iterate buffers are still textures).
+func process_export_shader(template : String, custom_script : String) -> Dictionary:
+	# process_shader deletes the preview's textures and creates those of the
+	# template (export templates have none): keep the preview's textures
+	var saved_preview_textures : Dictionary = preview_textures
+	preview_textures = {}
+	var inline_buffers : bool = template.contains("$inline_buffers\n")
+	MMGenBuffer.inline_buffers = inline_buffers
+	var result : Dictionary = process_shader(template.replace("$inline_buffers\n", ""), custom_script, true)
+	MMGenBuffer.inline_buffers = false
+	for t in preview_textures.keys():
+		mm_deps.delete_buffer(preview_textures[t].buffer)
+	preview_textures = saved_preview_textures
+	return result
+
 func create_file_from_template(template : String, file_name : String, export_context : Dictionary) -> Error:
 	template = get_template_text(template)
 	var processed_template : String = process_uids(process_buffers(process_conditionals(process_template(template, export_context))))
 	var custom_script = ""
 	if export_context.has("@mm_custom_script"):
 		custom_script = export_context["@mm_custom_script"]
-	processed_template = process_shader(processed_template, custom_script, true).shader_code
+	processed_template = process_export_shader(processed_template, custom_script).shader_code
 	if file_name == "clipboard":
 		DisplayServer.clipboard_set("\n".join(processed_template.split("\n", false)))
 	else:
@@ -685,7 +717,7 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 		if template.find("$begin_generate") == -1:
 			continue
 		generates_code = true
-		var result = process_shader(process_conditionals(process_template(template, export_context)), custom_script, true)
+		var result = process_export_shader(process_conditionals(process_template(template, export_context)), custom_script)
 		for u in result.uniforms:
 			if u.type == "sampler2D" and u.value is MMTexture:
 				dependencies[u.name] = u.value
