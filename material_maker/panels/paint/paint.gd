@@ -252,6 +252,9 @@ func set_object(o, init_material : bool = false):
 	update_camera()
 	# Set the painter target mesh
 	painter.set_mesh(o.mesh)
+	# The default brush graph is created in _ready(), before the mesh is known
+	if brush_graph != null:
+		brush_graph.set_current_mesh(o.mesh)
 	update_view()
 	if init_material:
 		var mat = o.get_surface_override_material(0)
