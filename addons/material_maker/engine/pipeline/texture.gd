@@ -17,14 +17,22 @@ var texture_version : int = 0
 ## being created.
 var mutex : Mutex = Mutex.new()
 
-# GPU memory budget (see design/gpu_memory_budget.md): textures that have a
-# copy in the rendering device are registered, so the least recently used
-# ones can be evicted (copied back to RAM and freed) when over budget.
-# They are uploaded again by get_texture_rid() when needed.
+## GPU memory budget (see design/gpu_memory_budget.md): textures that have a
+## copy in the rendering device are registered, so that the least recently
+## used rendered ones can be spilled (read back to RAM and freed in the
+## rendering device) when the textures use more than the budget.
+## get_texture_rid() uploads them again when they are used.
 static var gpu_textures : Dictionary = {}
+## Time (in ms) the texture was last rendered or used by a render
 var last_used : int = 0
-# get_instance_id() cannot be called when the texture is deleted
+## get_instance_id() cannot be called when the texture is being deleted
 var texture_id : int = 0
+## Whether the rendering device texture was rendered (by set_texture_rid())
+## rather than uploaded from an image (by set_texture()): only rendered
+## textures are spilled
+var rendered : bool = false
+## RAM copy of a spilled texture, uploaded again by get_texture_rid()
+var spilled_image : Image = null
 
 const BYTES_PER_PIXEL : Dictionary = {
 	RenderingDevice.DATA_FORMAT_R16_SFLOAT: 2,
@@ -50,9 +58,9 @@ const UNORM16_FORMATS : Dictionary = {
 	RenderingDevice.DATA_FORMAT_R16G16_UNORM: 2,
 	RenderingDevice.DATA_FORMAT_R16G16B16A16_UNORM: 4
 }
-# Textures used more recently than this are probably part of the current
-# render and are never evicted
-const EVICTION_MIN_IDLE_MS : int = 1000
+## Textures used more recently than this (in ms) are probably needed by the
+## current renders and are not spilled
+const SPILL_MIN_IDLE_MS : int = 200
 
 
 func _init() -> void:
@@ -71,6 +79,7 @@ func _notification(what : int) -> void:
 			if rid.is_valid() and is_instance_valid(mm_renderer) and mm_renderer.is_inside_tree():
 				await mm_renderer.thread_run(in_thread_free_rid, [rid, rd])
 
+## Size of the texture in the rendering device, in bytes
 func get_gpu_size() -> int:
 	if not rid.is_valid():
 		return 0
@@ -87,33 +96,39 @@ func register() -> void:
 	if mm_renderer:
 		mm_renderer.request_texture_budget_check()
 
-## Copies the texture to RAM and frees its copy in the rendering device
-func evict() -> bool:
+## Copies a rendered texture to RAM and frees it in the rendering device (in
+## the rendering thread, where renders use the textures). Returns false if the
+## texture cannot be spilled.
+func in_thread_evict() -> bool:
 	var evicted_rid : RID = rid
-	if not evicted_rid.is_valid():
+	if not evicted_rid.is_valid() or not rendered or not BYTES_PER_PIXEL.has(texture_format):
 		return false
-	if texture_needs_update:
-		await get_texture()
-		# The texture's image is updated in a deferred call
-		await mm_renderer.get_tree().process_frame
-	var image : Image = texture.get_image()
-	# Give up if the texture was rendered again or could not be read
+	if rd != mm_renderer.rendering_device:
+		return false
+	if Time.get_ticks_msec()-last_used < SPILL_MIN_IDLE_MS:
+		return false
+	var image : Image = in_thread_read_image()
+	if image == null or image.get_size() != texture_size:
+		return false
 	mutex.lock()
-	if rid != evicted_rid or texture_needs_update or image == null or image.get_size() != texture_size:
-		mutex.unlock()
-		return false
-	rid = RID()
+	# set_texture() or release() may have replaced the texture meanwhile
+	var evicted : bool = rendered and rid == evicted_rid
+	if evicted:
+		spilled_image = image
+		rid = RID()
 	mutex.unlock()
-	gpu_textures.erase(texture_id)
-	await mm_renderer.thread_run(in_thread_free_rid, [evicted_rid, rd])
-	return true
+	if evicted:
+		rd.free_rid(evicted_rid)
+	# Spilled textures are removed from gpu_textures when it is read (they may
+	# already have been used and uploaded again)
+	return evicted
 
 ## Name of the buffer (in mm_deps) of a released texture, that must be
 ## rendered again before the texture can be used (see release())
 var released_buffer : String = ""
 
 ## Frees the texture in the rendering device and its image in RAM (unlike
-## evict(), the texture is lost and its buffer must render it again)
+## spilling, the texture is lost and its buffer must render it again)
 func release(buffer_name : String) -> void:
 	mutex.lock()
 	var released_rid : RID = rid
@@ -122,9 +137,10 @@ func release(buffer_name : String) -> void:
 	# Other objects may still use the old image texture
 	texture = ImageTexture.new()
 	texture_version += 1
+	rendered = false
+	spilled_image = null
 	released_buffer = buffer_name
 	mutex.unlock()
-	gpu_textures.erase(texture_id)
 	if released_rid.is_valid():
 		await mm_renderer.thread_run(in_thread_free_rid, [released_rid, rd])
 
@@ -133,6 +149,7 @@ func restore() -> void:
 	if released_buffer != "":
 		await mm_deps.restore_buffer(released_buffer)
 
+## Memory used by textures in the rendering device: bytes and texture count
 static func get_gpu_memory_usage() -> Dictionary:
 	var total : int = 0
 	var count : int = 0
@@ -145,10 +162,24 @@ static func get_gpu_memory_usage() -> Dictionary:
 		count += 1
 	return { bytes=total, count=count }
 
-## Evicts the least recently used textures until the memory used in the
-## rendering device fits in budget (in bytes), returns the number of
-## evicted textures
+## Spills the least recently used rendered textures until the textures in
+## the rendering device fit in budget (in bytes). Returns the number of
+## spilled textures.
 static func enforce_budget(budget : int) -> int:
+	var candidates : Dictionary = get_spill_candidates(budget)
+	if candidates.is_empty():
+		return 0
+	# Textures are spilled in a single job of the rendering thread, and are
+	# not kept alive while it waits for its turn. Those it uses are kept in
+	# used, so that they are released in this thread.
+	var used : Array = []
+	var spilled = await mm_renderer.thread_run(in_thread_spill, [ candidates.textures, candidates.excess, used ])
+	used.clear()
+	return spilled if spilled is int else 0
+
+## The rendered textures (as weak references) that can be spilled, least
+## recently used first, and the excess memory, or an empty dictionary
+static func get_spill_candidates(budget : int) -> Dictionary:
 	var textures : Array = []
 	var total : int = 0
 	for id in gpu_textures.keys():
@@ -156,23 +187,33 @@ static func enforce_budget(budget : int) -> int:
 		if t == null or not t.rid.is_valid():
 			gpu_textures.erase(id)
 			continue
-		textures.append(t)
 		total += t.get_gpu_size()
-	if total <= budget:
-		return 0
+		if t.rendered:
+			textures.append(t)
+	if total <= budget or textures.is_empty():
+		return {}
 	textures.sort_custom(func(a, b): return a.last_used < b.last_used)
-	var now : int = Time.get_ticks_msec()
-	var evicted : int = 0
-	for t in textures:
-		if total <= budget:
+	return { textures=textures.map(func(t): return weakref(t)), excess=total-budget }
+
+static func in_thread_spill(textures : Array, excess : int, used : Array) -> int:
+	var spilled : int = 0
+	for w in textures:
+		if excess <= 0:
 			break
-		if now-t.last_used < EVICTION_MIN_IDLE_MS:
+		var t = w.get_ref()
+		if t == null:
 			continue
+		used.append(t)
 		var size : int = t.get_gpu_size()
-		if await t.evict():
-			total -= size
-			evicted += 1
-	return evicted
+		if t.in_thread_evict():
+			excess -= size
+			spilled += 1
+	if spilled > 0:
+		# The rendering device frees textures when its frame ends
+		var rendering_device : RenderingDevice = mm_renderer.rendering_device
+		rendering_device.submit()
+		rendering_device.sync()
+	return spilled
 
 static func in_thread_free_rid(texture_rid, rendering_device):
 	if texture_rid.is_valid():
@@ -194,10 +235,11 @@ func get_texture_rid(target_rd : RenderingDevice) -> RID:
 		# Read the texture and its format together, then create the RD texture
 		# without holding the lock
 		var source : Texture2D = texture
+		var spilled : Image = spilled_image
 		var format : RenderingDevice.DataFormat = texture_format
 		var version : int = texture_version
 		mutex.unlock()
-		var image : Image = source.get_image()
+		var image : Image = spilled if spilled != null else source.get_image()
 		if image == null or image.get_width() == 0 or image.get_height() == 0:
 			#print("No image for texture %s" % str(texture))
 			image = Image.create(1, 1, false, Image.FORMAT_RH)
@@ -212,7 +254,7 @@ func get_texture_rid(target_rd : RenderingDevice) -> RID:
 		fmt.height = image.get_height()
 		fmt.format = format
 		fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
-		# Evicted textures that are uploaded again may be reused as compute
+		# Spilled textures that are uploaded again may be reused as compute
 		# outputs (e.g. by iterate buffers)
 		if BYTES_PER_PIXEL.has(format):
 			fmt.usage_bits |= RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
@@ -223,6 +265,7 @@ func get_texture_rid(target_rd : RenderingDevice) -> RID:
 			texture_format = format
 			rd = target_rd
 			rid = new_rid
+			spilled_image = null
 			break
 		# set_texture() or release() was called meanwhile: start again with
 		# the new texture
@@ -237,6 +280,7 @@ func get_texture_rid(target_rd : RenderingDevice) -> RID:
 func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.DataFormat, new_rd : RenderingDevice) -> void:
 	if new_rid == rid:
 		texture_needs_update = true
+		touch()
 		return
 	if rid.is_valid():
 		rd.free_rid(rid)
@@ -245,12 +289,14 @@ func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.Da
 	texture_size = size
 	texture_format = format
 	texture_needs_update = true
+	rendered = true
+	spilled_image = null
 	released_buffer = ""
 	touch()
 
 func in_thread_get_texture() -> Texture2D:
 	if texture_needs_update:
-		var image : Image = in_thread_read_image()
+		var image : Image = in_thread_read_image() if rid.is_valid() else spilled_image
 		if image != null:
 			texture.set_image.call_deferred(image)
 		texture_needs_update = false
@@ -451,7 +497,7 @@ static func in_thread_read_unorm16_image(rendering_device : RenderingDevice, sou
 func get_texture() -> Texture2D:
 	await restore()
 	if texture_needs_update:
-		if rd and rid.is_valid():
+		if rd and (rid.is_valid() or spilled_image != null):
 			await mm_renderer.thread_run(in_thread_get_texture)
 	return texture
 
@@ -501,6 +547,8 @@ func set_texture(new_texture : ImageTexture) -> void:
 	var old_rid : RID = rid
 	var old_rd : RenderingDevice = rd
 	rid = RID()
+	rendered = false
+	spilled_image = null
 	released_buffer = ""
 	mutex.unlock()
 	if old_rid.is_valid():
