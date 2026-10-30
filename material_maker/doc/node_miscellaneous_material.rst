@@ -39,7 +39,9 @@ also only use a channel when its parameter is above 0, with a texture when its i
   coat is used, otherwise cloth if the sheen is used, otherwise subsurface for the transmission,
 * the glTF export writes the clear coat, sheen, anisotropy and transmission with the
   ``KHR_materials_clearcoat``, ``KHR_materials_sheen``, ``KHR_materials_anisotropy`` and
-  ``KHR_materials_transmission`` extensions,
+  ``KHR_materials_transmission`` extensions (the sheen roughness is the material's
+  roughness, also stored in the alpha channel of the sheen texture when the roughness
+  input is connected),
 * the MaterialX exports (standard surface and OpenPBR) use them all, and the USD export
   uses the coat and coat roughness.
 
