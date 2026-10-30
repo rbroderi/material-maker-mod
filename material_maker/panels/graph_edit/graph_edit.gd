@@ -569,6 +569,8 @@ func do_remove_node(node) -> void:
 				do_disconnect_node(c.from_node, c.from_port, c.to_node, c.to_port)
 		remove_child(node)
 		node.queue_free()
+		# Previews may show generators inside a removed group
+		check_previews()
 		send_changed_signal()
 
 # Global operations on graph
@@ -1249,13 +1251,18 @@ func request_popup(node_name : String , slot_index : int, _release_position : Ve
 		slot_type = mm_io_types.types[node.generator.get_output_defs()[slot_index].type].slot_type
 	node_popup.show_popup(node_name, slot_index, slot_type, connect_output)
 
+## Removed generators (and the generators they contain, for groups) are out of the
+## tree and queued for deletion: they must not be previewed any more
+static func is_generator_alive(g) -> bool:
+	return is_instance_valid(g) and g.is_inside_tree() and not g.is_queued_for_deletion()
+
 func check_previews() -> void:
 	var preview_has_changed : bool = false
 	for i in PREVIEW_COUNT:
-		if current_preview[i] != null and ! is_instance_valid(current_preview[i].generator):
+		if current_preview[i] != null and ! is_generator_alive(current_preview[i].generator):
 			current_preview[i] = null
 			preview_has_changed = true
-		if locked_preview[i] != null and ! is_instance_valid(locked_preview[i].generator):
+		if locked_preview[i] != null and ! is_generator_alive(locked_preview[i].generator):
 			locked_preview[i] = null
 			preview_has_changed = true
 	if preview_has_changed:
@@ -1292,6 +1299,8 @@ func undoredo_post(pre_returnvalue) -> void:
 	if current_node == null:
 		current_node = get_node_from_hier_name(pre_returnvalue, true)
 		update_view(current_node)
+	# Undo/redo may have removed previewed generators (e.g. undoing Create group)
+	check_previews()
 
 func undoredo_command(command : Dictionary) -> void:
 	match command.type:

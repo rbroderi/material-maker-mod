@@ -53,7 +53,8 @@ func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 		output = o
 		need_generate = true
 		return
-	if !force and generator == g and output == o:
+	# is_same() because a freed generator is == null
+	if !force and is_same(generator, g) and output == o:
 		return
 	need_generate = false
 	if is_instance_valid(generator) and generator.is_connected("parameter_changed",Callable(self,"on_parameter_changed")):
