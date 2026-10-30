@@ -355,7 +355,7 @@ func _deserialize(data : Dictionary) -> void:
 					if v.has("value"):
 						v.value = decode_path_value(v.value)
 	set_widgets(new_widgets)
-	presets = data.get("presets", {}).duplicate(true)
+	presets = data.presets.duplicate(true) if data.get("presets") is Dictionary else {}
 	for preset in presets.values():
 		if preset is Dictionary:
 			for p in preset.keys():
@@ -394,12 +394,15 @@ func randomize_parameters(random_seed : int) -> void:
 	var rng : RandomNumberGenerator = RandomNumberGenerator.new()
 	rng.seed = random_seed
 	for p in get_parameter_defs():
+		if not p.has("type"):
+			continue
 		match p.type:
 			"float":
-				var value : float = rng.randf_range(p.min, p.max)
-				if p.has("step") and p.step > 0.0:
-					value = snappedf(value, p.step)
-				set_parameter(p.name, value)
+				if p.has("min") and p.has("max"):
+					var value : float = rng.randf_range(p.min, p.max)
+					if p.has("step") and p.step > 0.0:
+						value = clampf(snappedf(value, p.step), p.min, p.max)
+					set_parameter(p.name, value)
 			"enum":
 				if p.has("values") and not p.values.is_empty():
 					set_parameter(p.name, rng.randi_range(0, p.values.size()-1))

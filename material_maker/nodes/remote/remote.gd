@@ -36,7 +36,9 @@ func create_preset_bar() -> void:
 		bar.add_child(button)
 	add_child(bar)
 
-func update_preset_list(selected_preset : String = "") -> void:
+## Rebuilds the preset list, keeping the selected preset if it still exists
+## (the list is rebuilt when the node is updated, after a preset is applied)
+func update_preset_list(selected_preset : String = get_selected_preset()) -> void:
 	if preset_list == null or generator == null:
 		return
 	preset_list.clear()
@@ -45,6 +47,11 @@ func update_preset_list(selected_preset : String = "") -> void:
 		preset_list.add_item(preset_name)
 		if preset_name == selected_preset:
 			preset_list.selected = preset_list.item_count-1
+
+func get_selected_preset() -> String:
+	if preset_list == null or preset_list.selected <= 0:
+		return ""
+	return preset_list.get_item_text(preset_list.selected)
 
 func on_preset_selected(index : int) -> void:
 	if index <= 0:
@@ -59,30 +66,34 @@ func on_save_preset() -> void:
 	dialog.title = "Save preset"
 	var line_edit : LineEdit = LineEdit.new()
 	line_edit.placeholder_text = "Preset name"
-	if preset_list.selected > 0:
-		line_edit.text = preset_list.get_item_text(preset_list.selected)
+	line_edit.text = get_selected_preset()
 	dialog.add_child(line_edit)
 	dialog.register_text_enter(line_edit)
 	dialog.confirmed.connect(func():
 		var preset_name : String = line_edit.text.strip_edges()
 		if preset_name != "":
-			old_state = generator.serialize().duplicate(true)
-			generator.save_preset(preset_name)
-			undo_redo_register_change("Save preset", old_state)
-			update_preset_list(preset_name)
+			save_preset(preset_name)
 		dialog.queue_free())
 	dialog.canceled.connect(dialog.queue_free)
 	mm_globals.main_window.add_dialog(dialog)
 	dialog.popup_centered(Vector2i(300, 80))
 	line_edit.grab_focus()
 
+## Saves the current values as a preset (undoable)
+func save_preset(preset_name : String) -> void:
+	old_state = generator.serialize().duplicate(true)
+	generator.save_preset(preset_name)
+	undo_redo_register_change("Save preset", old_state)
+	update_preset_list(preset_name)
+
 func on_delete_preset() -> void:
-	if preset_list.selected <= 0:
+	var preset_name : String = get_selected_preset()
+	if preset_name == "":
 		return
 	old_state = generator.serialize().duplicate(true)
-	generator.delete_preset(preset_list.get_item_text(preset_list.selected))
+	generator.delete_preset(preset_name)
 	undo_redo_register_change("Delete preset", old_state)
-	update_preset_list()
+	update_preset_list("")
 
 func on_randomize() -> void:
 	old_state = generator.serialize().duplicate(true)
