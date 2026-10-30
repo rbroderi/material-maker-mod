@@ -4,6 +4,9 @@ const CONTROLS = [ "None", "P1.x", "P1.y", "P1.a", "P1.r", "P2.x", "P2.y", "P2.a
 
 # Hard range (hard_min, hard_max), only defined in the node's JSON, kept when editing
 var hard_range : Dictionary = {}
+# The variables the parameter's expression can use (expression_variables),
+# that are only defined in the node's JSON, are kept when editing
+var expression_variables : Array = []
 
 func _ready() -> void:
 	$Control.clear()
@@ -19,6 +22,12 @@ func get_model_data() -> Dictionary:
 		control = $Control.get_item_text($Control.selected)
 	}
 	data.merge(hard_range)
+	# The default value can be an expression
+	var default_value = $Default.get_value()
+	if default_value is String:
+		data.default = default_value
+	if not expression_variables.is_empty():
+		data.expression_variables = expression_variables.duplicate()
 	return data
 
 func set_model_data(data) -> void:
@@ -26,6 +35,7 @@ func set_model_data(data) -> void:
 	for k in [ "hard_min", "hard_max" ]:
 		if data.has(k):
 			hard_range[k] = data[k]
+	expression_variables = data.get("expression_variables", []).duplicate()
 	if data.has("min"):
 		$Min.value = data.min
 		$Default.min_value = data.min
@@ -36,7 +46,7 @@ func set_model_data(data) -> void:
 		$Step.value = data.step
 		$Default.step = data.step
 	if data.has("default"):
-		$Default.value = data.default
+		$Default.set_value(data.default)
 	if data.has("control"):
 		$Control.selected = 0
 		for i in range($Control.get_item_count()):
