@@ -160,7 +160,14 @@
 			"type": "texture"
 		},
 		{
+			"conditions": "$(connected:metallic_tex)",
 			"expression": "f=$metallic*$metallic_tex($uv)",
+			"file_name": "$(path_prefix)_baked_metallic.png",
+			"type": "texture"
+		},
+		{
+			"conditions": "not $(connected:metallic_tex)",
+			"expression": "f=$metallic_tex($uv)",
 			"file_name": "$(path_prefix)_baked_metallic.png",
 			"type": "texture"
 		},
