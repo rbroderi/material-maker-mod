@@ -113,9 +113,24 @@ func _init() -> void:
 
 ## Starts editing a function graph
 func edit(g : Dictionary, m : String, window_title : String = "", parameters : Array = []) -> void:
-	graph = g.duplicate(true)
 	graph_mode = m
 	expression_parameters = parameters
+	set_graph(g)
+	if window_title != "":
+		title = window_title
+	scope = ""
+	rebuild_add_menu()
+	# The first state of the history is recorded when the view is built,
+	# with the positions of the nodes
+	history.clear()
+	history_index = -1
+	rebuild_all()
+	history_timer.start()
+	popup_centered()
+
+## Sets the edited graph (a copy of g, with the keys the editor needs)
+func set_graph(g : Dictionary) -> void:
+	graph = g.duplicate(true)
 	if not graph.get("nodes") is Dictionary:
 		graph.nodes = {}
 	if not graph.get("output") is String:
@@ -124,16 +139,6 @@ func edit(g : Dictionary, m : String, window_title : String = "", parameters : A
 		for k in [ "inputs", "parameters" ]:
 			if not graph.get(k) is Array:
 				graph[k] = []
-	if window_title != "":
-		title = window_title
-	scope = ""
-	rebuild_add_menu()
-	rebuild_all()
-	history.clear()
-	history_index = -1
-	record_state()
-	history_timer.start()
-	popup_centered()
 
 #
 # Undo/redo
@@ -418,8 +423,6 @@ func rebuild_panel() -> void:
 
 func do_rebuild_view() -> void:
 	view_rebuild_scheduled = false
-	# Rebuilds follow discrete edits (adding, deleting, connecting nodes...)
-	record_state()
 	graph_edit.clear_connections()
 	for c in graph_edit.get_children():
 		if c is GraphNode:
@@ -443,6 +446,11 @@ func do_rebuild_view() -> void:
 			var operand = get_operand(node_id, slot)
 			if operand is String and graph_edit.has_node(NodePath(operand)):
 				graph_edit.connect_node(operand, 0, node_id, slot)
+	# Rebuilds follow discrete edits (adding, deleting, connecting nodes...).
+	# The positions computed for nodes that had none are stored first, or
+	# the next undo would only forget them.
+	store_positions()
+	record_state()
 	update_status()
 
 ## Places nodes in columns by dependency depth (used for nodes that have no
@@ -858,7 +866,11 @@ func edit_json() -> void:
 	dialog.confirmed.connect(func():
 		var json : JSON = JSON.new()
 		if json.parse(text_edit.text) == OK and json.data is Dictionary:
-			edit(json.data, graph_mode, title, expression_parameters)
+			# Replacing the graph is an undoable step
+			record_state()
+			set_graph(json.data)
+			scope = ""
+			rebuild_all()
 		else:
 			status_label.text = "Invalid JSON: line %d: %s" % [ json.get_error_line(), json.get_error_message() ])
 	dialog.visibility_changed.connect(func():
