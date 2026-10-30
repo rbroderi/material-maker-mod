@@ -8,6 +8,14 @@ var texture_size : Vector2i
 var texture_format : RenderingDevice.DataFormat
 var texture : Texture2D
 var texture_needs_update : bool = false
+## Increased by set_texture() and release(), so the rendering thread can tell
+## whether the texture it read is still current
+var texture_version : int = 0
+## Makes set_texture() (main thread) atomic for get_texture_rid() (rendering
+## thread): texture, texture_format, texture_size, texture_version and rid
+## change together. Only held for a few assignments, never while a texture is
+## being created.
+var mutex : Mutex = Mutex.new()
 
 # GPU memory budget (see design/gpu_memory_budget.md): textures that have a
 # copy in the rendering device are registered, so the least recently used
@@ -90,9 +98,12 @@ func evict() -> bool:
 		await mm_renderer.get_tree().process_frame
 	var image : Image = texture.get_image()
 	# Give up if the texture was rendered again or could not be read
+	mutex.lock()
 	if rid != evicted_rid or texture_needs_update or image == null or image.get_size() != texture_size:
+		mutex.unlock()
 		return false
 	rid = RID()
+	mutex.unlock()
 	gpu_textures.erase(texture_id)
 	await mm_renderer.thread_run(in_thread_free_rid, [evicted_rid, rd])
 	return true
@@ -104,13 +115,16 @@ var released_buffer : String = ""
 ## Frees the texture in the rendering device and its image in RAM (unlike
 ## evict(), the texture is lost and its buffer must render it again)
 func release(buffer_name : String) -> void:
+	mutex.lock()
 	var released_rid : RID = rid
 	rid = RID()
-	gpu_textures.erase(texture_id)
 	texture_needs_update = false
 	# Other objects may still use the old image texture
 	texture = ImageTexture.new()
+	texture_version += 1
 	released_buffer = buffer_name
+	mutex.unlock()
+	gpu_textures.erase(texture_id)
 	if released_rid.is_valid():
 		await mm_renderer.thread_run(in_thread_free_rid, [released_rid, rd])
 
@@ -175,33 +189,50 @@ static func free_rid_in_render_thread(texture_rid : RID, rendering_device : Rend
 		mm_renderer.thread_run(in_thread_free_rid, [texture_rid, rendering_device])
 
 func get_texture_rid(target_rd : RenderingDevice) -> RID:
-	if ! rid.is_valid():
-		var image : Image = texture.get_image()
+	mutex.lock()
+	while ! rid.is_valid():
+		# Read the texture and its format together, then create the RD texture
+		# without holding the lock
+		var source : Texture2D = texture
+		var format : RenderingDevice.DataFormat = texture_format
+		var version : int = texture_version
+		mutex.unlock()
+		var image : Image = source.get_image()
 		if image == null or image.get_width() == 0 or image.get_height() == 0:
 			#print("No image for texture %s" % str(texture))
 			image = Image.create(1, 1, false, Image.FORMAT_RH)
-			texture_format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
-		elif UNORM16_FORMATS.has(texture_format) or image_data_format(image.get_format()) != texture_format:
+			format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
+		elif UNORM16_FORMATS.has(format) or image_data_format(image.get_format()) != format:
 			# 16 bits integer textures are read back as float images
 			var data_format : int = image_data_format(image.get_format())
 			if data_format >= 0:
-				texture_format = data_format
+				format = data_format
 		var fmt : RDTextureFormat = RDTextureFormat.new()
 		fmt.width = image.get_width()
 		fmt.height = image.get_height()
-		fmt.format = texture_format
+		fmt.format = format
 		fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 		# Evicted textures that are uploaded again may be reused as compute
 		# outputs (e.g. by iterate buffers)
-		if BYTES_PER_PIXEL.has(texture_format):
+		if BYTES_PER_PIXEL.has(format):
 			fmt.usage_bits |= RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
 		var view : RDTextureView = RDTextureView.new()
-		rd = target_rd
-		rid = rd.texture_create(fmt, view, [ image.get_data() ])
-	else:
-		assert(target_rd == rd)
+		var new_rid : RID = target_rd.texture_create(fmt, view, [ image.get_data() ])
+		mutex.lock()
+		if version == texture_version:
+			texture_format = format
+			rd = target_rd
+			rid = new_rid
+			break
+		# set_texture() or release() was called meanwhile: start again with
+		# the new texture
+		if new_rid.is_valid():
+			target_rd.free_rid(new_rid)
+	assert(target_rd == rd)
+	var texture_rid : RID = rid
+	mutex.unlock()
 	touch()
-	return rid
+	return texture_rid
 
 func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.DataFormat, new_rd : RenderingDevice) -> void:
 	if new_rid == rid:
@@ -460,14 +491,20 @@ func set_texture(new_texture : ImageTexture) -> void:
 		size = image.get_size()
 	# The rendering thread may upload the texture at any time (when it has
 	# no copy in the rendering device): only use the new texture once its
-	# image has been converted
+	# image has been converted, and swap it in together with its format and
+	# size
+	mutex.lock()
 	texture_format = format
 	texture_size = size
 	texture = new_texture
-	if rid.is_valid():
-		free_rid_in_render_thread(rid, rd)
+	texture_version += 1
+	var old_rid : RID = rid
+	var old_rd : RenderingDevice = rd
 	rid = RID()
 	released_buffer = ""
+	mutex.unlock()
+	if old_rid.is_valid():
+		free_rid_in_render_thread(old_rid, old_rd)
 
 ## A texture of an image
 static func from_image(image : Image) -> MMTexture:
