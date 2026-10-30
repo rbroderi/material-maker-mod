@@ -1094,7 +1094,12 @@ func _serialize_data(data: Dictionary) -> Dictionary:
 	data = super._serialize_data(data)
 	if export_last_target != "":
 		data.export_last_target = export_last_target
-	data.export_paths = export_paths
+	# Export paths are saved relative to the project (see MMPaths.encode_path)
+	# so "Export again" still works after the project folder is moved
+	data.export_paths = {}
+	for p in export_paths.keys():
+		var path = export_paths[p]
+		data.export_paths[p] = MMPaths.encode_path(path) if path is String else path
 	if not export_udim.is_empty():
 		data.export_udim = export_udim
 	return data
@@ -1109,7 +1114,10 @@ func _deserialize(data : Dictionary) -> void:
 	if data.has("export_last_target") and data.export_last_target != null:
 		export_last_target = data.export_last_target
 	if data.has("export_paths"):
-		export_paths = data.export_paths.duplicate()
+		export_paths = {}
+		for p in data.export_paths.keys():
+			var path = data.export_paths[p]
+			export_paths[p] = MMPaths.decode_path(path) if path is String else path
 	if data.has("export_udim"):
 		export_udim = data.export_udim.duplicate()
 
