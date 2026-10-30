@@ -17,6 +17,8 @@ var preview_conditionals : String = ""
 var preview_parameters : Dictionary = {}
 var preview_textures = {}
 var preview_texture_dependencies : Dictionary[String, MMTexture] = {}
+## Textures (buffers) of the export in progress, written as buffer files
+var export_texture_dependencies : Dictionary[String, MMTexture] = {}
 
 var external_previews : Dictionary[Node, Array] = {}
 var export_output_def : Dictionary
@@ -401,7 +403,7 @@ func process_option_float_uniform_to_const(s : String, is_declaration : bool = f
 
 func process_option_rename_buffers(s : String, is_declaration : bool = false) -> String:
 	var index : int = 1
-	for t in preview_texture_dependencies.keys():
+	for t in export_texture_dependencies.keys():
 		s = s.replace(t, "texture_%d" % index)
 		index += 1
 	return s
@@ -585,7 +587,7 @@ func process_buffers(template : String) -> String:
 		if generating:
 			if l == "$end_buffers":
 				var index : int = 1
-				for t in preview_texture_dependencies.keys():
+				for t in export_texture_dependencies.keys():
 					processed += subst_string(gen_buffer, { "$(buffer_index)":str(index) })
 					index += 1
 				generating = false
@@ -665,6 +667,25 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
+## Textures (buffers) sampled by the shader code that the templates of an
+## export generate ($begin_generate), or null if no template generates code
+func get_generated_texture_dependencies(export_profile : Dictionary, export_context : Dictionary):
+	var generates_code : bool = false
+	var dependencies : Dictionary[String, MMTexture] = {}
+	var custom_script : String = export_context.get("@mm_custom_script", "")
+	for f in export_profile.files:
+		if f.type != "template":
+			continue
+		var template : String = get_template_text(f.template)
+		if template.find("$begin_generate") == -1:
+			continue
+		generates_code = true
+		var result = process_shader(process_conditionals(process_template(template, export_context)), custom_script, true)
+		for u in result.uniforms:
+			if u.type == "sampler2D" and u.value is MMTexture:
+				dependencies[u.name] = u.value
+	return dependencies if generates_code else null
+
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
 	reset_uids()
 	if size == 0:
@@ -682,6 +703,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 	var export_profile = get_export(profile)
 	if export_profile.has("custom"):
 		export_context["@mm_custom_script"] = export_profile.custom
+	# Exports that generate shader code write the buffers their code samples,
+	# others the buffers of the preview
+	var generated_dependencies = get_generated_texture_dependencies(export_profile, export_context)
+	if generated_dependencies == null:
+		export_texture_dependencies = preview_texture_dependencies.duplicate()
+	else:
+		export_texture_dependencies = generated_dependencies
 	for f in export_profile.files:
 		if f.has("conditions"):
 			var condition = subst_string(f.conditions, export_context)
@@ -728,7 +756,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 			"texture", "template":
 				total_files += 1
 			"buffers", "buffer_templates":
-				total_files += preview_texture_dependencies.size()
+				total_files += export_texture_dependencies.size()
 	var processed_files = 0
 	var error_files = 0
 	for f in exported_files:
@@ -799,10 +827,10 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 							break
 						render_queue_size = mm_deps.get_render_queue_size()
 				var index : int = 1
-				for t in preview_texture_dependencies.keys():
+				for t in export_texture_dependencies.keys():
 					var file_name = subst_string(f.file_name, export_context)
 					file_name = file_name.replace("$(buffer_index)", str(index))
-					var texture : Texture2D = await preview_texture_dependencies[t].get_texture()
+					var texture : Texture2D = await export_texture_dependencies[t].get_texture()
 					var image : Image = texture.get_image()
 					if image:
 						image.convert(Image.FORMAT_RGBA8)
@@ -811,7 +839,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 							error_files += 1
 					else:
 						print("No image for texture file ", file_name)
-						print(preview_texture_dependencies[t])
+						print(export_texture_dependencies[t])
 						error_files += 1
 					index += 1
 					processed_files += 1
@@ -819,7 +847,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
 			"buffer_templates":
 				var index : int = 1
-				for t in preview_texture_dependencies.keys():
+				for t in export_texture_dependencies.keys():
 					var file_export_context = export_context.duplicate()
 					file_export_context["$(buffer_index)"] = str(index)
 					if f.has("file_params"):
