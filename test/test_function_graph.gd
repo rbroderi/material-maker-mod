@@ -138,10 +138,29 @@ func test_boolean_output_is_rejected() -> void:
 	var r : Dictionary = compile({ out={ op="true" } }, "out")
 	assert_false(r.ok)
 
-func test_rand_uses_seed() -> void:
+func test_rand_uses_seed_and_integer_hash() -> void:
 	var r : Dictionary = compile({ uv={ op="pos" }, out={ op="rand", a="uv" } }, "out")
 	assert_true(r.ok, str(r.errors))
-	assert_string_contains(r.code[1], "rand(fg_0+vec2(0.5))")
+	assert_string_contains(r.code[1], "mm_fg_rand(fg_0, 0.5)")
+	assert_eq(r.globals, PackedStringArray([ MMFunctionGraph.RAND_GLOBAL ]))
+	assert_string_contains(r.globals[0], "floatBitsToUint")
+
+func test_globals_are_declared_once() -> void:
+	var r : Dictionary = compile({
+		uv={ op="pos" },
+		a={ op="rand", a="uv" },
+		half={ op="float", value=0.5 },
+		uv2={ op="mul", a="uv", b="half" },
+		b={ op="rand", a="uv2" },
+		out={ op="add", a="a", b="b" }
+	}, "out")
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.globals.size(), 1)
+
+func test_graphs_without_globals() -> void:
+	var r : Dictionary = compile({ uv={ op="pos" }, out={ op="length", a="uv" } }, "out")
+	assert_true(r.ok, str(r.errors))
+	assert_true(r.globals.is_empty())
 
 func test_node_ids_are_sanitized_in_comments() -> void:
 	var r : Dictionary = compile({ "$evil": { op="float", value=1 } }, "$evil")
@@ -183,8 +202,16 @@ func test_integers() -> void:
 	}, "out")
 	assert_true(r.ok, str(r.errors))
 	var code : String = "\n".join(r.code)
-	assert_string_contains(code, "int fg_2 = (fg_0%fg_1);")
+	# Integer modulo wraps negative values like mod() (GLSL's % does not)
+	assert_string_contains(code, "int fg_2 = mm_fg_mod(fg_0, fg_1);")
 	assert_string_contains(code, "float fg_3 = float(fg_2);")
+	assert_eq(r.globals, PackedStringArray([ MMFunctionGraph.MOD_GLOBAL ]))
+
+func test_float_modulo_needs_no_global() -> void:
+	var r : Dictionary = compile({ a={ op="float", value=7 }, b={ op="float", value=2 }, out={ op="mod", a="a", b="b" } }, "out")
+	assert_true(r.ok, str(r.errors))
+	assert_string_contains(r.code[2], "mod(fg_0, fg_1)")
+	assert_true(r.globals.is_empty())
 
 func test_mixing_int_and_float_is_rejected() -> void:
 	var r : Dictionary = compile({ a={ op="int", value=1 }, b={ op="float", value=1 }, out={ op="add", a="a", b="b" } }, "out")
@@ -251,6 +278,30 @@ func test_loop_signature_is_checked() -> void:
 		output="out"
 	}
 	assert_false(MMFunctionGraph.compile(graph, [], {}, VARIABLES).ok)
+
+func test_sub_function_globals_are_returned() -> void:
+	var graph : Dictionary = {
+		functions={ noise={ params=[ { name="p", type="vec2" } ], nodes={ p={ op="arg", name="p" }, out={ op="rand", a="p" } }, output="out" } },
+		nodes={ uv={ op="pos" }, a={ op="call", function="noise", args=[ "uv" ] }, b={ op="rand", a="uv" }, out={ op="add", a="a", b="b" } },
+		output="out"
+	}
+	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.globals.size(), 1)
+	assert_string_contains(r.functions[0], "mm_fg_rand(fg_0, 0.5)")
+
+func test_pixel_processor_returns_globals() -> void:
+	var graph : Dictionary = { inputs=[], parameters=[], nodes={ uv={ op="pos" }, out={ op="rand", a="uv" } }, output="out" }
+	var r : Dictionary = MMGenPixelProcessor.build_shader_model(graph)
+	assert_true(r.errors.is_empty(), str(r.errors))
+	assert_eq(r.globals, PackedStringArray([ MMFunctionGraph.RAND_GLOBAL ]))
+	assert_false(r.model.has("global"))
+	assert_string_contains(r.model.instance, "mm_fg_rand(fg_0, $seed)")
+
+func test_compile_expression_rejects_globals() -> void:
+	# Integer modulo needs a global function, that an expression can't declare
+	var graph : Dictionary = { nodes={ a={ op="int", value=7 }, b={ op="int", value=3 }, m={ op="mod", a="a", b="b" }, out={ op="to_float", a="m" } }, output="out" }
+	assert_false(MMFunctionGraph.compile_expression(graph, {}).ok)
 
 # A plugin operation: scale(a) = a*2.0, with a helper global
 const DUMMY_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }

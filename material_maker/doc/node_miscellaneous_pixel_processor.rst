@@ -56,7 +56,9 @@ Click the node's edit button to open the function graph editor:
 Random numbers
 ++++++++++++++
 
-* *rand* returns a random value computed from a 2D seed.
+* *rand* returns a random float between 0 and 1 for a *vec2* seed *a* (for example the
+  position) and the node's seed. It uses an integer hash, so it gives the same values on
+  all GPUs.
 
 * *sd_rand*, added by the *Substance random numbers* plugin (in the *Other* category),
   reproduces Substance Designer's pixel processor random generator: each call returns the

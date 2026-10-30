@@ -68,7 +68,7 @@ with floats implicitly (`to_float`, `to_int`).
 | Constants | `float`, `int` (`value`), `vec2`/`vec3`/`vec4` (`value: [..]`), `true`, `false` | as named |
 | Variables | `pos` (UV), `size` (vec2), `param` (`name`), `arg` (`name`, in functions) | vec2, vec2, float, arg type |
 | Sampling | `sample` (`input`, `uv`) | vec4 |
-| Arithmetic | `add`, `sub`, `mul`, `div`, `min`, `max`, `mod` (also on ints), `pow`, `atan2`, `step` | same type, float broadcast |
+| Arithmetic | `add`, `sub`, `mul`, `div`, `min`, `max`, `mod` (also on ints, with the sign of the divisor), `pow`, `atan2`, `step` | same type, float broadcast |
 | Unary | `neg`, `abs`, `sign` (also on ints), `floor`, `ceil`, `fract`, `sqrt`, `sin`, `cos`, `tan`, `exp`, `log`, `normalize` | type of `a` |
 | Vector | `dot`, `length`, `distance`, `cross` | as GLSL |
 | Construction | `vec2`/`vec3`/`vec4` with `args` | components must add up |
@@ -78,7 +78,7 @@ with floats implicitly (`to_float`, `to_int`).
 | Logic | `and`, `or`, `not`, `select` (`cond`, `a`, `b`) | bool / operand type |
 | Conversion | `to_int` (floor), `to_float` | int / float |
 | Functions | `call` (`function`, `args`), `loop` (`function`, `count` ≤ 1024, `init`) | return type |
-| Random | `rand` (vec2 seed → float) | float |
+| Random | `rand` (vec2 seed → float, PCG3D integer hash: same values on every GPU) | float |
 | Plugins | `sd_rand` (`a`: amplitude, sd_rand plugin), other operations added by plugins | float |
 
 `loop` repeats `acc = function(acc, i)` for `i` in `0..count-1`; the function must take

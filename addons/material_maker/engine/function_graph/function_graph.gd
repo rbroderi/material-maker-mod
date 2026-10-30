@@ -14,12 +14,13 @@ class_name MMFunctionGraph
 # - variables: GLSL expressions for "pos", "size" and "seed", the prefix
 #   of generated function names ("function_prefix"), and the mode ("mode":
 #   "pixel" or "value", for operations added by plugins)
-# and returns { ok, code, value, functions, types, node_errors, errors }:
+# and returns { ok, code, value, functions, globals, types, node_errors, errors }:
 # - code is a list of GLSL statements and value the vec4 expression of the
 #   result (inside a function that has a vec2 uv argument),
 # - functions is a list of GLSL function definitions (sub-functions) that
 #   must be declared before that code,
-# - globals is a list of global GLSL definitions the code requires,
+# - globals is a list of global GLSL definitions the code requires (each
+#   one can be shared by several graphs, so they must be declared once),
 # - types maps node ids of the main graph to their types,
 # - node_errors maps node ids of the main graph to error messages.
 
@@ -39,7 +40,7 @@ const BINARY_OPS : Dictionary = {
 # Binary operations that also accept integers, and their integer form
 const INT_BINARY_OPS : Dictionary = {
 	add="(%s+%s)", sub="(%s-%s)", mul="(%s*%s)", div="(%s/%s)",
-	min="min(%s, %s)", max="max(%s, %s)", mod="(%s%%%s)"
+	min="min(%s, %s)", max="max(%s, %s)", mod="mm_fg_mod(%s, %s)"
 }
 const UNARY_OPS : Dictionary = {
 	neg="(-%s)", abs="abs(%s)", floor="floor(%s)", ceil="ceil(%s)",
@@ -50,13 +51,70 @@ const UNARY_OPS : Dictionary = {
 const INT_UNARY_OPS : Array[String] = [ "neg", "abs", "sign" ]
 const COMPARISON_OPS : Dictionary = { lt="<", le="<=", gt=">", ge=">=", eq="==", ne="!=" }
 
-# Operand keys of each operation (used to find dependencies)
-const OPERANDS : Dictionary = {
-	"sample": [ "uv" ], "dot": [ "a", "b" ], "length": [ "a" ], "distance": [ "a", "b" ],
-	"cross": [ "a", "b" ], "swizzle": [ "a" ], "mix": [ "a", "b", "t" ],
-	"clamp": [ "a", "min", "max" ], "smoothstep": [ "e0", "e1", "a" ],
-	"and": [ "a", "b" ], "or": [ "a", "b" ], "not": [ "a" ], "select": [ "cond", "a", "b" ],
-	"rand": [ "a" ], "to_int": [ "a" ], "to_float": [ "a" ], "loop": [ "init" ]
+# Integer modulo with the sign of the divisor, like mod() for floats (GLSL's
+# % is undefined for negative operands, which breaks wrapping of negative
+# coordinates)
+const MOD_GLOBAL : String = """int mm_fg_mod(int a, int b) {
+	int m = abs(a)%abs(b);
+	if (m != 0 && ((a < 0 && b > 0) || (a > 0 && b < 0))) {
+		m = abs(b)-m;
+	}
+	return (b < 0) ? -m : m;
+}
+"""
+
+# Random numbers from an integer hash (PCG3D, Jarzynski and Olano 2020) of
+# the bit patterns of the seed and of the node's seed: unlike sin/cos based
+# hashes, it gives the same values on every GPU
+const RAND_GLOBAL : String = """float mm_fg_rand(vec2 p, float seed) {
+	uvec3 v = uvec3(floatBitsToUint(p+vec2(0.0)), floatBitsToUint(seed+0.0));
+	v = v*1664525u+1013904223u;
+	v.x += v.y*v.z;
+	v.y += v.z*v.x;
+	v.z += v.x*v.y;
+	v ^= v >> 16u;
+	v.x += v.y*v.z;
+	v.y += v.z*v.x;
+	v.z += v.x*v.y;
+	return float(v.x >> 8u)/16777216.0;
+}
+"""
+
+# Operations other than the binary, unary and comparison operators above:
+# - operands: the keys of the node that reference other nodes (used to find
+#   dependencies; vector constructors and calls also have an args array),
+# - compile: the method of Compiler that types and compiles the node,
+# - globals (optional): global GLSL definitions the operation requires.
+const OPERATIONS : Dictionary = {
+	"float": { operands=[], compile="compile_float" },
+	"int": { operands=[], compile="compile_int" },
+	"vec2": { operands=[], compile="compile_vector" },
+	"vec3": { operands=[], compile="compile_vector" },
+	"vec4": { operands=[], compile="compile_vector" },
+	"true": { operands=[], compile="compile_bool" },
+	"false": { operands=[], compile="compile_bool" },
+	"pos": { operands=[], compile="compile_pos" },
+	"size": { operands=[], compile="compile_size" },
+	"param": { operands=[], compile="compile_param" },
+	"arg": { operands=[], compile="compile_arg" },
+	"sample": { operands=[ "uv" ], compile="compile_sample" },
+	"to_int": { operands=[ "a" ], compile="compile_to_int" },
+	"to_float": { operands=[ "a" ], compile="compile_to_float" },
+	"call": { operands=[], compile="compile_call" },
+	"loop": { operands=[ "init" ], compile="compile_loop" },
+	"dot": { operands=[ "a", "b" ], compile="compile_dot_distance" },
+	"distance": { operands=[ "a", "b" ], compile="compile_dot_distance" },
+	"length": { operands=[ "a" ], compile="compile_length" },
+	"cross": { operands=[ "a", "b" ], compile="compile_cross" },
+	"swizzle": { operands=[ "a" ], compile="compile_swizzle" },
+	"mix": { operands=[ "a", "b", "t" ], compile="compile_mix_clamp" },
+	"clamp": { operands=[ "a", "min", "max" ], compile="compile_mix_clamp" },
+	"smoothstep": { operands=[ "e0", "e1", "a" ], compile="compile_mix_clamp" },
+	"and": { operands=[ "a", "b" ], compile="compile_logic" },
+	"or": { operands=[ "a", "b" ], compile="compile_logic" },
+	"not": { operands=[ "a" ], compile="compile_logic" },
+	"select": { operands=[ "cond", "a", "b" ], compile="compile_select" },
+	"rand": { operands=[ "a" ], compile="compile_rand", globals=[ RAND_GLOBAL ] }
 }
 
 static var re_identifier : RegEx = RegEx.create_from_string("^[a-zA-Z][a-zA-Z0-9_]*$")
@@ -87,14 +145,21 @@ static func remove_plugin_operations(plugin : String = "") -> void:
 			plugin_operations.erase(op)
 
 static func is_builtin_operation(op : String) -> bool:
-	return BINARY_OPS.has(op) or UNARY_OPS.has(op) or COMPARISON_OPS.has(op) or Compiler.OP_COMPILERS.has(op)
+	return BINARY_OPS.has(op) or UNARY_OPS.has(op) or COMPARISON_OPS.has(op) or OPERATIONS.has(op)
 
 ## The names of all operations, built-in ones first
 static func get_operation_names() -> Array:
-	return BINARY_OPS.keys()+UNARY_OPS.keys()+COMPARISON_OPS.keys()+Compiler.OP_COMPILERS.keys()+plugin_operations.keys()
+	return BINARY_OPS.keys()+UNARY_OPS.keys()+COMPARISON_OPS.keys()+OPERATIONS.keys()+plugin_operations.keys()
 
 static func is_identifier(s) -> bool:
 	return (s is String or s is StringName) and re_identifier.search(str(s)) != null
+
+## Returns the description of an operation in OPERATIONS (or added by a
+## plugin), or an empty dictionary
+static func get_operation(op : String) -> Dictionary:
+	if OPERATIONS.has(op):
+		return OPERATIONS[op]
+	return plugin_operations.get(op, {})
 
 ## Replaces whole-word occurrences of word in s (without RegEx.sub, that
 ## would interpret "$" in the replacement)
@@ -150,10 +215,8 @@ class Compiler:
 			keys = [ "a", "b" ]
 		elif UNARY_OPS.has(op):
 			keys = [ "a" ]
-		elif OPERANDS.has(op):
-			keys = OPERANDS[op]
-		elif MMFunctionGraph.plugin_operations.has(op):
-			keys = MMFunctionGraph.plugin_operations[op].operands
+		else:
+			keys = MMFunctionGraph.get_operation(op).get("operands", [])
 		var rv : Array = []
 		for k in keys:
 			rv.append(node.get(k))
@@ -218,31 +281,25 @@ class Compiler:
 	func format_float(v) -> String:
 		return "%.9f" % float(v)
 
-	# The method that compiles each operation (the other ones are binary, unary
-	# and comparison operators)
-	const OP_COMPILERS : Dictionary = {
-		"float": "compile_float", "int": "compile_int", "vec2": "compile_vector", "vec3": "compile_vector",
-		"vec4": "compile_vector", "true": "compile_bool", "false": "compile_bool", "pos": "compile_pos",
-		"size": "compile_size", "param": "compile_param", "arg": "compile_arg", "sample": "compile_sample",
-		"to_int": "compile_to_int", "to_float": "compile_to_float", "call": "compile_call", "loop": "compile_loop",
-		"dot": "compile_dot_distance", "distance": "compile_dot_distance", "length": "compile_length", "cross": "compile_cross",
-		"swizzle": "compile_swizzle", "mix": "compile_mix_clamp", "clamp": "compile_mix_clamp", "smoothstep": "compile_mix_clamp",
-		"and": "compile_logic", "or": "compile_logic", "not": "compile_logic", "select": "compile_select",
-		"rand": "compile_rand"
-	}
-
 	func compile_node(node_id : String) -> String:
 		var node : Dictionary = nodes[node_id]
 		var op : String = node.get("op", "")
 		var operands : Array = get_operand_ids(node)
-		if OP_COMPILERS.has(op):
-			return call(OP_COMPILERS[op], node_id, node, op, operands)
+		if OPERATIONS.has(op):
+			var operation : Dictionary = OPERATIONS[op]
+			var expression : String = call(operation.compile, node_id, node, op, operands)
+			if expression != "":
+				for g in operation.get("globals", []):
+					add_global(g)
+			return expression
 		if BINARY_OPS.has(op):
 			var t : String = common_type(node_id, operands, INT_BINARY_OPS.has(op))
 			if t == "":
 				return ""
 			types[node_id] = t
 			if t == "int":
+				if op == "mod":
+					add_global(MOD_GLOBAL)
 				return INT_BINARY_OPS[op] % [ value_of(node.a), value_of(node.b) ]
 			return BINARY_OPS[op] % [ cast(node.a, t), cast(node.b, t) ]
 		if UNARY_OPS.has(op):
@@ -467,7 +524,7 @@ class Compiler:
 			error(node_id, "rand requires a vec2 seed")
 			return ""
 		types[node_id] = "float"
-		return "rand(%s+vec2(%s))" % [ value_of(node.a), variables.seed ]
+		return "mm_fg_rand(%s, %s)" % [ value_of(node.a), variables.seed ]
 
 	# Compiles nodes reachable from output into code, returns false on error
 	func compile_body() -> bool:
@@ -623,6 +680,10 @@ static func compile_expression(graph : Dictionary, parameter_expressions : Dicti
 	var result : Dictionary = compile(graph, [], parameter_expressions, { pos="uv", size="vec2(1.0)", seed="0.0" })
 	if not result.ok:
 		return { ok=false, errors=result.errors }
+	# Operations that need global definitions (such as integer modulo) can't
+	# be written as an expression
+	if not result.globals.is_empty():
+		return { ok=false, errors=PackedStringArray([ "integer modulo is not supported in parameter functions" ]) }
 	# Inline all statements into one expression, operands first
 	var expressions : Dictionary = {}
 	var expression : String = ""

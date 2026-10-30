@@ -30,6 +30,8 @@ const DEFAULT_FUNCTION_GRAPH : Dictionary = {
 const RESERVED_NAMES : Array[String] = [ "uv", "seed", "name", "time", "node_id", "size", "name_uv" ]
 
 var function_graph : Dictionary = {}
+# Global GLSL definitions required by the compiled function graph
+var function_graph_globals : PackedStringArray = PackedStringArray()
 
 
 func _init() -> void:
@@ -65,7 +67,7 @@ static func uses_op(graph : Dictionary, op : String) -> bool:
 					return true
 	return false
 
-## Builds the shader model for a function graph, returns { model, errors }.
+## Builds the shader model for a function graph, returns { model, globals, errors }.
 ## In "value" mode, the graph is evaluated once (value processors), so it
 ## cannot use the pixel position.
 static func build_shader_model(graph : Dictionary, mode : String = "pixel") -> Dictionary:
@@ -123,13 +125,12 @@ static func build_shader_model(graph : Dictionary, mode : String = "pixel") -> D
 		shortdesc="Value Processor" if mode == "value" else "Pixel Processor",
 		longdesc="Computes a value once with a function graph" if mode == "value" else "Computes each pixel with a function graph",
 		code="",
-		global="".join(result.globals),
 		instance=instance,
 		inputs=model_inputs,
 		parameters=model_parameters,
 		outputs=[ { rgba="$(name)_pp($uv)", type="rgba", shortdesc="Output", longdesc="The result of the function graph" } ]
 	}
-	return { model=model, errors=errors }
+	return { model=model, globals=result.globals, errors=errors }
 
 ## Sets the function graph, returns the list of errors (empty on success)
 func set_function_graph(graph : Dictionary) -> PackedStringArray:
@@ -137,8 +138,17 @@ func set_function_graph(graph : Dictionary) -> PackedStringArray:
 	if not result.errors.is_empty():
 		return result.errors
 	function_graph = graph
+	function_graph_globals = result.globals
 	set_shader_model(result.model)
 	return PackedStringArray()
+
+func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
+	var rv : ShaderCode = super._get_shader_code(uv, output_index, context)
+	# Global definitions are added one by one, so those that are used by
+	# several pixel processors are only declared once
+	for g in function_graph_globals:
+		rv.add_global(g, "%s (%s)" % [ get_hier_name(), get_type_name() ])
+	return rv
 
 func _serialize(data : Dictionary) -> Dictionary:
 	data.function_graph = function_graph
@@ -152,6 +162,7 @@ func _deserialize(data : Dictionary) -> void:
 			var result : Dictionary = build_shader_model(data.function_graph, get_mode())
 			if result.has("invalid_model"):
 				function_graph = data.function_graph
+				function_graph_globals = PackedStringArray()
 				set_shader_model(result.invalid_model)
 
 func edit(node, _tab : String = "") -> void:
@@ -171,5 +182,6 @@ func on_graph_applied(graph : Dictionary, node) -> void:
 	if node.edit_generator_prev_state.is_empty():
 		node.edit_generator_prev_state = get_parent().serialize().duplicate(true)
 	function_graph = graph
+	function_graph_globals = result.globals
 	node.update_shader_generator(result.model)
 	node.finalize_generator_update()
