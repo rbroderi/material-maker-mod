@@ -1525,7 +1525,7 @@ func undoredo_step_actions(parent_path : String, prev : Dictionary, next : Dicti
 			for ncn in next.connections.keys():
 				var nc = next.connections[ncn]
 				if prev.connections.has(ncn):
-					var pc = next.connections[ncn]
+					var pc = prev.connections[ncn]
 					for ncpn in nc.keys():
 						var ncp = nc[ncpn]
 						if ! pc.has(ncpn):
