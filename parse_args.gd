@@ -270,9 +270,12 @@ func _ready():
 			scene = load("res://material_maker/main_window.tscn")
 		else:
 			scene = load("res://splash_screen/splash_screen.tscn")
-		var rpc_port : int = args.find("--rpc-port")
-		if rpc_port != -1 and rpc_port+1 < args.size():
-			start_rpc_server(int(args[rpc_port+1]))
+		# The user interface with a JSON-RPC server
+		var rpc_port_index : int = args.find("--rpc-port")
+		if rpc_port_index != -1:
+			var rpc_port : int = get_rpc_port(args[rpc_port_index+1] if rpc_port_index+1 < args.size() else "")
+			if rpc_port != -1:
+				start_rpc_server(rpc_port)
 		await get_tree().process_frame
 		get_tree().change_scene_to_packed(scene)
 		return
@@ -386,11 +389,7 @@ func _ready():
 		"--list-parameters":
 			await list_parameters(expand_files(files))
 		"--rpc":
-			if start_rpc_server(options.get("rpc_port", MMRpcServer.DEFAULT_PORT)) != OK:
-				get_tree().quit(1)
-			elif not files.is_empty():
-				await get_tree().process_frame
-				await rpc_server.api_load({ path=files[0] })
+			await run_rpc_server(files, options)
 		"--plugin":
 			# A command of a plugin, with the following arguments
 			if files.is_empty() or not MMPlugins.commands.has(files[0]):
@@ -509,14 +508,54 @@ func quit_with_parent_process() -> void:
 			printerr("ERROR: the --headless process exited, quitting")
 			get_tree().quit(1)).call_deferred())
 
+## The port of --rpc-port, or -1 (after showing an error) if it is not valid
+func get_rpc_port(value : String) -> int:
+	if not value.is_valid_int() or int(value) < 1 or int(value) > 65535:
+		show_error("ERROR: incorrect value for --rpc-port: %s" % value)
+		return -1
+	return int(value)
+
 var rpc_server : MMRpcServer = null
 
-## Starts the JSON-RPC server, as a child of the root so it survives scene changes
+## Starts the JSON-RPC server of the user interface, as a child of the root
+## so it survives scene changes
 func start_rpc_server(port : int) -> Error:
 	rpc_server = MMRpcServer.new()
 	rpc_server.name = "RpcServer"
+	rpc_server.wait_for_main_window = true
+	var error : Error = rpc_server.start(port)
+	if error == OK:
+		get_tree().root.add_child.call_deferred(rpc_server)
+	else:
+		rpc_server.free()
+		rpc_server = null
+	return error
+
+## --rpc: runs a JSON-RPC server without user interface (until its quit
+## method is called), optionally with a graph
+func run_rpc_server(files : Array[String], options : Dictionary) -> void:
+	var port : int = get_rpc_port(str(options.rpc_port)) if options.has("rpc_port") else MMRpcServer.DEFAULT_PORT
+	if port == -1:
+		get_tree().quit(1)
+		return
+	if files.size() > 1:
+		show_error("ERROR: --rpc loads a single file")
+		get_tree().quit(1)
+		return
+	rpc_server = MMRpcServer.new()
+	rpc_server.name = "RpcServer"
 	get_tree().root.add_child.call_deferred(rpc_server)
-	return rpc_server.start(port)
+	await get_tree().process_frame
+	# The graph is loaded before clients can connect
+	if not files.is_empty():
+		var path : String = files[0] if files[0].is_absolute_path() else DirAccess.open(".").get_current_dir().path_join(files[0])
+		await rpc_server.api_load({ path=path })
+		if rpc_server.method_error != "":
+			show_error("ERROR: "+rpc_server.method_error)
+			get_tree().quit(1)
+			return
+	if rpc_server.start(port) != OK:
+		get_tree().quit(1)
 
 func expand_files(files : Array[String]) -> Array:
 	var expanded_files = []

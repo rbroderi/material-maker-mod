@@ -173,7 +173,7 @@ class MaterialMaker:
     def create_node(self, type=None, name=None, position=None, parameters=None, item=None):
         """Creates a node from a generator type ("perlin"), a library item
         dictionary (item=...) or, when the user interface is running, a
-        library item path ("Noise/Perlin"). Returns its name."""
+        library item path ("Noise/Voronoi"). Returns its name."""
         params = {"type": type} if item is None else {"item": item}
         params.update(_given(name=name, position=None if position is None else list(position)))
         if parameters:
@@ -219,9 +219,13 @@ class MaterialMaker:
     # Output
 
     def render(self, node, path, output=0, size=1024, height=0):
-        """Renders an output of a node to an image file (.png or .exr), size
-        pixels wide and height pixels high (0 for a square image)"""
+        """Renders an output of a node to an image file (.png, .exr, .jpg or
+        .webp), size pixels wide and height pixels high (0 for a square image)"""
         return self.call("render", node=node, path=_path(path), output=output, size=size, height=height)
+
+    def render_queue(self):
+        """Buffers that are not rendered yet, to diagnose renders that never finish"""
+        return self.call("render_queue")
 
     def export_volume(self, node, path, output=0, resolution=128, extent=1.0, texel_format=""):
         """Exports a 3D texture or SDF output as a volume: OpenVDB (.vdb), 3D DDS
@@ -249,6 +253,14 @@ class MaterialMaker:
         (height: for non-square textures). udim exports UDIM tiles: True for
         the graph's tiles, or a list of tiles ("1001-1004,1011" or [1001, 1002])."""
         return self.call("export", **_given(target=target, prefix=_path(prefix), size=size, height=height, udim=udim))
+
+    def undo(self):
+        """Undoes the last change (with the user interface only)"""
+        return self.call("undo")
+
+    def redo(self):
+        """Redoes the last undone change (with the user interface only)"""
+        return self.call("redo")
 
     def export_mmr(self, path, size=0, height=0):
         """Exports a runtime package (.mmr) of the material, for engine runtimes

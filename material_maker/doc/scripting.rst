@@ -6,17 +6,21 @@ Scripting
 Material Maker can be controlled from scripts through a JSON-RPC 2.0 server, either with its
 user interface or without:
 
- material_maker --rpc-port 7680
- material_maker --rpc --rpc-port 7680 [<input_file>]
+ material_maker --rpc-port 7680 [<input_file>]
+ material_maker --rpc [--rpc-port <port>] [<input_file>]
 
-The server only accepts connections from the local computer (127.0.0.1). Each request is a
-JSON object on a single line, and each response is sent on a single line:
+The server is only started with one of these options (the default port is 7680), and only
+accepts connections from the local computer (127.0.0.1). With **--rpc**, the input file is
+loaded before clients can connect. Each request is a JSON object on a single line, and each
+response is sent on a single line:
 
  {"jsonrpc": "2.0", "id": 1, "method": "set_parameters", "params": {"values": {"Hue": 0.5}}}
  {"jsonrpc": "2.0", "id": 1, "result": true}
 
 With the user interface, methods act on the current graph of the current project, and changes
-can be undone. Without user interface, the server owns a single material graph.
+can be undone (with the user interface, connections are accepted once the main window is
+ready). Without user interface (**--rpc**), the server owns a single material graph, and the
+window is minimized (rendering needs a GPU) unless **--show-window** is used.
 
 Python client
 -------------
@@ -37,6 +41,10 @@ The **python** directory of the source repository contains a Python client witho
     mm.export("MaterialX/Standard Surface", "out/bricks")
     mm.quit()
 
+**launch** starts Material Maker in **--rpc** mode and connects to it. To connect to a running
+server, use **MaterialMaker(port=7680)**. Any method of the server can also be called with
+**mm.call("method", **params)**. See **python/examples/variations.py** for a complete script.
+
 Methods
 -------
 
@@ -54,17 +62,21 @@ graph (and in **list_nodes**).
   dictionary whose keys are remote parameter names or labels, or "node:parameter".
   Colors are written {"type": "Color", "r": 1, "g": 0, "b": 0, "a": 1}
 * **create_node(type, name, position, parameters)** creates a node from its type (such as
-  "perlin") or, with the user interface, from a library item (such as "Noise/Perlin"), and
-  returns its name
+  "perlin"), from a library item (**item**, a dictionary as stored in library files) or, with
+  the user interface, from a library item path (such as "Noise/Voronoi"), and returns its name
 * **delete_node(node)**, **connect(from, to, from_port, to_port)**, **disconnect(from, to, from_port, to_port)**
 * **list_presets()**, **apply_preset(name)**, **save_preset(name, node)** manage the presets of
   the graph's remote nodes, and **randomize_parameters(seed)** sets random values to their
   parameters
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
-* **render(node, output, size, path, height)** renders a node output to a PNG or EXR file (with an
-  optional height for non-square images)
+* **render(node, output, size, path, height)** renders a node output to a PNG, EXR, JPEG or WebP
+  file (outputs are numbered from 0, as with **--render** on the command line, with an optional
+  height for non-square images). Its directory is created if needed
+* **render_queue()** lists the buffers that are not rendered yet, to diagnose renders that never
+  finish
 * **list_export_targets()** and **export(target, prefix, size, height, udim)** export the material
-  (**udim** exports UDIM tiles: true for the graph's tiles, or a list such as "1001-1004,1011"
+  (prefix is the path of the exported files without extension, and size 0 uses the Material
+  node's size; **udim** exports UDIM tiles: true for the graph's tiles, or a list such as "1001-1004,1011"
   or [1001, 1002])
 * **export_mmr(path, size, height)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
@@ -74,7 +86,10 @@ graph (and in **list_nodes**).
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 
-Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).
+Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**):
+parse errors, invalid requests, unknown methods, invalid params (params that are not an object),
+and server errors with a message for missing parameters or parameters of the wrong type, unknown
+nodes, and methods that fail.
 
 Plugins
 -------

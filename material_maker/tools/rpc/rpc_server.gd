@@ -25,6 +25,9 @@ var clients : Array[Dictionary] = []
 var headless_graph : MMGenGraph = null
 ## The error of the method being executed (methods return null on error)
 var method_error : String = ""
+## With the user interface, connections wait until the main window is ready
+## (else requests would act on a graph of the server)
+var wait_for_main_window : bool = false
 
 
 func start(port : int) -> Error:
@@ -36,9 +39,16 @@ func start(port : int) -> Error:
 	return error
 
 func _exit_tree() -> void:
+	for c in clients:
+		c.peer.disconnect_from_host()
+	clients.clear()
 	server.stop()
 
 func _process(_delta : float) -> void:
+	if wait_for_main_window:
+		if mm_globals.main_window == null or not mm_globals.main_window.is_node_ready():
+			return
+		wait_for_main_window = false
 	while server.is_connection_available():
 		var peer : StreamPeerTCP = server.take_connection()
 		peer.set_no_delay(true)
@@ -78,6 +88,9 @@ func process_request(line : String) -> Dictionary:
 	if not request is Dictionary or not request.get("method") is String:
 		return make_error(null, ERROR_INVALID_REQUEST, "Invalid request")
 	var id = request.get("id")
+	# (JSON numbers are parsed as floats)
+	if id is float and id == floor(id):
+		id = int(id)
 	var params = request.get("params", {})
 	if params is Array and params.is_empty():
 		params = {}
@@ -110,12 +123,25 @@ func fail(message : String):
 	method_error = message
 	return null
 
+## Checks that the string parameters given by names are there
 func require(params : Dictionary, names : Array) -> bool:
 	for n in names:
 		if not params.has(n):
 			fail("missing parameter '%s'" % n)
 			return false
+		if not params[n] is String:
+			fail("parameter '%s' must be a string" % n)
+			return false
 	return true
+
+## An optional integer parameter (sets an error and returns default if it
+## is not a number)
+func get_int(params : Dictionary, parameter_name : String, default : int) -> int:
+	var value = params.get(parameter_name, default)
+	if value is int or value is float:
+		return int(value)
+	fail("parameter '%s' must be a number" % parameter_name)
+	return default
 
 # Graph access
 
@@ -166,7 +192,8 @@ static func describe_node(generator : MMGenBase) -> Dictionary:
 		parameters[p.name] = MMType.serialize_value(generator.get_parameter(p.name))
 	return {
 		name=generator.name,
-		type=generator.get_type(),
+		# The type of the node in graph files
+		type=generator.model if generator.model != null else generator.get_type(),
 		type_name=generator.get_type_name(),
 		position=[ generator.position.x, generator.position.y ],
 		inputs=generator.get_input_defs().map(func(i): return { name=i.get("name", ""), type=i.get("type", "") }),
@@ -183,6 +210,8 @@ func api_ping(_params : Dictionary):
 ## Creates a new material, optionally from an output template (by name or
 ## export target)
 func api_new_graph(params : Dictionary):
+	if not params.get("template", "") is String:
+		return fail("parameter 'template' must be a string")
 	var template : String = params.get("template", "")
 	if template != "" and MMCliTools.get_engine_template_graph(template).is_empty():
 		return fail("no template '%s' (templates: %s)" % [ template, ", ".join(list_templates()) ])
@@ -231,6 +260,11 @@ func api_save(params : Dictionary):
 		if not await graph_edit.save_file(params.path):
 			return fail("cannot save '%s'" % params.path)
 	else:
+		# (save_gen does not report errors)
+		var file : FileAccess = FileAccess.open(params.path, FileAccess.WRITE)
+		if file == null:
+			return fail("cannot save '%s': %s" % [ params.path, error_string(FileAccess.get_open_error()) ])
+		file.close()
 		mm_loader.save_gen(params.path, await get_graph())
 	return true
 
@@ -256,16 +290,16 @@ func api_list_parameters(_params : Dictionary):
 	return Array(MMCliTools.list_parameters(await get_graph()))
 
 func api_set_parameter(params : Dictionary):
-	if not require(params, [ "node", "parameter", "value" ]):
+	if not require(params, [ "node", "parameter" ]):
 		return null
+	if not params.has("value"):
+		return fail("missing parameter 'value'")
 	return await set_parameters({ params.node+":"+params.parameter: params.value })
 
 ## Sets several parameters, given as { name: value } where names are remote
 ## parameter names or labels, or "node:parameter"
 func api_set_parameters(params : Dictionary):
-	if not require(params, [ "values" ]):
-		return null
-	if not params.values is Dictionary:
+	if not params.get("values") is Dictionary:
 		return fail("values must be an object")
 	return await set_parameters(params.values)
 
@@ -295,14 +329,27 @@ func set_parameters(values : Dictionary):
 		graph_edit.send_changed_signal()
 	return true
 
-## Creates a node from a generator type (e.g. "perlin") or a library item
-## path (e.g. "Noise/Perlin", main window only)
+## Creates a node from a generator type (e.g. "perlin"), a library item (as
+## stored in library files) or a library item path (e.g. "Noise/Voronoi",
+## main window only)
 func api_create_node(params : Dictionary):
-	if not params.has("item") and not require(params, [ "type" ]):
+	if params.has("item"):
+		if not params.item is Dictionary:
+			return fail("item must be an object")
+	elif not require(params, [ "type" ]):
 		return null
+	if not params.get("parameters", {}) is Dictionary:
+		return fail("parameters must be an object")
+	if params.has("name") and not params.name is String:
+		return fail("name must be a string")
+	var position : Vector2 = Vector2()
+	if params.has("position"):
+		var p = params.position
+		if not p is Array or p.size() != 2 or not (p[0] is float or p[0] is int) or not (p[1] is float or p[1] is int):
+			return fail("position must be an array of 2 numbers")
+		position = Vector2(p[0], p[1])
 	var data : Dictionary = { type=params.get("type", ""), parameters=params.get("parameters", {}) }
-	if params.get("item") is Dictionary:
-		# A library item, as stored in library files
+	if params.has("item"):
 		data = params.item.duplicate(true)
 	elif mm_globals.main_window != null:
 		var item = mm_globals.main_window.node_library_manager.get_item(params.type)
@@ -310,7 +357,6 @@ func api_create_node(params : Dictionary):
 			data = item.item.duplicate(true)
 	if params.has("name"):
 		data.name = params.name
-	var position : Vector2 = Vector2(params.position[0], params.position[1]) if params.get("position") is Array else Vector2()
 	# (the hash of a library item is computed before a node is created from it)
 	var library_hash : String = MMLibraryInstances.definition_hash(data) if data.has("tree_item") and data.has("type") and MMLibraryInstances.embeds_definition(data) else ""
 	return await change_graph("Create node", func(graph : MMGenGraph):
@@ -320,6 +366,13 @@ func api_create_node(params : Dictionary):
 			nodes = await mm_loader.add_to_gen_graph(graph, [ data ], [], position)
 		else:
 			nodes = await mm_loader.add_to_gen_graph(graph, data.get("nodes", []), data.get("connections", []), position)
+		# (graph files keep nodes of unknown types as placeholders, but new
+		# nodes must have a known type)
+		for g in nodes.generators:
+			if g is MMGenMissing:
+				for n in nodes.generators:
+					graph.remove_generator(n)
+				return fail("cannot create node of type '%s'" % g.get_type())
 		if nodes.generators.is_empty():
 			return fail("cannot create node of type '%s'" % data.get("type", ""))
 		var generator : MMGenBase = nodes.generators[0]
@@ -343,21 +396,31 @@ func api_delete_node(params : Dictionary):
 func api_connect(params : Dictionary):
 	if not require(params, [ "from", "to" ]):
 		return null
+	var from_port : int = get_int(params, "from_port", 0)
+	var to_port : int = get_int(params, "to_port", 0)
+	if method_error != "":
+		return null
 	return await change_graph("Connect nodes", func(graph : MMGenGraph):
 		var from : MMGenBase = get_generator(graph, params.from)
 		var to : MMGenBase = get_generator(graph, params.to)
 		if from == null or to == null:
 			return null
-		if not graph.connect_children(from, int(params.get("from_port", 0)), to, int(params.get("to_port", 0))):
+		if not graph.connect_children(from, from_port, to, to_port):
 			return fail("cannot connect %s to %s" % [ params.from, params.to ])
 		return true)
 
 func api_disconnect(params : Dictionary):
 	if not require(params, [ "from", "to" ]):
 		return null
+	var from_port : int = get_int(params, "from_port", 0)
+	var to_port : int = get_int(params, "to_port", 0)
+	if method_error != "":
+		return null
 	return await change_graph("Disconnect nodes", func(graph : MMGenGraph):
-		if not graph.disconnect_children_by_name(params.from, int(params.get("from_port", 0)), params.to, int(params.get("to_port", 0))):
+		# (disconnect_children_by_name always returns true)
+		if not graph.connections.any(func(c): return c.from == params.from and int(c.from_port) == from_port and c.to == params.to and int(c.to_port) == to_port):
 			return fail("%s is not connected to %s" % [ params.from, params.to ])
+		graph.disconnect_children_by_name(params.from, from_port, params.to, to_port)
 		return true)
 
 ## Presets of the remote nodes of the current graph
@@ -393,7 +456,10 @@ func api_randomize_parameters(params : Dictionary):
 
 ## Changes the seeds of all nodes that are not locked (cannot be undone)
 func api_reseed(params : Dictionary):
-	MMCliTools.reseed(await get_graph(), int(params.get("offset", 1)))
+	var offset : int = get_int(params, "offset", 1)
+	if method_error != "":
+		return null
+	MMCliTools.reseed(await get_graph(), offset)
 	var graph_edit : MMGraphEdit = get_graph_edit()
 	if graph_edit != null:
 		graph_edit.send_changed_signal()
@@ -402,9 +468,17 @@ func api_reseed(params : Dictionary):
 func api_render(params : Dictionary):
 	if not require(params, [ "node", "path" ]):
 		return null
+	var output : int = get_int(params, "output", 0)
+	var size : int = get_int(params, "size", 1024)
+	var height : int = get_int(params, "height", 0)
+	if method_error != "":
+		return null
+	if size <= 0 or height < 0:
+		return fail("incorrect size %d" % size if size <= 0 else "incorrect height %d" % height)
 	var graph : MMGenGraph = await get_graph()
+	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
-	var error : String = await MMCliTools.render_node(graph, "%s:%d" % [ params.node, int(params.get("output", 0)) ], int(params.get("size", 1024)), params.path, int(params.get("height", 0)))
+	var error : String = await MMCliTools.render_node(graph, "%s:%d" % [ params.node, output ], size, params.path, height)
 	if error == "":
 		var failed : PackedStringArray = mm_deps.get_failed_buffers(graph)
 		if not failed.is_empty():
@@ -429,21 +503,33 @@ func prepare_preview(params : Dictionary):
 
 ## Path traced render of the 3D preview's object (PNG, or linear EXR)
 func api_render_path_traced(params : Dictionary):
+	var size : int = get_int(params, "size", 512)
+	var samples : int = get_int(params, "samples", 64)
+	if method_error != "":
+		return null
+	if size <= 0 or samples <= 0:
+		return fail("incorrect size %d" % size if size <= 0 else "incorrect samples %d" % samples)
 	var preview = await prepare_preview(params)
 	if preview == null:
 		return null
-	var size : int = int(params.get("size", 512))
-	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), int(params.get("samples", 64)), bool(params.get("transparent", false)), Callable(), bool(params.get("thin_walled", false)))
+	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
+	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), samples, bool(params.get("transparent", false)), Callable(), bool(params.get("thin_walled", false)))
 	return fail(error) if error != "" else params.path
 
 ## Turntable of the 3D preview's object, as a sprite sheet or a PNG sequence
 ## (when the path contains #)
 func api_render_turntable(params : Dictionary):
+	var size : int = get_int(params, "size", 256)
+	var frames : int = get_int(params, "frames", 36)
+	if method_error != "":
+		return null
+	if size <= 0 or frames <= 0:
+		return fail("incorrect size %d" % size if size <= 0 else "incorrect frames %d" % frames)
 	var preview = await prepare_preview(params)
 	if preview == null:
 		return null
-	var size : int = int(params.get("size", 256))
-	var images : Array[Image] = await preview.render_turntable(int(params.get("frames", 36)), Vector2i(size, size))
+	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
+	var images : Array[Image] = await preview.render_turntable(frames, Vector2i(size, size))
 	var error : String = preview.save_turntable(images, params.path)
 	return fail(error) if error != "" else params.path
 
@@ -484,6 +570,12 @@ func api_list_export_targets(_params : Dictionary):
 func api_export(params : Dictionary):
 	if not require(params, [ "target", "prefix" ]):
 		return null
+	var size : int = get_int(params, "size", 0)
+	var height : int = get_int(params, "height", 0)
+	if method_error != "":
+		return null
+	if size < 0 or height < 0:
+		return fail("incorrect size %d" % size if size < 0 else "incorrect height %d" % height)
 	var material : MMGenBase = get_material(await get_graph())
 	if material == null:
 		return fail("the graph has no material node")
@@ -502,7 +594,7 @@ func api_export(params : Dictionary):
 			return fail("invalid UDIM tiles '%s'" % str(udim))
 	DirAccess.make_dir_recursive_absolute(params.prefix.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
-	await material.export_material(params.prefix, params.target, int(params.get("size", 0)), true, int(params.get("height", 0)), tiles)
+	await material.export_material(params.prefix, params.target, size, true, height, tiles)
 	return true
 
 func api_undo(_params : Dictionary):
