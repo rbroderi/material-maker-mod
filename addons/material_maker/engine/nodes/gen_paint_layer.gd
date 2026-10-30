@@ -26,6 +26,8 @@ var layer_names : PackedStringArray = PackedStringArray()
 var project_time : int = 0
 var timer : Timer
 var reload_pending : bool = false
+## Textures of the uniforms of the generated shaders, by uniform name
+var uniform_textures : Dictionary = {}
 
 ## Layers panels (MMPaintLayers) of the paint projects open in the user
 ## interface, by project path
@@ -248,6 +250,14 @@ func _get_shader_code(uv : String, _output_index : int, context : MMGenContext) 
 	rv.output_values[rv.output_type] = ("%s_%d.r" if is_greyscale else "%s_%d") % [ genname, variant_index ]
 	return rv
 
+## Adds a texture uniform, and gives its texture to the shaders that use it
+## (e.g. the material previews), as MMGenImage does
+func add_texture_uniform(rv : ShaderCode, uniform_name : String, texture : MMTexture) -> void:
+	rv.add_uniform(uniform_name, "sampler2D", texture)
+	if uniform_textures.get(uniform_name) != texture:
+		uniform_textures[uniform_name] = texture
+		mm_deps.dependency_update(uniform_name, texture)
+
 ## The GLSL function that composites the channel, and its texture uniforms
 func build_function(genname : String, channel : String, rv : ShaderCode) -> String:
 	var source : Dictionary = channel_source(channel)
@@ -274,7 +284,7 @@ func build_function(genname : String, channel : String, rv : ShaderCode) -> Stri
 		var masks : String = ""
 		for m in drawn[i].masks.size():
 			var mask_name : String = "%s_l%d_mask%d" % [ genname, i, m ]
-			rv.add_uniform(mask_name, "sampler2D", drawn[i].masks[m])
+			add_texture_uniform(rv, mask_name, drawn[i].masks[m])
 			masks += "*textureLod(%s, %s, 0.0).r" % [ mask_name, sample_uv ]
 		var passes : Array = [ source ]
 		if channel == "emission" and selected_layer == 0:
@@ -284,7 +294,7 @@ func build_function(genname : String, channel : String, rv : ShaderCode) -> Stri
 			if not layer.textures.has(p.texture):
 				continue
 			var texture_name : String = "%s_l%d_%s" % [ genname, i, p.texture ]
-			rv.add_uniform(texture_name, "sampler2D", layer.textures[p.texture])
+			add_texture_uniform(rv, texture_name, layer.textures[p.texture])
 			var modulate : float = layer.alphas.get(p.get("alpha_channel", channel), 1.0) if p.texture != "mask" else 1.0
 			lines.append("\tt = textureLod(%s, %s, 0.0);" % [ texture_name, sample_uv ])
 			lines.append("\ta = clamp(%s*%f%s, 0.0, 1.0);" % [ p.alpha, modulate, masks ])
@@ -294,6 +304,9 @@ func build_function(genname : String, channel : String, rv : ShaderCode) -> Stri
 	return "\n".join(lines)+"\n"
 
 # The project path is stored relative to the project, as for images
+
+func _serialize(data: Dictionary) -> Dictionary:
+	return data
 
 func _serialize_data(data: Dictionary) -> Dictionary:
 	data.parameters.project = MMPaths.encode_path(data.parameters.get("project", ""))
