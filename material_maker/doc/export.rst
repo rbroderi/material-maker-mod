@@ -20,6 +20,27 @@ The `Add Principled Texture Setup <https://docs.blender.org/manual/en/latest/add
 .. image:: images/blender_mat_demo.gif
   :align: center
 
+Procedural shaders
+------------------
+
+The **Godot/Godot 4 Shader**, **Unity/Built-in Shader** and **Unreal/Unreal Engine 5 Shader**
+targets (from the *More export targets* plugin, enabled by default) export the material as a
+shader that computes the graph, instead of textures: the material keeps its detail at any
+resolution, without a texture budget. Buffers of the graph (for example the ones of normal map
+nodes) are exported as PNG textures that the shader samples (so they have 8 bits per channel).
+
+* **Godot 4**: a .gdshader and a .tres ShaderMaterial. The parameters of the graph are shader
+  uniforms (with their current values), so they can be changed in Godot's inspector. Coat,
+  anisotropy, sheen and transmission are written when their parameter is above 0.
+* **Unity**: a surface shader (built-in render pipeline) and a .mat file, with the buffer
+  textures and their .meta files.
+* **Unreal Engine 5**: a Python script that creates the material, with a Custom node that
+  contains the generated HLSL code (the .shader file).
+
+The Unity and Unreal shaders are HLSL translations of the graph's GLSL code. The random patterns
+of noise nodes can differ from Material Maker's: its hash functions are very sensitive to the
+precision of the operations, which differs between shading languages.
+
 Godot game engine
 -----------------
 
@@ -107,6 +128,13 @@ metallic, roughness, normal strength, emission energy and depth scale) are appli
 MaterialX graph. Coat, anisotropy, sheen (OpenPBR's fuzz) and transmission are exported when their
 parameter is above 0, with a texture when the corresponding input is also connected. Ambient
 occlusion is not exported, since those shaders have no input for it.
+
+The **MaterialX/Procedural** target generates a procedural material: a .mtlx file that defines
+a custom node (*mm_procedural*) whose GLSL implementation (the .glsl file next to it) computes
+the whole graph, including what buffers compute (they are inlined). The node's outputs feed a
+standard_surface shader. The GLSL implementation is used by MaterialX's GLSL shader generator
+(genglsl, with the .mtlx file's directory in its search path). Graphs that read textures (Image
+nodes, iterate buffers such as the ones of Fill nodes, mesh maps) cannot use this target yet.
 
 USD
 ---
