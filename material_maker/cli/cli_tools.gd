@@ -170,12 +170,13 @@ static func render_output_texture(generator : MMGenBase, output : int, size : Ve
 ## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors.
 ## With a high poly mesh (options.high), maps are baked from it (see
 ## MMHighPolyBaker), using options.cage, front, rear and samples, and
-## optionally options.match_names, skew (image) and high_texture (image).
+## optionally options.match_names, skew (image), high_texture (image) and
+## hardware_raytracing.
 static func bake(mesh_path : String, maps : Array, size : int, prefix : String, options : Dictionary = {}) -> PackedStringArray:
 	var errors : PackedStringArray = PackedStringArray()
 	var match_names : bool = options.get("match_names", false)
 	if options.get("high", "") == "":
-		for o in [ "match_names", "skew", "high_texture" ]:
+		for o in [ "match_names", "skew", "high_texture", "hardware_raytracing" ]:
 			if options.has(o):
 				errors.append("--%s needs --high" % o.replace("_", "-"))
 				return errors
@@ -198,6 +199,8 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 			errors.append("could not load mesh '%s'" % options.cage)
 			return errors
 	var bake_options : Dictionary = {}
+	if options.get("hardware_raytracing", false):
+		bake_options.hardware = true
 	if match_names:
 		bake_options.match_by_name = true
 		# Matching nothing would bake as without --match-names
@@ -240,5 +243,6 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 		if await texture.save_to_file(file_name) != OK:
 			errors.append("could not save '%s'" % file_name)
 		else:
-			print("Baked %s" % file_name)
+			var hardware : bool = high_mesh != null and m in MMHighPolyBaker.MAPS and MMHighPolyBaker.last_bake_used_hardware
+			print("Baked %s%s" % [ file_name, " (hardware ray tracing)" if hardware else "" ])
 	return errors

@@ -67,6 +67,10 @@ Options
   rays go along the flat face normal instead of the smooth vertex normal
 * **--high-texture <image>** is the texture of the **--high** mesh, that the **texture** map
   transfers to the input mesh's UV layout
+* **--hardware-raytracing** casts the rays of **--high** with the GPU's ray tracing hardware, which
+  is much faster for big high poly meshes. When the GPU or its driver doesn't support Vulkan ray
+  tracing pipelines, a warning is shown and maps are baked without it. Baked maps are then followed
+  by "(hardware ray tracing)" in the output
 * **--show-window** keeps the window visible
 
 **--set**, **--seed** and **--variations** work with **--export-material** and **--render**.

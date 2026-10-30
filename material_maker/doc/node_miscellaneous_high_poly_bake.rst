@@ -61,6 +61,10 @@ The **High Poly Bake** node has the following parameters:
   rays go along the flat face normal of the current mesh instead of its smooth vertex normals,
   which fixes details that are skewed near hard edges (gray values bend rays in between)
 * **High poly texture** is the texture of the high poly mesh, for the **Transferred texture** map
+* **Hardware ray tracing** casts rays with the GPU's ray tracing hardware, which is much faster
+  for big high poly meshes (no bounding volume hierarchy is built on the CPU). It needs a GPU and
+  driver that support Vulkan ray tracing pipelines: otherwise a warning is shown and rays are cast
+  by a compute shader, as when this option is off. Both give the same maps, up to rounding
 
 Maps are extended past the borders of UV islands, so they don't show seams when they are
 mipmapped or filtered. UV islands can be mirrored.

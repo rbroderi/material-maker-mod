@@ -15,6 +15,9 @@ class_name MMHighPolyBaker
 #   skewed details near hard edges
 # - high_texture: the texture of the high poly mesh, sampled at the hit point
 #   with the high poly UVs for the "texture" map
+# - hardware: cast rays with the GPU's ray tracing hardware when it supports
+#   ray tracing pipelines (see MMHighPolyBakerRT), else with the compute ray
+#   caster
 
 
 const MAPS : Array[String] = [ "normal_tangent", "normal_object", "height", "color", "material_id", "position", "texture" ]
@@ -28,6 +31,8 @@ class HighPolyData:
 static var high_poly_data : Dictionary = {}
 static var baked_maps : Dictionary = {}
 static var busy : bool = false
+## Whether the last bake used hardware ray tracing (see MMHighPolyBakerRT)
+static var last_bake_used_hardware : bool = false
 
 const MAX_HIGH_POLY_DATA : int = 4
 const MAX_BAKED_MAPS : int = 8
@@ -321,7 +326,13 @@ static func to_mm_texture(texture : Texture2D) -> MMTexture:
 ## vertex_parts is, for each low poly vertex, the high poly part its rays can
 ## hit (-1 for any, and empty for no restriction).
 static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, front : float, rear : float, samples : int, seams : MMTexture, texture : MMTexture, cage_mesh : Mesh = null, options : Dictionary = {}, vertex_parts : PackedFloat32Array = PackedFloat32Array()) -> void:
-	var data : HighPolyData = get_high_poly_data(high_mesh)
+	# The BVH of the compute ray caster (built in GDScript, slow for big
+	# meshes) is not needed with hardware ray tracing
+	var hardware : bool = options.get("hardware", false)
+	if hardware and not MMHighPolyBakerRT.is_available():
+		push_warning("Hardware ray tracing is not available (it needs a GPU and driver with Vulkan ray tracing pipelines), the high poly mesh is baked without it")
+		hardware = false
+	var data : HighPolyData = null if hardware else get_high_poly_data(high_mesh)
 	var low : Mesh = with_tangents(low_mesh)
 	if vertex_parts.is_empty():
 		vertex_parts.resize(low.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size())
@@ -343,9 +354,11 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 	pipeline.add_parameter_or_texture("use_skew", "int", 1 if skew_map is Texture2D else 0)
 	pipeline.add_parameter_or_texture("skew_tex", "sampler2D", to_mm_texture(skew_map if skew_map is Texture2D else null))
 	var high_texture = options.get("high_texture")
-	pipeline.add_parameter_or_texture("high_texture", "sampler2D", to_mm_texture(high_texture if high_texture is Texture2D else null))
-	pipeline.add_parameter_or_texture("bvh_data", "sampler2D", data.bvh)
-	pipeline.add_parameter_or_texture("attribute_data", "sampler2D", data.attributes)
+	var high_mm_texture : MMTexture = to_mm_texture(high_texture if high_texture is Texture2D else null)
+	pipeline.add_parameter_or_texture("high_texture", "sampler2D", high_mm_texture)
+	var dummy : MMTexture = to_mm_texture(null) if data == null else null
+	pipeline.add_parameter_or_texture("bvh_data", "sampler2D", data.bvh if data != null else dummy)
+	pipeline.add_parameter_or_texture("attribute_data", "sampler2D", data.attributes if data != null else dummy)
 	pipeline.add_parameter_or_texture("prev_iteration_tex", "sampler2D", texture)
 	pipeline.add_parameter_or_texture("front_dist", "float", front*diagonal)
 	pipeline.add_parameter_or_texture("rear_dist", "float", rear*diagonal)
@@ -355,15 +368,28 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 	pipeline.add_parameter_or_texture("iteration", "int", 1)
 	pipeline.add_parameter_or_texture("jitter", "vec2", Vector2(0, 0))
 	var vertex_shader : String = load("res://addons/material_maker/map_generator/highpoly_vertex.tres").text
-	var fragment_shader : String = load("res://addons/material_maker/map_generator/highpoly_fragment.tres").text
-	if not await pipeline.set_shader(vertex_shader, fragment_shader):
-		push_error("Cannot compile high poly baking shader")
-		return
-	for i in max(1, samples):
-		pipeline.set_parameter("iteration", i+1)
-		pipeline.set_parameter("prev_iteration_tex", texture)
-		pipeline.set_parameter("jitter", get_jitter(i))
-		pipeline.in_thread_render(Vector2i(size, size), 3, texture)
+	last_bake_used_hardware = false
+	if hardware:
+		# The rasterization pass only writes the rays, that the ray tracing
+		# pipeline traces
+		var rays_shader : String = load("res://addons/material_maker/map_generator/highpoly_rays_fragment.tres").text
+		if await pipeline.set_shader(vertex_shader, rays_shader):
+			last_bake_used_hardware = MMHighPolyBakerRT.generate(pipeline, high_mesh, MAPS.find(map), size, front*diagonal, rear*diagonal, aabb, samples, high_mm_texture, texture)
+		if not last_bake_used_hardware:
+			push_warning("Hardware ray tracing failed, the high poly mesh is baked without it")
+			data = get_high_poly_data(high_mesh)
+			pipeline.set_parameter("bvh_data", data.bvh)
+			pipeline.set_parameter("attribute_data", data.attributes)
+	if not last_bake_used_hardware:
+		var fragment_shader : String = load("res://addons/material_maker/map_generator/highpoly_fragment.tres").text
+		if not await pipeline.set_shader(vertex_shader, fragment_shader):
+			push_error("Cannot compile high poly baking shader")
+			return
+		for i in max(1, samples):
+			pipeline.set_parameter("iteration", i+1)
+			pipeline.set_parameter("prev_iteration_tex", texture)
+			pipeline.set_parameter("jitter", get_jitter(i))
+			pipeline.in_thread_render(Vector2i(size, size), 3, texture)
 	# Extend the map past UV seams
 	var dilate_pipeline : MMComputeShader = MMComputeShader.new()
 	dilate_pipeline.clear()

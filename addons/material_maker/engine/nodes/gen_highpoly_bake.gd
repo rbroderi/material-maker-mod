@@ -102,6 +102,8 @@ func get_parameter_defs() -> Array:
 			longdesc="Optional grayscale image in the current mesh's UV space: white bends rays towards the flat face normal, to fix skewed details near hard edges" },
 		{ name="high_texture", type="file", label="High poly texture", filters=IMAGE_FILTERS, default="",
 			longdesc="Texture of the high poly mesh (in its UV space), for the Transferred texture map" },
+		{ name="hardware", type="boolean", label="Hardware ray tracing", default=false,
+			longdesc="Cast rays with the GPU's ray tracing hardware (much faster for big high poly meshes), when the GPU and driver support Vulkan ray tracing pipelines" },
 	]
 
 func get_map_definition() -> Dictionary:
@@ -158,6 +160,8 @@ func generate_map() -> MMTexture:
 	var options : Dictionary = {}
 	if get_parameter("match_by_name"):
 		options.match_by_name = true
+	if get_parameter("hardware"):
+		options.hardware = true
 	for p in [ "skew_map", "high_texture" ]:
 		var texture : Texture2D = get_image_parameter(p)
 		if texture != null:

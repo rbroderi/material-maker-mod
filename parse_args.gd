@@ -127,6 +127,7 @@ const VALUE_OPTIONS : Dictionary = {
 	"--match-names": { key="match_names", type=TYPE_BOOL },
 	"--skew": { key="skew", type=TYPE_STRING },
 	"--high-texture": { key="high_texture", type=TYPE_STRING },
+	"--hardware-raytracing": { key="hardware_raytracing", type=TYPE_BOOL },
 }
 
 ## Image formats of --render
@@ -164,6 +165,8 @@ Options (they can also be given after "--"):
                              part with the same name (ignoring suffixes such as _low and _high)
   --skew <image>             skew map for --high: white bends rays towards the flat face normal
   --high-texture <image>     texture of the --high mesh, transferred by the texture map
+  --hardware-raytracing      cast the rays of --high with the GPU's ray tracing hardware (when the GPU
+                             supports Vulkan ray tracing pipelines, else it is not used)
   --show-window              do not minimize the window
 """
 
