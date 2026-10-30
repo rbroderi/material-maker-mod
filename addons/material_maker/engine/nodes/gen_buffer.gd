@@ -120,8 +120,8 @@ func get_buffer_dimensions() -> Vector2i:
 ## Returns the material's output size (as log2), or -1 if there is none
 func get_output_size() -> int:
 	var material : Node = find_material()
-	if material != null and material.parameters.has("size"):
-		return int(material.parameters.size)
+	if material != null:
+		return material.get_output_size()
 	return -1
 
 ## The width of the texture an output reads: that of the nearest buffer or

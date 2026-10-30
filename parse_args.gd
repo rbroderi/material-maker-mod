@@ -130,29 +130,17 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 				var tiles : PackedInt32Array = get_udim_tiles(c, export_options)
 				if export_options.has("udim_tiles") and tiles.is_empty():
 					show_error("ERROR: invalid --udim-tiles %s" % export_options.udim_tiles)
-				# Without --size, the Material's size (and aspect ratio) is used
+				# Without --size, the Material's size (and aspect ratio) is used.
+				# Buffers sized relatively to the Material follow --size (see
+				# MMGenMaterial.export_size_override)
 				var material_size : int = 0
 				if export_options.get("size_given", false):
 					material_size = image_size
-					set_material_size(c, image_size)
 				await c.export_material(prefix, best_target, material_size, true, output_height, tiles)
 			else:
 				await c.export_material(prefix, best_target, image_size, true, output_height)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
-
-## Sets the size of a Material (when it is a power of 2), so buffers that are
-## sized relative to the output follow it
-static func set_material_size(material : MMGenMaterial, image_size : int) -> void:
-	if nearest_po2(image_size) != image_size or not material.parameters.has("size"):
-		return
-	var exponent : int = 0
-	while (1 << exponent) < image_size:
-		exponent += 1
-	if exponent < MMGenMaterial.TEXTURE_SIZE_MIN or exponent > MMGenMaterial.TEXTURE_SIZE_MAX:
-		return
-	if int(material.parameters.size) != exponent:
-		material.set_parameter("size", exponent)
 
 # Plugins add other modes (see MMPlugins.API.add_cli_mode), e.g. --export-volume
 # and --export-mmr
@@ -212,8 +200,8 @@ Options (they can also be given after "--"):
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels, or <width>x<height> for non-square outputs of --render,
                              --export-material and plugin modes (buffers stay square). --export-material
-                             uses the Material node's size by default (or with --size 0), and --size also
-                             sets it (so buffers sized relative to the output follow it)
+                             uses the Material node's size by default (or with --size 0), and buffers
+                             sized relative to the output follow --size (rounded to a power of 2)
   --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter

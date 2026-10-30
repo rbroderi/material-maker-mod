@@ -41,6 +41,10 @@ var preview_texture_dependencies : Dictionary[String, MMTexture] = {}
 var external_previews : Dictionary[Node, Array] = {}
 var export_output_def : Dictionary
 
+## Size (as log2) of exports with an explicit size (e.g. --size on the command
+## line), followed by buffers sized relatively to the material, or -1
+var export_size_override : int = -1
+
 
 # The minimum allowed texture size as a power-of-two exponent
 const TEXTURE_SIZE_MIN : int = 4  # 16x16
@@ -119,6 +123,26 @@ func update_preview() -> void:
 		graph_edit = graph_edit.get_parent()
 	if graph_edit != null and graph_edit.has_method("send_changed_signal"):
 		graph_edit.send_changed_signal()
+
+## Returns the material's output size (as log2), that buffers sized relatively
+## to the material follow, or -1 if it has none
+func get_output_size() -> int:
+	if export_size_override >= 0:
+		return export_size_override
+	if parameters.has("size"):
+		return int(parameters.size)
+	return -1
+
+## Makes buffers sized relatively to the material follow an export size (in
+## pixels, rounded to a power of 2), or the material's size again (0)
+func set_export_size_override(size : int) -> void:
+	var size_log2 : int = roundi(log(float(size))/log(2.0)) if size > 0 else -1
+	if size_log2 == export_size_override:
+		return
+	var previous_size : int = get_output_size()
+	export_size_override = size_log2
+	if get_output_size() != previous_size and get_parent() != null:
+		notify_output_size_changed(get_parent())
 
 func set_parameter(p, v) -> void:
 	super.set_parameter(p, v)
@@ -772,7 +796,10 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 ## for each tile (see export_texture_file).
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
 	mm_deps.set_exporting(true)
+	# Buffers sized relatively to the material follow an explicit export size
+	set_export_size_override(size)
 	await export_material_with_profile(prefix, profile, size, command_line, height, tiles)
+	set_export_size_override(0)
 	mm_deps.set_exporting(false)
 
 func export_material_with_profile(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:

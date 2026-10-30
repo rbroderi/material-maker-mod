@@ -70,9 +70,8 @@ Options
   **--export-mmr**, **<width>x<height>** (for example 2048x1024) generates non-square outputs:
   the graph is stretched to the image's shape, and buffers keep their sizes. Without a height,
   exports use the Material node's aspect ratio. **--export-material** uses the Material node's size
-  when **--size** is not given (2048 before) or is 0, and a power of 2 **--size** also sets the
-  Material node's size, so buffers sized relative to the output follow it. **--render** and
-  **--bake** use 2048 by default
+  when **--size** is not given (2048 before) or is 0, and buffers sized relative to the output
+  follow **--size** (rounded to a power of 2). **--render** and **--bake** use 2048 by default
 * **--gpu-budget <MB>** sets a GPU memory budget: the least recently used textures are moved to the
   main memory above it (see the *GPU memory budget* preference)
 * **--low-memory** frees the texture of each buffer when all the buffers that read it are rendered (it is
