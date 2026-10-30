@@ -37,6 +37,9 @@ also only use a channel when its parameter is above 0, with a texture when its i
 * the Unity HDRP export sets the coat mask and anisotropy,
 * the Unreal Engine 5 export uses the anisotropy and one shading model: clear coat if the
   coat is used, otherwise cloth if the sheen is used, otherwise subsurface for the transmission,
+* the glTF export writes the clear coat, sheen, anisotropy and transmission with the
+  ``KHR_materials_clearcoat``, ``KHR_materials_sheen``, ``KHR_materials_anisotropy`` and
+  ``KHR_materials_transmission`` extensions,
 * the MaterialX exports (standard surface and OpenPBR) use them all, and the USD export
   uses the coat and coat roughness.
 
