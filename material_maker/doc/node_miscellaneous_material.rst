@@ -32,6 +32,8 @@ back light. Like in the preview, a channel is only used when its parameter is ab
 the glTF export writes the clear coat, sheen, anisotropy and transmission with the
 ``KHR_materials_clearcoat``, ``KHR_materials_sheen``, ``KHR_materials_anisotropy`` and
 ``KHR_materials_transmission`` extensions, with a texture for each connected input.
+The sheen roughness is the material's roughness, and when the roughness input is
+connected it is also stored in the alpha channel of the sheen texture.
 The other export targets don't use these channels yet.
 
 Outputs
