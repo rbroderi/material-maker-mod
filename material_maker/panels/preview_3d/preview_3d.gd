@@ -128,7 +128,9 @@ func set_environment(id:int) -> void:
 	if id >= 0:
 		current_environment = id
 
-	var environment_manager = get_node("/root/MainWindow/EnvironmentManager")
+	# Not an absolute path: this is also called (deferred) when the panel has just
+	# been removed from the tree (hidden in paint mode).
+	var environment_manager = mm_globals.main_window.get_node("EnvironmentManager")
 	if current_environment > environment_manager.get_environment_list().size() - 1:
 		current_environment = 0
 	if clear_background:
