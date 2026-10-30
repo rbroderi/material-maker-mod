@@ -7,12 +7,17 @@ script = ExtResource("1_hpr")
 text = "#version 450
 
 // Hardware ray traced high to low poly baking, first pass: rasterizes the low
-// poly mesh in UV space and writes the rays of its texels (as the software
-// baker, highpoly_fragment.tres, casts them), in 4 G-buffers selected by
-// gbuffer: 0 (ray start, front distance), 1 (ray direction, high poly part
-// the ray can hit), 2 (normal, tangent sign), 3 (tangent, coverage)
+// poly mesh in UV space and writes the rays of its texels (the rays that
+// highpoly_fragment.tres casts) in 4 G-buffers
 
-layout(location = 0) out vec4 outColor;
+// Ray start, front distance
+layout(location = 0) out vec4 out_ray_start;
+// Ray direction, high poly part the ray can hit (-1 for any)
+layout(location = 1) out vec4 out_ray_dir;
+// Normal, tangent sign
+layout(location = 2) out vec4 out_normal;
+// Tangent, coverage (2.0, render targets are cleared to 0.0)
+layout(location = 3) out vec4 out_tangent;
 layout(location = 1) in vec3 model_vert;
 layout(location = 2) in vec3 normal;
 layout(location = 3) in vec4 tangent;
@@ -46,19 +51,9 @@ void main() {
 			ray_start = vert - ray_dir * front;
 		}
 	}
-	switch (gbuffer) {
-		case 0:
-			outColor = vec4(ray_start, front);
-			break;
-		case 1:
-			outColor = vec4(ray_dir, float(match_part));
-			break;
-		case 2:
-			outColor = vec4(n, tangent.w < 0.0 ? -1.0 : 1.0);
-			break;
-		default:
-			// Coverage: 2.0 (render targets can be cleared to 0.0 or 1.0)
-			outColor = vec4(t, 2.0);
-	}
+	out_ray_start = vec4(ray_start, front);
+	out_ray_dir = vec4(ray_dir, float(match_part));
+	out_normal = vec4(n, tangent.w < 0.0 ? -1.0 : 1.0);
+	out_tangent = vec4(t, 2.0);
 }
 "

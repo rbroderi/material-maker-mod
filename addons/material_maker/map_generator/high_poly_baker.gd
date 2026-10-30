@@ -397,14 +397,16 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 	pipeline.add_parameter_or_texture("mode", "int", MAPS.find(map))
 	pipeline.add_parameter_or_texture("iteration", "int", 1)
 	pipeline.add_parameter_or_texture("jitter", "vec2", Vector2(0, 0))
-	pipeline.add_parameter_or_texture("gbuffer", "int", 0)
 	var vertex_shader : String = load("res://addons/material_maker/map_generator/highpoly_vertex.tres").text
 	last_bake_used_hardware = false
 	if hardware:
-		# Hardware ray tracing: the rasterization pass only writes the rays
+		# Hardware ray tracing: the rasterization pass only writes the rays (in
+		# G-buffers), that the ray tracing pipeline traces
 		var rays_shader : String = load("res://addons/material_maker/map_generator/highpoly_rays_fragment.tres").text
 		if await pipeline.set_shader(vertex_shader, rays_shader):
-			last_bake_used_hardware = await MMHighPolyBakerRT.generate(pipeline, high_mesh, MAPS.find(map), size, front*diagonal, rear*diagonal, aabb, samples, high_texture, texture)
+			last_bake_used_hardware = MMHighPolyBakerRT.generate(pipeline, high_mesh, MAPS.find(map), size, front*diagonal, rear*diagonal, aabb, samples, high_texture, texture)
+		if not last_bake_used_hardware:
+			push_warning("Hardware ray tracing failed, the high poly mesh is baked without it")
 	if not last_bake_used_hardware:
 		if data == null:
 			data = get_high_poly_data(high_mesh)
