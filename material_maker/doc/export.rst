@@ -131,10 +131,14 @@ occlusion is not exported, since those shaders have no input for it.
 
 The **MaterialX/Procedural** target generates a procedural material: a .mtlx file that defines
 a custom node (*mm_procedural*) whose GLSL implementation (the .glsl file next to it) computes
-the whole graph, including what buffers compute (they are inlined). The node's outputs feed a
-standard_surface shader. The GLSL implementation is used by MaterialX's GLSL shader generator
-(genglsl, with the .mtlx file's directory in its search path). Graphs that read textures (Image
-nodes, iterate buffers such as the ones of Fill nodes, mesh maps) cannot use this target yet.
+the whole graph, including what buffers compute (they are inlined). Textures the graph still
+reads (Image nodes, iterate buffers such as the ones of Fill nodes, mesh maps) are exported as
+EXR files (<name>_texture_<n>.exr, with the precision of the buffers) and are inputs of the
+custom node. The node's outputs feed a standard_surface shader. The GLSL implementation is used
+by MaterialX's GLSL shader generator (genglsl, with the .mtlx file's directory in its search
+path). Other shading languages (OSL, MDL...) use the node's second implementation, a node graph
+that reads textures baked from the graph (<name>_baked_*.png): those renderers show the same
+material, but with the resolution of the export.
 
 USD
 ---

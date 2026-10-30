@@ -402,8 +402,10 @@ func process_option_float_uniform_to_const(s : String, is_declaration : bool = f
 	return s
 
 ## Uniforms become global variables (for shading languages, such as MaterialX's
-## GLSL functions, that cannot declare uniforms)
+## GLSL functions, that cannot declare uniforms). Textures (samplers) are
+## removed: templates map them to their own inputs ($(buffer_name)).
 func process_option_uniform_to_global(s : String, is_declaration : bool = false) -> String:
+	s = RegEx.create_from_string("(?m)^uniform\\s+sampler2D\\s[^;\\n]*;[ \\t]*\\n?").sub(s, "", true)
 	return RegEx.create_from_string("(?m)^uniform\\s+").sub(s, "", true)
 
 ## Uniform arrays become constants (Godot shaders cannot have default values
@@ -608,7 +610,7 @@ func process_buffers(template : String) -> String:
 			if l == "$end_buffers":
 				var index : int = 1
 				for t in export_texture_dependencies.keys():
-					processed += subst_string(gen_buffer, { "$(buffer_index)":str(index) })
+					processed += subst_string(gen_buffer, { "$(buffer_index)":str(index), "$(buffer_name)":t })
 					index += 1
 				generating = false
 			else:
@@ -722,6 +724,20 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 			if u.type == "sampler2D" and u.value is MMTexture:
 				dependencies[u.name] = u.value
 	return dependencies if generates_code else null
+
+## Saves a texture as an EXR file with 4 channels (as shaders sample it), and
+## the precision of float textures (8 bit textures become half floats)
+static func save_buffer_exr(image : Image, file_name : String) -> Error:
+	if image.is_compressed():
+		image.decompress()
+	match image.get_format():
+		Image.FORMAT_RGBAF, Image.FORMAT_RGBAH:
+			pass
+		Image.FORMAT_RF, Image.FORMAT_RGF, Image.FORMAT_RGBF:
+			image.convert(Image.FORMAT_RGBAF)
+		_:
+			image.convert(Image.FORMAT_RGBAH)
+	return image.save_exr(file_name)
 
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
 	reset_uids()
@@ -870,8 +886,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					var texture : Texture2D = await export_texture_dependencies[t].get_texture()
 					var image : Image = texture.get_image()
 					if image:
-						image.convert(Image.FORMAT_RGBA8)
-						e = image.save_png(file_name)
+						if file_name.get_extension().to_lower() == "exr":
+							# EXR files keep the precision of float textures
+							# (e.g. iterate buffers)
+							e = save_buffer_exr(image, file_name)
+						else:
+							image.convert(Image.FORMAT_RGBA8)
+							e = image.save_png(file_name)
 						if e != OK:
 							error_files += 1
 					else:
