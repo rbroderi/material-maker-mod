@@ -133,7 +133,8 @@ func save_library_list() -> void:
 	var library_list = []
 	for i in range(2, get_child_count()):
 		var lib_path: String = get_child(i).library_path
-		library_list.push_back(lib_path)
+		if not lib_path in plugin_libraries:
+			library_list.push_back(lib_path)
 	mm_globals.config.set_value(config_section, "libraries", library_list)
 
 func has_library(path : String) -> bool:
@@ -156,6 +157,19 @@ func create_library(path : String, library_name : String) -> void:
 	add_child(library)
 	save_library_list()
 	mm_globals.set_tip_text("Library \"%s\" created at \"%s\"" % [library_name, path], 5, 1)
+
+## Libraries of plugins (read only, not saved in the library list)
+var plugin_libraries : PackedStringArray = PackedStringArray()
+
+func add_plugin_library(path : String) -> void:
+	if has_library(path):
+		return
+	var library = LIBRARY.new()
+	if library.load_library(path, true):
+		plugin_libraries.append(path)
+		add_child(library)
+		library.generate_node_sections(node_sections)
+		emit_signal("libraries_changed")
 
 func load_library(path : String, data : String = "") -> void:
 	if has_library(path):

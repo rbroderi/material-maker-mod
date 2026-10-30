@@ -200,6 +200,18 @@ func _ready():
 	# Arguments after "--" are also accepted (Godot handles some options,
 	# such as --help and -t, itself)
 	var args : PackedStringArray = OS.get_cmdline_args()+OS.get_cmdline_user_args()
+	if "--plugin" in args:
+		# A command of a plugin, with the following arguments
+		MMPlugins.load_plugins()
+		var command_index : int = args.find("--plugin")+1
+		var command : String = args[command_index] if command_index < args.size() else ""
+		if not MMPlugins.commands.has(command):
+			show_error("ERROR: unknown plugin command %s (commands: %s)" % [ command, ", ".join(MMPlugins.commands.keys()) ])
+			get_tree().quit(1)
+			return
+		var exit_code = await MMPlugins.commands[command].call(args.slice(command_index+1))
+		get_tree().quit(exit_code if exit_code is int else 0)
+		return
 	var mode : String = ""
 	for m in CLI_MODES:
 		if m in args:
@@ -219,6 +231,8 @@ func _ready():
 		print(HELP)
 		get_tree().quit()
 		return
+	# Plugins add nodes and export targets
+	MMPlugins.load_plugins()
 	var options : Dictionary = parse_options(args)
 	if options.is_empty() or not check_udim_options(mode, options):
 		get_tree().quit(1)

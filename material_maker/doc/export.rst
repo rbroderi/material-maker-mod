@@ -94,6 +94,28 @@ so you just have to paste it into Unreal's 5 Python prompt and execute it to cre
 When exporting, the target path is not that important (all necessary files will be imported into
 the Unreal project), but the file name will be used as material name.
 
+MaterialX
+---------
+
+The **MaterialX/Standard Surface** and **MaterialX/OpenPBR** targets (from the *More export
+targets* plugin, enabled by default) generate a .mtlx file (MaterialX 1.38 and 1.39) with a
+standard_surface or open_pbr_surface shader, and the textures it references (albedo, metallic,
+roughness, normal, emission and height, when the corresponding inputs of the Material node are
+connected). Albedo and emission textures are tagged as srgb_texture, other textures as raw data,
+and the normal map uses the OpenGL convention. Parameters of the Material node (albedo color,
+metallic, roughness, normal strength, emission energy and depth scale) are applied in the
+MaterialX graph. Coat, anisotropy, sheen (OpenPBR's fuzz) and transmission are exported when their
+parameter is above 0, with a texture when the corresponding input is also connected. Ambient
+occlusion is not exported, since those shaders have no input for it.
+
+USD
+---
+
+The **USD/UsdPreviewSurface** target (from the same plugin) generates a .usda file with a
+UsdPreviewSurface material named /Material and its textures (including ambient occlusion, and the
+coat when it is used). It can be referenced from USD stages, or imported in applications that
+support USD materials.
+
 UDIM tiles
 ----------
 

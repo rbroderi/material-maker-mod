@@ -33,6 +33,10 @@ Modes
   <mesh>_<map>.png
 * **--list-parameters** lists the parameters that can be set with **--set**, with their values
 
+Plugins (see :ref:`plugins-section`) can add commands, that are run with:
+
+ material_maker --plugin <command> [<arguments>]
+
 Options
 -------
 

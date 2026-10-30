@@ -15,6 +15,7 @@ var updating : bool = false
 var update_again : bool = false
 
 var preview_material : ShaderMaterial = null
+var preview_conditionals : String = ""
 var preview_parameters : Dictionary = {}
 var preview_textures = {}
 var preview_texture_dependencies : Dictionary[String, MMTexture] = {}
@@ -43,7 +44,18 @@ func _ready() -> void:
 	preview_material.shader = Shader.new()
 	buffer_name_prefix = "material_%d" % get_instance_id()
 	mm_deps.create_buffer(buffer_name_prefix, self)
+	parameter_changed.connect(on_parameter_changed)
 	update()
+
+## Changing a float parameter only updates a uniform, so the preview shader
+## is regenerated when the change flips one of its $if conditions
+func on_parameter_changed(p : String, _v) -> void:
+	if preview_material == null or get_parameter_def(p).get("type") != "float":
+		return
+	if shader_model.preview_shader.find("$(param:"+p+")") == -1:
+		return
+	if process_conditionals(shader_model.preview_shader) != preview_conditionals:
+		update()
 
 func accept_float_expressions() -> bool:
 	return false
@@ -195,6 +207,7 @@ func update() -> void:
 	if preview_material == null:
 		return
 	var processed_preview_shader : String = process_conditionals(shader_model.preview_shader)
+	preview_conditionals = processed_preview_shader
 	var result = process_shader(processed_preview_shader)
 	result.shader_code = MMGenBase.remove_constant_declarations(result.shader_code)
 	mm_deps.buffer_create_shader_material(buffer_name_prefix, MMShaderMaterial.new(preview_material), result.shader_code)
@@ -891,6 +904,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 		progress_dialog.queue_free()
 	if dim_color_rect != null:
 		dim_color_rect.queue_free()
+	await MMPlugins.call_export_hooks(self, prefix, profile)
 	if error_files == 0:
 		mm_globals.set_tip_text("Files succesfully exported as \"%s\"" % prefix, 5, 1)
 		return
