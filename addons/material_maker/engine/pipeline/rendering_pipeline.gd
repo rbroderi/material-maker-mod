@@ -41,11 +41,13 @@ func in_thread_render(size : Vector2i, texture_type : int, target_texture : MMTe
 	var depth_texture_id : RID
 	if with_depth:
 		depth_texture_id = create_depth_texture(rd, size)
-		#rids.add(depth_texture_id, "depth texture")
 	else:
 		depth_texture_id = RID()
 	var framebuffer : RID = create_framebuffer(rd, target_texture_id, depth_texture_id)
 	rids.add(framebuffer, "framebuffer")
+	# Freed after the framebuffer that uses it
+	if with_depth:
+		rids.add(depth_texture_id, "depth texture")
 
 	var blend : RDPipelineColorBlendState = RDPipelineColorBlendState.new()
 	blend.attachments.push_back(RDPipelineColorBlendStateAttachment.new())
