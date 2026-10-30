@@ -128,8 +128,9 @@ file is transparent black). Other nodes give the same result in all tiles. **Exp
 remembers the option. On the command line, use **--udim** or **--udim-tiles** (see
 :doc:`command_line`).
 
-Export targets that don't support UDIM tiles (Godot, Unity, Unreal) still reference the
-textures without tile numbers. In the templates of export targets, **$(udim_suffix)** is
+MaterialX and USD files reference the textures of all tiles, with **<UDIM>** in their file
+names (for example <name>_albedo.<UDIM>.png). Export targets that don't support UDIM tiles
+(Godot, Unity, Unreal) still reference the textures without tile numbers. In the templates of export targets, **$(udim_suffix)** is
 **.<UDIM>** in UDIM exports and empty otherwise, so file names such as
 **$(file_prefix)_albedo$(udim_suffix).png** name the textures of all tiles. In XML files,
 use **$(udim_suffix_xml)** (**.&lt;UDIM&gt;**).
