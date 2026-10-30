@@ -120,7 +120,7 @@ func get_udim_tiles(material : MMGenMaterial, options : Dictionary) -> PackedInt
 		return tiles
 	return PackedInt32Array()
 
-const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--help" ]
+const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--rpc", "--help" ]
 
 ## Options that set a value: option -> { key, type (TYPE_BOOL for flags),
 ## minimum }
@@ -146,6 +146,7 @@ const VALUE_OPTIONS : Dictionary = {
 	"--udim": { key="udim", type=TYPE_BOOL },
 	"--udim-tiles": { key="udim_tiles", type=TYPE_STRING },
 	"--mesh": { key="mesh", type=TYPE_STRING },
+	"--rpc-port": { key="rpc_port", type=TYPE_INT },
 }
 
 ## Image formats of --render
@@ -157,6 +158,8 @@ const HELP : String = """Material Maker command line
   material_maker --render --node <node[:output]> [options] <files>   render a node output
   material_maker --bake [--maps <map,...>] [--high <mesh>] [options] <meshes>   bake mesh maps
   material_maker --list-parameters <files>   list the parameters that can be set
+  material_maker --rpc [--rpc-port <port>] [<file>]   run a JSON-RPC server without user interface
+  material_maker --rpc-port <port> [<file>]   start the user interface with a JSON-RPC server
   material_maker -- --help   show this help
 
 Options (they can also be given after "--"):
@@ -193,6 +196,7 @@ Options (they can also be given after "--"):
   --mesh <mesh>              mesh of the graph's Mesh Map and High Poly Bake nodes (as the 3D preview's
                              custom mesh), for --export-material and --render
   --show-window              do not minimize the window
+  --rpc-port <port>          port of the JSON-RPC server (localhost only, default: 7680)
 """
 
 func _ready():
@@ -212,6 +216,12 @@ func _ready():
 			scene = load("res://material_maker/main_window.tscn")
 		else:
 			scene = load("res://splash_screen/splash_screen.tscn")
+		# The user interface with a JSON-RPC server
+		var rpc_port_index : int = args.find("--rpc-port")
+		if rpc_port_index != -1:
+			var rpc_port : int = get_rpc_port(args[rpc_port_index+1] if rpc_port_index+1 < args.size() else "")
+			if rpc_port != -1:
+				start_rpc_server(rpc_port)
 		await get_tree().process_frame
 		get_tree().change_scene_to_packed(scene)
 		return
@@ -245,6 +255,8 @@ func _ready():
 			await bake_files(files, options)
 		"--list-parameters":
 			await list_parameters(expand_files(files))
+		"--rpc":
+			await run_rpc_server(files, options)
 
 ## Checks --udim, --udim-tiles and --mesh, and sets options.tiles (a list of
 ## tiles) and options.mesh_resource (the loaded mesh). Returns false (after
@@ -453,3 +465,52 @@ func list_parameters(files : Array) -> void:
 			print("  "+l)
 		gen.queue_free()
 	get_tree().quit()
+
+## The port of --rpc-port, or -1 (after showing an error) if it is not valid
+func get_rpc_port(value : String) -> int:
+	if not value.is_valid_int() or int(value) < 1 or int(value) > 65535:
+		show_error("ERROR: incorrect value for --rpc-port: %s" % value)
+		return -1
+	return int(value)
+
+var rpc_server : MMRpcServer = null
+
+## Starts the JSON-RPC server of the user interface, as a child of the root
+## so it survives scene changes
+func start_rpc_server(port : int) -> Error:
+	rpc_server = MMRpcServer.new()
+	rpc_server.name = "RpcServer"
+	rpc_server.wait_for_main_window = true
+	var error : Error = rpc_server.start(port)
+	if error == OK:
+		get_tree().root.add_child.call_deferred(rpc_server)
+	else:
+		rpc_server.free()
+		rpc_server = null
+	return error
+
+## --rpc: runs a JSON-RPC server without user interface (until its quit
+## method is called), optionally with a graph
+func run_rpc_server(files : Array[String], options : Dictionary) -> void:
+	var port : int = get_rpc_port(str(options.rpc_port)) if options.has("rpc_port") else MMRpcServer.DEFAULT_PORT
+	if port == -1:
+		get_tree().quit(1)
+		return
+	if files.size() > 1:
+		show_error("ERROR: --rpc loads a single file")
+		get_tree().quit(1)
+		return
+	rpc_server = MMRpcServer.new()
+	rpc_server.name = "RpcServer"
+	get_tree().root.add_child.call_deferred(rpc_server)
+	await get_tree().process_frame
+	# The graph is loaded before clients can connect
+	if not files.is_empty():
+		var path : String = files[0] if files[0].is_absolute_path() else DirAccess.open(".").get_current_dir().path_join(files[0])
+		await rpc_server.api_load({ path=path })
+		if rpc_server.method_error != "":
+			show_error("ERROR: "+rpc_server.method_error)
+			get_tree().quit(1)
+			return
+	if rpc_server.start(port) != OK:
+		get_tree().quit(1)
