@@ -49,6 +49,9 @@ func get_shader_custom_functions():
 
 func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 	if !is_visible_in_tree():
+		# The previous generator must not update this preview any more
+		if is_instance_valid(generator) and generator.is_connected("parameter_changed", Callable(self, "on_parameter_changed")):
+			generator.disconnect("parameter_changed", Callable(self, "on_parameter_changed"))
 		generator = g
 		output = o
 		need_generate = true

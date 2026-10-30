@@ -34,6 +34,8 @@ const CHANNELS : Array = [ "albedo", "metallic", "roughness", "emission", "norma
 
 
 signal layer_selected(l)
+## Emitted when layers are added, removed, moved, hidden or shown
+signal layers_changed
 
 
 func _ready():
@@ -226,6 +228,7 @@ func update_alpha(channel : String) -> void:
 	for l in layers:
 		if l.has_method("update_color_rects"):
 			l.update_color_rects(channel)
+	layers_changed.emit()
 
 func _on_layers_changed() -> void:
 	var list = []
@@ -234,6 +237,7 @@ func _on_layers_changed() -> void:
 	for c in CHANNELS:
 		update_alpha(c)
 	layers_pane.call_deferred("set_layers", self)
+	layers_changed.emit()
 
 func get_visible_layers(list : Array, layers_array : Array[MMLayer] = layers, mask_array : Array = []) -> void:
 	for i in range(layers_array.size()-1, -1, -1):
