@@ -666,10 +666,16 @@ func api_export(params : Dictionary):
 	if udim is bool:
 		if udim:
 			tiles = material.get_graph_udim_tiles()
-	else:
-		tiles = MMCliTools.parse_udim_tiles(",".join(udim.map(func(t): return str(int(t)))) if udim is Array else str(udim))
+	elif udim is String or udim is Array:
+		if udim is Array:
+			for t in udim:
+				if not (t is int or t is float):
+					return fail("UDIM tiles must be numbers")
+		tiles = MMCliTools.parse_udim_tiles(",".join(udim.map(func(t): return str(int(t)))) if udim is Array else udim)
 		if tiles.is_empty():
-			return fail("invalid UDIM tiles '%s'" % str(udim))
+			return fail("invalid UDIM tiles '%s' (e.g. \"1001-1004,1011\", from 1001 to 1999)" % str(udim))
+	else:
+		return fail("parameter 'udim' must be a boolean, a string or a list")
 	DirAccess.make_dir_recursive_absolute(params.prefix.get_base_dir())
 	await MMCliTools.wait_for_renders(get_tree())
 	await material.export_material(params.prefix, params.target, size, true, height, tiles)
