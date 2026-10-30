@@ -21,6 +21,11 @@ void main() {
 	pos /= pos.w;
 	pos.y = -pos.y;
 	vec3 mv = pos.xyz*0.5+vec3(0.5);
+	// v2t keeps front faces only. This pass draws in UV space, so a triangle faces the
+	// camera if its UV winding and its winding on screen (sign of d(mv)/d(uv)) agree.
+	vec2 mv_dx = dFdx(mv.xy);
+	vec2 mv_dy = dFdy(mv.xy);
+	bool facing_camera = gl_FrontFacing == (mv_dx.x*mv_dy.y-mv_dx.y*mv_dy.x > 0.0);
 	if (mv.x > 0.0 && mv.x < 1.0 && mv.y > 0.0 && mv.y < 1.0) {
 		for (float dx = -box; dx <= box; dx +=1.0) {
 			for (float dy = -box; dy <= box; dy += 1.0) {
@@ -30,5 +35,8 @@ void main() {
 	}
 	v = clamp(1.0-20.0*v, 0.0, 1.0);
 	outColor = vec4(mv.xy, v, 1.0);
+	// Where triangles share UV space, keep the most visible one, preferring
+	// triangles that face the camera
+	gl_FragDepth = 0.5*(1.0-v)+(facing_camera ? 0.0 : 0.5);
 }
 "
