@@ -219,7 +219,11 @@ static func resolve_node_output(graph : MMGenBase, node_spec : String) -> Dictio
 	var generator = graph.get_node_or_null(NodePath(node_path))
 	if not generator is MMGenBase:
 		return { error="node '%s' not found" % node_path }
-	return { generator=generator, output=node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0 }
+	var output : int = node_spec.get_slice(":", 1).to_int() if node_spec.contains(":") else 0
+	# Material nodes only show their (export) outputs with show_hidden
+	if output < 0 or output >= generator.get_output_defs(true).size():
+		return { error="node '%s' has no output %d" % [ node_path, output ] }
+	return { generator=generator, output=output }
 
 ## The top graph of a project, that contains a graph
 static func get_top_graph(graph : MMGenGraph) -> MMGenGraph:
@@ -245,42 +249,54 @@ static func render_node(graph : MMGenBase, node_spec : String, size : int, file_
 	var resolved : Dictionary = resolve_node_output(graph, node_spec)
 	if resolved.has("error"):
 		return resolved.error
-	var generator : MMGenBase = resolved.generator
-	var output : int = resolved.output
-	var node_path : String = node_spec.get_slice(":", 0)
-	# Material nodes only show their (export) outputs with show_hidden
-	if output < 0 or output >= generator.get_output_defs(true).size():
-		return "node '%s' has no output %d" % [ node_path, output ]
-	var texture : MMTexture = await render_output_texture(generator, output, Vector2i(size, height if height > 0 else size))
+	var texture : MMTexture = await render_output_texture(resolved.generator, resolved.output, Vector2i(size, height if height > 0 else size))
 	if await texture.save_to_file(file_name) != OK:
 		return "could not save '%s'" % file_name
 	return ""
 
-## Renders animation frames of a node output ($time from 0 to duration) in a
-## sprite sheet with the given number of columns (rows are filled first)
-static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, frames : int, duration : float, columns : int, file_name : String) -> String:
+## Renders animation frames of a node output, $time going from 0 to duration
+## (frame i is rendered at duration*i/frames, so the animation loops), in a
+## sprite sheet with the given number of columns (a square sheet if 0, rows
+## are filled first), or in separate files (<file_name>_<frame>.<extension>,
+## from 1) if separate is true. Returns an error message, or "".
+static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, frames : int, duration : float, columns : int, separate : bool, file_name : String) -> String:
 	var resolved : Dictionary = resolve_node_output(graph, node_spec)
 	if resolved.has("error"):
 		return resolved.error
-	var generator : MMGenBase = resolved.generator
-	var output : int = resolved.output
 	var images : Array[Image] = []
-	var buffers : Array = collect_generators(graph, func(g): return g is MMGenBuffer)
+	var digits : int = str(frames).length()
 	for frame in frames:
 		MMComputeShader.fixed_time = duration*float(frame)/float(frames)
 		# Buffers are rendered again at this time
-		for b in buffers:
-			var buffer_name : String = "o%d_tex" % b.get_instance_id()
-			if mm_deps.buffers.has(buffer_name):
-				mm_deps.buffer_invalidate(buffer_name)
+		invalidate_buffers(graph)
 		mm_deps.update()
-		images.append(await render_output_image(generator, output, Vector2i(size, size)))
+		var texture : MMTexture = await render_output_texture(resolved.generator, resolved.output, Vector2i(size, size))
+		if separate:
+			var frame_file : String = "%s_%0*d.%s" % [ file_name.get_basename(), digits, frame+1, file_name.get_extension() ]
+			if await texture.save_to_file(frame_file) != OK:
+				MMComputeShader.fixed_time = -1.0
+				return "could not save '%s'" % frame_file
+			print("Rendered %s" % frame_file)
+		else:
+			images.append((await texture.get_texture()).get_image())
 	MMComputeShader.fixed_time = -1.0
+	if separate:
+		return ""
 	var sheet : Image = make_sprite_sheet(images, columns)
 	if sheet == null:
 		return "no frame rendered"
-	var error : Error = sheet.save_exr(file_name) if file_name.get_extension() == "exr" else sheet.save_png(file_name)
-	return "could not save '%s'" % file_name if error != OK else ""
+	# (saved as other renders: 8 bits values are rounded, and plugins add formats)
+	if await MMTexture.from_image(sheet).save_to_file(file_name) != OK:
+		return "could not save '%s'" % file_name
+	return ""
+
+## Invalidates the buffers of the nodes of a graph (in its subgraphs too), so
+## they are rendered again
+static func invalidate_buffers(graph : MMGenBase) -> void:
+	for buffer_name in mm_deps.buffers.keys():
+		var object = mm_deps.buffers[buffer_name].object
+		if (object is MMGenBuffer or object is MMGenIterateBuffer or object is MMGenIterateBufferV2 or object is MMGenGpuReduction or object is MMGenSbsFxMap) and graph.is_ancestor_of(object):
+			mm_deps.buffer_invalidate(buffer_name)
 
 ## The generators under root (in its subgraphs too, and including the
 ## buffers that are children of nodes, such as value processors') for which
