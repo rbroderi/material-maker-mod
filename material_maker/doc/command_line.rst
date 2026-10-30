@@ -81,7 +81,9 @@ Options
 * **--strict** fails when a graph has nodes of unknown types (by default, they are kept as magenta
   placeholders with a warning). Graphs that declare requirements (plugins, version, features) that are
   not met always fail, with exit code 2.
-* **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values)
+* **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values). A
+  graph that has no such preset is skipped with an error that lists its presets, and Material
+  Maker exits with code 1
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example
   --set Hue=0.5), or a node name and a parameter name (for example --set Perlin:scale_x=8).
@@ -124,6 +126,11 @@ Options
 * **--rpc-port <port>** is the port of the JSON-RPC server (the default is 7680). When used without
   **--rpc**, Material Maker starts with its user interface and a server
 
+**--preset**, **--set**, **--seed** and **--variations** work with **--export-material**, **--render**
+and plugin modes. They are applied in this order: the preset first, then the **--set** values (so
+they override the preset's values), then the seeds of each variation (presets only hold the values
+of remote parameters, not seeds).
+
 Examples
 --------
 
@@ -131,6 +138,7 @@ Examples
 
  material_maker --export-material --target "Godot/Godot 4 Standard" -o out materials/*.ptex
  material_maker --render --node Material:0 --set Hue=0.3 --variations 4 --size 1024 -o out bricks.ptex
+ material_maker --export-material --preset Mossy --set Hue=0.1 -o out bricks.ptex
  material_maker --render --node Material:0 --frames 16 --duration 2 --columns 4 --size 256 -o out fire.ptex
  material_maker --bake --maps ambient_occlusion,curvature --size 2048 -o maps model.obj
  material_maker --bake --high sculpt.obj --maps normal_tangent,height,material_id --front 0.02 -o maps model.obj

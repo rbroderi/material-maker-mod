@@ -65,9 +65,16 @@ graph (and in **list_nodes**).
   "perlin"), from a library item (**item**, a dictionary as stored in library files) or, with
   the user interface, from a library item path (such as "Noise/Voronoi"), and returns its name
 * **delete_node(node)**, **connect(from, to, from_port, to_port)**, **disconnect(from, to, from_port, to_port)**
-* **list_presets()**, **apply_preset(name)**, **save_preset(name, node)** manage the presets of
-  the graph's remote nodes, and **randomize_parameters(seed)** sets random values to their
-  parameters
+* **list_presets()** returns the names of the presets of the graph's remote nodes, and
+  **apply_preset(name)** applies one to the remote nodes that have it
+* **save_preset(name, node)** saves the current values of a remote node as a preset (an existing
+  preset with this name is replaced), and **delete_preset(name, node)** deletes one. **node** is
+  only needed for **save_preset** when the graph has several remote nodes; **delete_preset**
+  deletes the preset from all the remote nodes that have it by default. With the user interface,
+  these methods can be undone (one step for all the remote nodes they change)
+* **randomize_parameters(seed, node)** sets random values to the parameters of the remote nodes
+  (or of one of them), within their ranges, and returns the seed (random by default), so the
+  same values can be generated again
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
 * **render(node, output, size, path, height)** renders a node output to a PNG, EXR, JPEG or WebP
   file (outputs are numbered from 0, as with **--render** on the command line, with an optional

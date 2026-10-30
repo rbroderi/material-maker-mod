@@ -15,7 +15,8 @@ var output_height : int = 0
 ## Options of --export-material
 var export_options : Dictionary = {}
 ## Exit code of modes that process several graphs (2 when a graph's
-## requirements are not met)
+## requirements are not met, 1 when a graph is skipped because of another
+## error, such as an unknown --preset)
 var exit_code : int = 0
 
 ## UDIM tiles exported by --export-material (--udim-tiles, or --udim for the
@@ -78,7 +79,9 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			return
 		if gen != null:
 			add_child(gen)
-			await apply_graph_options(gen, f, options)
+			if not await apply_graph_options(gen, f, options):
+				gen.queue_free()
+				continue
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
@@ -86,7 +89,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 		print(",\n".join(PackedStringArray(export_list)))
 	print("Peak GPU texture memory: %d MB" % (mm_renderer.peak_texture_memory >> 20))
 	print("Shaders: %d compiled, %d from the cache" % [ MMPipeline.shader_cache_misses, MMPipeline.shader_cache_hits ])
-	get_tree().quit()
+	get_tree().quit(exit_code)
 
 func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array) -> void:
 	var mat_name_lower = name_to_lower(mat_name)
@@ -621,7 +624,9 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 		gen.free()
 		return null
 	add_child(gen)
-	await apply_graph_options(gen, f, options)
+	if not await apply_graph_options(gen, f, options):
+		gen.queue_free()
+		return null
 	return gen
 
 ## Whether a loaded graph has what it needs (see MMPlugins.check_requirements),
@@ -639,8 +644,10 @@ func check_requirements(gen : MMGenBase, f : String, options : Dictionary) -> bo
 		exit_code = 2
 	return ok
 
-## Applies --preset, then --set values (presets are applied first)
-func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
+## Applies --mesh, --preset, then --set values (so they override the
+## preset's). Seeds are changed afterwards, for each variation. Returns false
+## (and sets the exit code) if the graph has no such preset.
+func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> bool:
 	if options.has("mesh") and gen is MMGenGraph:
 		var mesh : Mesh = MMMeshLoader.load_mesh(options.mesh)
 		if mesh == null:
@@ -648,9 +655,14 @@ func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> v
 		else:
 			await MMCliTools.set_graph_mesh(gen, mesh)
 	if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
-		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(MMCliTools.get_preset_names(gen)) ])
+		var presets : PackedStringArray = MMCliTools.get_preset_names(gen)
+		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(presets) if not presets.is_empty() else "none" ])
+		if exit_code == 0:
+			exit_code = 1
+		return false
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
 		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	return true
 
 ## Loads each graph and calls variation (suffix, gen, f, options) for each of
 ## its variations, then quits. mode is the option named in the error message

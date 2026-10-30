@@ -127,22 +127,31 @@ static func get_engine_template_graph(template_name : String) -> Dictionary:
 			return { nodes=[ { name="Material", type="material", parameters=parameters, export_last_target=t.export } ], connections=[] }
 	return {}
 
-## Applies a preset of the graph's remote nodes, returns false if none has it
+## The remote nodes of a graph (not those of its subgraphs)
+static func get_remote_nodes(graph : MMGenBase) -> Array[MMGenRemote]:
+	var remotes : Array[MMGenRemote] = []
+	for c in graph.get_children():
+		if c is MMGenRemote:
+			remotes.append(c)
+	return remotes
+
+## Applies a preset to all the remote nodes of a graph that have it. Returns
+## false if none has it.
 static func apply_preset(graph : MMGenBase, preset_name : String) -> bool:
 	var found : bool = false
-	for c in graph.get_children():
-		if c is MMGenRemote and c.apply_preset(preset_name):
+	for r in get_remote_nodes(graph):
+		if r.apply_preset(preset_name):
 			found = true
 	return found
 
-## Names of the presets of the graph's remote nodes
+## The names of the presets of the remote nodes of a graph, sorted
 static func get_preset_names(graph : MMGenBase) -> PackedStringArray:
 	var names : PackedStringArray = PackedStringArray()
-	for c in graph.get_children():
-		if c is MMGenRemote:
-			for n in c.get_preset_names():
-				if not n in names:
-					names.append(n)
+	for r in get_remote_nodes(graph):
+		for n in r.get_preset_names():
+			if not n in names:
+				names.append(n)
+	names.sort()
 	return names
 
 ## Unlocked seeds are offset by the golden ratio (modulo 1) for each step, so
