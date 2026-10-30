@@ -527,7 +527,7 @@ func save(file_name : String) -> Dictionary:
 	var dir_name = file_name.left(file_name.rfind("."))
 	DirAccess.make_dir_absolute(dir_name)
 	var data = {}
-	data.layers = MMLayer.save_layers(layers, dir_name)
+	data.layers = await MMLayer.save_layers(layers, dir_name)
 	return data
 
 func _on_Painter_painted():

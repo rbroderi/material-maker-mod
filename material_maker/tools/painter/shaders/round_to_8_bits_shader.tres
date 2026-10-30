@@ -1,0 +1,26 @@
+[gd_resource type="Resource" script_class="TextResource" load_steps=2 format=3 uid="uid://dv5rli64orl63"]
+
+[ext_resource type="Script" path="res://addons/material_maker/engine/text_resource.gd" id="1_mairc"]
+
+[resource]
+script = ExtResource("1_mairc")
+text = "#version 450
+
+layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+@DECLARATIONS
+
+layout(set = 3, binding = 0, std140) restrict buffer MM {
+	int mm_chunk_y;
+};
+
+// Rounds each value to the nearest 8 bits level k, and stores it a quarter
+// of a level above k/255: converting the result to 8 bits on the CPU then
+// gives k whether the conversion truncates (as Godot's does) or rounds, and
+// even after the precision loss of the 16 bits float output.
+void main() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy)+ivec2(0, mm_chunk_y);
+	vec4 levels = floor(clamp(texelFetch(input_image, pixel, 0), 0.0, 1.0)*255.0+0.5);
+	imageStore(output_image, pixel, (levels+0.25)/255.0);
+}
+"

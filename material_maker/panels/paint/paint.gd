@@ -863,7 +863,7 @@ func load_project(file_name) -> bool:
 
 func save() -> bool:
 	if save_path != null:
-		do_save_project(save_path)
+		await do_save_project(save_path)
 	else:
 		save_as()
 	return true
@@ -872,7 +872,7 @@ func save_as():
 	show_file_dialog(FileDialog.FILE_MODE_SAVE_FILE, "*.mmpp;Model painter project", "do_save_project")
 
 func do_save_project(file_name):
-	var data = layers.save(file_name)
+	var data = await layers.save(file_name)
 	data.model = model_path
 	data.settings = get_settings()
 	if idmap_filename != "":
