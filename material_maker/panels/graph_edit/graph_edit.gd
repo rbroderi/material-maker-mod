@@ -942,7 +942,9 @@ func export_material(export_prefix, profile, tiles : PackedInt32Array = PackedIn
 	var stack : Array[MMGenBase] = [top_generator]
 	while stack.size():
 		var node : MMGenBase = stack.pop_back()
-		if node.has_method("export_material"):
+		# The material is already exported (exporting it again without
+		# its UDIM tiles would also forget them for Export again)
+		if node.has_method("export_material") and node != material_node:
 			exports.append(node)
 		stack.append_array(node.get_children())
 

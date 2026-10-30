@@ -296,6 +296,10 @@ with **<UDIM>** in their names. *Export again* remembers the option. On the comm
 **--udim** or **--udim-tiles** (see :doc:`command_line`), and over JSON-RPC, the **udim**
 parameter of the **export** method.
 
+In the templates of export targets, **$(udim_suffix)** is **.<UDIM>** in UDIM exports and empty
+otherwise, so file names such as **$(file_prefix)_albedo$(udim_suffix).png** name the textures
+of all tiles. In XML files, use **$(udim_suffix_xml)** (**.&lt;UDIM&gt;**).
+
 Texture formats
 ---------------
 

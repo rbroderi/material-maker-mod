@@ -966,8 +966,10 @@ func do_export_material(prefix : String, profile : String, size : int = 0, comma
 	export_context["$(material_maker_path)"] = MMPaths.get_resource_dir()
 	export_context["$(path_separator)"] = "/"
 	# Templates write texture file names with $(udim_suffix), that is the
-	# tile number placeholder in UDIM exports (MaterialX, USD)
+	# tile number placeholder in UDIM exports (USD), and $(udim_suffix_xml)
+	# in XML files (MaterialX)
 	export_context["$(udim_suffix)"] = ".<UDIM>" if not tiles.is_empty() else ""
+	export_context["$(udim_suffix_xml)"] = ".&lt;UDIM&gt;" if not tiles.is_empty() else ""
 	var exported_files : Array = []
 	var overwrite_files : Array = []
 	var export_profile = get_export(profile)
