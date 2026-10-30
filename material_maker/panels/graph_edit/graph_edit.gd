@@ -81,16 +81,6 @@ func _ready() -> void:
 		add_valid_connection_type(t, 42)
 		add_valid_connection_type(42, t)
 	node_popup.about_to_popup.connect(func(): valid_drag_cut_entry = false)
-	# Buffer markers are drawn on top of connections and nodes
-	buffer_markers = Control.new()
-	buffer_markers.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	buffer_markers.z_index = 1
-	buffer_markers.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	add_child(buffer_markers)
-	buffer_markers.draw.connect(draw_connection_buffer_markers)
-	# Automatic buffers are created while shaders are generated, so markers
-	# are redrawn when rendering is updated
-	mm_deps.updated.connect(buffer_markers.queue_redraw)
 
 func _exit_tree():
 	remove_crash_recovery_file()
@@ -245,8 +235,6 @@ func _gui_input(event) -> void:
 				create_portals()
 			elif event.shift_pressed:
 				add_reroute_under_mouse()
-			elif event.alt_pressed:
-				show_connection_buffer_menu()
 
 			for c in get_children():
 				if ! c is GraphNode:
@@ -362,7 +350,7 @@ func _gui_input(event) -> void:
 				mm_globals.set_tip_text("Space/#RMB: Nodes menu, Arrow keys: Pan, Mouse wheel: Zoom", 3)
 
 		if get_closest_connection_at_point(get_local_mouse_position()):
-			mm_globals.set_tip_text("Ctrl + #RMB: Cut connections, Shift + #RMB: Create reroute, Ctrl/Cmd + Shift + #RMB: Create aperture pair, Alt + #RMB: Buffer menu")
+			mm_globals.set_tip_text("Ctrl + #RMB: Cut connections, Shift + #RMB: Create reroute, Ctrl/Cmd + Shift + #RMB: Create aperture pair")
 
 		if ((event.button_mask & MOUSE_BUTTON_MASK_RIGHT) != 0 and valid_drag_cut_entry
 				and event.relative.length() > 1.0):
@@ -406,73 +394,6 @@ func _draw() -> void:
 		draw_polyline(lasso_points + PackedVector2Array([lasso_points[0]]),
 				get_theme_color("lasso_stroke", "GraphEdit"), 1.0)
 	MMGraphPortal.draw_links(self)
-	if buffer_markers != null:
-		buffer_markers.queue_redraw()
-
-# Connection buffers (see design/hybrid_evaluator.md)
-
-const BUFFER_MODES : Array[String] = [ "", "always", "never" ]
-
-var buffer_markers : Control = null
-
-func show_connection_buffer_menu(connection : Dictionary = {}) -> void:
-	const tolerance_pixels : float = 2.0
-	if connection.is_empty():
-		connection = get_closest_connection_at_point(
-				get_local_mouse_position(), connection_lines_thickness + tolerance_pixels)
-	if connection.is_empty() or generator == null:
-		return
-	var to_name : String = String(connection.to_node).trim_prefix("node_")
-	var to_port : int = connection.to_port
-	var current : String = generator.get_connection_buffer(to_name, to_port)
-	var menu : PopupMenu = PopupMenu.new()
-	menu.add_radio_check_item("Buffer: Automatic", 0)
-	menu.add_radio_check_item("Buffer: Always", 1)
-	menu.add_radio_check_item("Buffer: Never", 2)
-	menu.set_item_checked(BUFFER_MODES.find(current), true)
-	add_child(menu)
-	menu.popup_hide.connect(menu.queue_free)
-	menu.id_pressed.connect(func(id : int): set_connection_buffer(to_name, to_port, BUFFER_MODES[id]))
-	mm_globals.popup_menu(menu, self)
-
-func set_connection_buffer(to_name : String, to_port : int, mode : String) -> void:
-	var previous : String = generator.get_connection_buffer(to_name, to_port)
-	if previous == mode:
-		return
-	var hier_name : String = generator.get_hier_name()
-	var undo_action : Dictionary = { type="set_connection_buffer", parent=hier_name, to=to_name, to_port=to_port, mode=previous }
-	var redo_action : Dictionary = { type="set_connection_buffer", parent=hier_name, to=to_name, to_port=to_port, mode=mode }
-	undoredo.add("Set connection buffer", [ undo_action ], [ redo_action ])
-	undoredo_command(redo_action)
-
-func draw_connection_buffer_markers() -> void:
-	if generator == null:
-		return
-	var font : Font = get_theme_default_font()
-	for c in get_connection_list():
-		if not has_node(NodePath(c.from_node)) or not has_node(NodePath(c.to_node)):
-			continue
-		var to_name : String = String(c.to_node).trim_prefix("node_")
-		var pin : String = generator.get_connection_buffer(to_name, c.to_port)
-		var to_generator = generator.get_node_or_null(NodePath(to_name))
-		var is_auto_buffered : bool = to_generator is MMGenShader and to_generator.auto_buffers.has(c.to_port)
-		if pin == "" and not is_auto_buffered:
-			continue
-		var from_node : GraphNode = get_node(NodePath(c.from_node))
-		var to_node : GraphNode = get_node(NodePath(c.to_node))
-		var from_position : Vector2 = from_node.position_offset+from_node.get_output_port_position(c.from_port)
-		var to_position : Vector2 = to_node.position_offset+to_node.get_input_port_position(c.to_port)
-		# Connections are symmetric curves, so they go through the middle
-		var center : Vector2 = 0.5*(from_position+to_position)*zoom-scroll_offset
-		# Keep markers readable when zoomed out
-		var radius : float = max(7.0, 9.0*zoom)
-		var label : String = "B" if is_auto_buffered and pin != "never" else "-"
-		var color : Color = Color(0.9, 0.6, 0.1) if pin == "always" else (Color(0.5, 0.5, 0.5) if pin == "never" else Color(0.2, 0.6, 0.9))
-		buffer_markers.draw_circle(center, radius, color)
-		buffer_markers.draw_circle(center, radius, Color.BLACK, false, 1.0)
-		var font_size : int = int(max(10.0, 13.0*zoom))
-		var label_size : Vector2 = font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size)
-		buffer_markers.draw_string(font, center+Vector2(-0.5*label_size.x, 0.35*font_size), label, HORIZONTAL_ALIGNMENT_LEFT, -1, font_size, Color.WHITE)
 
 # Misc. useful functions
 func get_source(node, port) -> Dictionary:
@@ -1478,11 +1399,6 @@ func undoredo_command(command : Dictionary) -> void:
 				if has_node("node_"+g.name):
 					var node = get_node("node_"+g.name)
 					node.update()
-		"set_connection_buffer":
-			var parent_generator = get_node_from_hier_name(command.parent)
-			parent_generator.set_connection_buffer(command.to, command.to_port, command.mode)
-			set_need_save()
-			buffer_markers.queue_redraw()
 		"setminimized":
 			var g = get_node_from_hier_name(command.node)
 			g.minimized = command.minimized

@@ -46,7 +46,7 @@ Today the graph compiles into large monolithic shaders. That causes slow recompi
 - A **GPU memory budget** with LRU eviction and spill-to-RAM.
 - Reuse the existing compute path for passes that need reductions or scatter.
 
-✅ **Done (2026-10-25), milestones 1–5.** See [design/hybrid_evaluator.md](design/hybrid_evaluator.md).
+❌ **Removed (2026-10-29):** automatic buffers, the cost model and per-connection pins changed rendered images, so they were removed. Files with pins still load (pins are ignored). The GPU memory budget stays: see [design/gpu_memory_budget.md](design/gpu_memory_budget.md). What was done:
 - **Automatic buffers** (`gen_auto_buffer.gd`) are chosen by a **cost model** (`MMGenShader.get_cost_model()`, `estimate_cost()`, `should_auto_buffer()`). It counts calls × parsed loop bounds × samples per input. Inputs that will themselves be buffered count as one fetch.
 - An input is buffered when inlining it costs at least *min gain* × the buffered cost. The buffer uses the consumer's own Size parameter as its resolution.
 - **Shader splitting:** any input costing more than the shader budget is buffered, which cuts monolithic shaders.
@@ -342,7 +342,7 @@ SD's moat is `.sbsar`: a parameterized procedural material that engines can re-r
   - Packages are small: bricks is 19 passes in 29 KB, medieval_wall 74 passes in 109 KB.
 - **Exporter** (`engine/runtime/runtime_exporter.gd`):
   - It reuses MM's own compiled shaders. `MMPipeline.compiled_sources` keeps the preprocessed GLSL.
-  - Buffers, including auto buffers and buffers inside subgraphs, become passes. Other textures (images, mesh maps, iterate buffers) are embedded at their current value.
+  - Buffers, including buffers inside subgraphs, become passes. Other textures (images, mesh maps, iterate buffers) are embedded at their current value.
   - Remote parameters are exposed when every control they drive, followed through subgraph parameters, is a shader uniform. The others are listed as baked, with the reason.
   - Available as `--export-mmr` in the CLI and `export_mmr` over RPC and Python.
 - **Godot runtime** (`runtime/godot/addons/material_maker_runtime`, pure GDScript, Godot 4.3+):

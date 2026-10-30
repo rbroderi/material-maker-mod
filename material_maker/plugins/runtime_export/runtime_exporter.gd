@@ -91,8 +91,8 @@ static func write_zip_file(zip : ZIPPacker, file_name : String, data : PackedByt
 	zip.write_file(data)
 	zip.close_file()
 
-## Finds buffers in the graph, its subgraphs, and the automatic buffers of
-## shader nodes (that are their children)
+## Finds buffers in the graph, its subgraphs, and the buffers that are
+## children of nodes (such as value processors' value buffers)
 func collect_buffers(generator : Node) -> void:
 	for b in MMCliTools.collect_generators(generator, func(g): return g is MMGenBuffer):
 		buffer_by_texture[b.texture] = b

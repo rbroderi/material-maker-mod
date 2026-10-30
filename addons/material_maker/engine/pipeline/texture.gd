@@ -9,7 +9,7 @@ var texture_format : RenderingDevice.DataFormat
 var texture : Texture2D
 var texture_needs_update : bool = false
 
-# GPU memory budget (see design/hybrid_evaluator.md): textures that have a
+# GPU memory budget (see design/gpu_memory_budget.md): textures that have a
 # copy in the rendering device are registered, so the least recently used
 # ones can be evicted (copied back to RAM and freed) when over budget.
 # They are uploaded again by get_texture_rid() when needed.

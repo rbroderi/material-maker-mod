@@ -268,7 +268,7 @@ static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, f
 	var buffers : Array = collect_generators(graph, func(g): return g is MMGenBuffer)
 	for frame in frames:
 		MMComputeShader.fixed_time = duration*float(frame)/float(frames)
-		# Buffers (including automatic ones) are rendered again at this time
+		# Buffers are rendered again at this time
 		for b in buffers:
 			var buffer_name : String = "o%d_tex" % b.get_instance_id()
 			if mm_deps.buffers.has(buffer_name):
@@ -283,7 +283,8 @@ static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, f
 	return "could not save '%s'" % file_name if error != OK else ""
 
 ## The generators under root (in its subgraphs too, and including the
-## automatic buffers of shader nodes) for which predicate returns true
+## buffers that are children of nodes, such as value processors') for which
+## predicate returns true
 static func collect_generators(root : Node, predicate : Callable) -> Array:
 	var rv : Array = []
 	add_generators(root, predicate, rv)
@@ -296,8 +297,7 @@ static func add_generators(root : Node, predicate : Callable, rv : Array) -> voi
 				rv.append(c)
 			add_generators(c, predicate, rv)
 
-## Renders an output of a generator, after the buffers it needs (generating
-## its shader creates the automatic ones) are rendered
+## Renders an output of a generator, after the buffers it needs are rendered
 static func render_output_texture(generator : MMGenBase, output : int, size : Vector2i) -> MMTexture:
 	generator.get_shader_code("uv", output, MMGenContext.new())
 	await wait_for_renders(generator.get_tree())

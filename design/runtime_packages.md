@@ -118,7 +118,7 @@ Values are encoded as in `MMPipeline.set_parameter_value_to_buffer`:
    `render_output_to_texture` does, compile it with `MMComputeShader`, and
    capture the preprocessed source (`MMPipeline.compiled_sources`).
 2. For each input texture of a pass: if it is the texture of a Buffer node
-   (including auto buffers), export that buffer's compute shader as a pass
+   (including value buffers), export that buffer's compute shader as a pass
    (recursively); otherwise, save the texture's current content as an
    embedded EXR (float formats) or PNG.
 3. Map the graph's remote parameters to the uniforms they drive
