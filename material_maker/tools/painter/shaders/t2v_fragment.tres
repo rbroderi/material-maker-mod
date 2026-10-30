@@ -14,8 +14,8 @@ layout(location = 4) in vec2 uv;
 @DECLARATIONS
 
 void main() {
-	float box = 2.0;
-	vec2 epsilon = vec2(1.0)/viewport_size;
+	int box = 2;
+	ivec2 v2t_size = textureSize(v2t, 0);
 	float v = 1.0;
 	vec4 pos = transform*vec4(model_vert, 1.0);
 	pos /= pos.w;
@@ -27,9 +27,20 @@ void main() {
 	vec2 mv_dy = dFdy(mv.xy);
 	bool facing_camera = gl_FrontFacing == (mv_dx.x*mv_dy.y-mv_dx.y*mv_dy.x > 0.0);
 	if (mv.x > 0.0 && mv.x < 1.0 && mv.y > 0.0 && mv.y < 1.0) {
-		for (float dx = -box; dx <= box; dx +=1.0) {
-			for (float dy = -box; dy <= box; dy += 1.0) {
-				v = min(v, length(texture(v2t, mv.xy+epsilon*vec2(dx, dy)).xy-uv));
+		// Compare with the UVs of the view pixels around, without filtering: interpolated
+		// UVs (at silhouettes and UV island edges) can match a hidden face by chance
+		ivec2 center = ivec2(mv.xy*vec2(v2t_size));
+		for (int dx = -box; dx <= box; ++dx) {
+			for (int dy = -box; dy <= box; ++dy) {
+				ivec2 p = center+ivec2(dx, dy);
+				if (any(lessThan(p, ivec2(0))) || any(greaterThanEqual(p, v2t_size))) {
+					continue;
+				}
+				vec4 view_uv = texelFetch(v2t, p, 0);
+				// The background (transparent) has no UV
+				if (view_uv.a > 0.0) {
+					v = min(v, length(view_uv.xy-uv));
+				}
 			}
 		}
 	}
