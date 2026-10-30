@@ -53,7 +53,8 @@ func set_mesh(file_name : String) -> void:
 		set_project(mesh_filename.get_basename()+".mmpp")
 		# Apply the mesh material
 		if mesh_material:
-			mesh_instance.set_surface_override_material(0, mesh_material)
+			for s in mesh.get_surface_count():
+				mesh_instance.set_surface_override_material(s, mesh_material)
 		# Center the mesh and move the camera to the whole object is visible
 		var aabb : AABB = mesh_instance.get_aabb()
 		mesh_instance.transform.origin = -aabb.position-0.5*aabb.size
@@ -64,7 +65,7 @@ func set_mesh(file_name : String) -> void:
 		# Show errors if any
 		var errors : PackedStringArray = PackedStringArray()
 		if mesh.get_surface_count() > 1:
-			errors.append("Mesh has several surfaces")
+			errors.append("Mesh has several surfaces (they will share one texture set)")
 		if mesh.surface_get_format(0) & ArrayMesh.ARRAY_FORMAT_TEX_UV == 0:
 			errors.append("Mesh does not have UVs")
 		error_label.text = "\n".join(errors)

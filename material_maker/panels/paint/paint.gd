@@ -245,7 +245,7 @@ func set_object(o, init_material : bool = false):
 	preview_material.ao_texture = layers.get_occlusion_texture()
 	preview_material.ao_texture_channel = StandardMaterial3D.TEXTURE_CHANNEL_RED
 	painted_mesh.mesh = o.mesh
-	painted_mesh.set_surface_override_material(0, preview_material)
+	set_painted_mesh_material(preview_material)
 	# Center camera on mesh
 	var aabb : AABB = painted_mesh.get_aabb()
 	camera_controller.transform.origin = aabb.position+0.5*aabb.size
@@ -263,6 +263,12 @@ func set_object(o, init_material : bool = false):
 		if mat == null:
 			mat = StandardMaterial3D.new()
 		painter.init_textures(mat)
+
+## Shows a material on all surfaces of the painted mesh (they share the
+## same texture set)
+func set_painted_mesh_material(material : Material) -> void:
+	for s in painted_mesh.get_surface_override_material_count():
+		painted_mesh.set_surface_override_material(s, material)
 
 func get_settings() -> Dictionary:
 	return settings
@@ -329,13 +335,13 @@ func set_current_tool(m):
 			ignore = not await load_id_map()
 	if not ignore:
 		if current_tool == MODE_MASK_SELECTOR:
-			painted_mesh.set_surface_override_material(0, preview_material)
+			set_painted_mesh_material(preview_material)
 		current_tool = m
 		if current_tool == MODE_MASK_SELECTOR:
 			mask_selection_material = mask_selection_material_template.duplicate()
 			mask_selection_material.set_shader_parameter("id_map", painter.get_id_map())
 			mask_selection_material.set_shader_parameter("id_selected", false)
-			painted_mesh.set_surface_override_material(0, mask_selection_material)
+			set_painted_mesh_material(mask_selection_material)
 			painter.unset_id_mask()
 	for i in range(MODE_COUNT):
 		tools.get_node(MODE_NAMES[i]).button_pressed = (i == current_tool)
