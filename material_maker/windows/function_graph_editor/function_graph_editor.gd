@@ -7,8 +7,9 @@ class_name MMFunctionGraphEditor
 # The function graph IR is the editor's model: every change is applied to it,
 # and the graph view is rebuilt from it after structural changes. Modes:
 # - "pixel": pixel processors (inputs, parameters, sub-functions),
-# - "value": value processors (same, without the pixel position),
-# - "expression": parameter functions (named parameters and constants only).
+# - "value": value processors (same, without the pixel position and size),
+# - "expression": parameter functions (named parameters and constants only,
+#   compiled to a single expression).
 
 
 signal graph_applied(graph : Dictionary)
@@ -23,14 +24,13 @@ const OP_CATEGORIES : Dictionary = {
 	"Functions": [ "call", "loop" ]
 }
 const PIXEL_ONLY_OPS : Array[String] = [ "pos", "size" ]
-const NON_EXPRESSION_OPS : Array[String] = [ "pos", "size", "sample", "rand", "call", "loop", "arg" ]
 const VECTOR_COMPONENTS : Array[String] = [ "x", "y", "z", "w" ]
 const SLOT_COLOR : Color = Color(0.6, 0.7, 0.9)
 
 var graph : Dictionary = {}
 var graph_mode : String = "pixel"
-# Named parameters that can be used in expression mode
-var expression_parameters : Array = []
+# Names that param nodes can use in expression mode, and their expressions
+var expression_parameters : Dictionary = {}
 # "" for the main graph, or the name of the edited sub-function
 var scope : String = ""
 var compile_types : Dictionary = {}
@@ -46,6 +46,8 @@ var history_index : int = -1
 var history_timer : Timer
 var side_panel : VBoxContainer
 var scope_selector : OptionButton
+# Controls hidden in expression mode, that has no sub-functions
+var function_controls : Array[Control] = []
 var add_menu : MenuButton
 var status_label : Label
 var apply_button : Button
@@ -60,9 +62,9 @@ func _init() -> void:
 	scope_selector = OptionButton.new()
 	scope_selector.item_selected.connect(on_scope_selected)
 	toolbar.add_child(scope_selector)
-	add_button(toolbar, "Add function", add_function)
-	add_button(toolbar, "Remove function", remove_function)
-	toolbar.add_child(VSeparator.new())
+	var separator : VSeparator = VSeparator.new()
+	function_controls = [ scope_selector, add_button(toolbar, "Add function", add_function), add_button(toolbar, "Remove function", remove_function), separator ]
+	toolbar.add_child(separator)
 	add_menu = MenuButton.new()
 	add_menu.text = "Add node"
 	add_menu.flat = false
@@ -111,14 +113,17 @@ func _init() -> void:
 	history_timer.timeout.connect(record_state)
 	add_child(history_timer)
 
-## Starts editing a function graph
-func edit(g : Dictionary, m : String, window_title : String = "", parameters : Array = []) -> void:
+## Starts editing a function graph. In expression mode, parameters are the
+## names that param nodes can use, and their expressions.
+func edit(g : Dictionary, m : String, window_title : String = "", parameters : Dictionary = {}) -> void:
 	graph_mode = m
 	expression_parameters = parameters
 	set_graph(g)
 	if window_title != "":
 		title = window_title
 	scope = ""
+	for c in function_controls:
+		c.visible = graph_mode != "expression"
 	rebuild_add_menu()
 	# The first state of the history is recorded when the view is built,
 	# with the positions of the nodes
@@ -346,7 +351,7 @@ func new_node(op : String) -> Dictionary:
 
 func get_parameter_names() -> Array:
 	if graph_mode == "expression":
-		return expression_parameters
+		return expression_parameters.keys()
 	return graph.get("parameters", []).map(func(p): return p.get("name", ""))
 
 #
@@ -361,11 +366,10 @@ func rebuild_all() -> void:
 func rebuild_scope_selector() -> void:
 	scope_selector.clear()
 	scope_selector.add_item("Main graph")
-	if graph_mode != "expression":
-		for f in get_functions().keys():
-			scope_selector.add_item("Function: %s" % f)
-			if f == scope:
-				scope_selector.select(scope_selector.item_count-1)
+	for f in get_functions().keys():
+		scope_selector.add_item("Function: %s" % f)
+		if f == scope:
+			scope_selector.select(scope_selector.item_count-1)
 	if scope == "":
 		scope_selector.select(0)
 
@@ -394,7 +398,7 @@ func rebuild_add_menu() -> void:
 		var submenu : PopupMenu = PopupMenu.new()
 		submenu.name = category
 		for op in categories[category]:
-			if graph_mode == "expression" and (op in NON_EXPRESSION_OPS or MMFunctionGraph.is_plugin_operation(op)):
+			if graph_mode == "expression" and (op in MMFunctionGraph.NON_EXPRESSION_OPS or MMFunctionGraph.is_plugin_operation(op)):
 				continue
 			if graph_mode == "value" and op in PIXEL_ONLY_OPS:
 				continue
@@ -571,7 +575,7 @@ func update_status() -> void:
 	var sample_expressions : Array = graph.get("inputs", []).map(func(i): return "$in%d(%%s)" % graph.get("inputs", []).find(i))
 	var parameter_expressions : Dictionary = {}
 	for p in get_parameter_names():
-		parameter_expressions[p] = "$"+p
+		parameter_expressions[p] = expression_parameters.get(p, "$"+p)
 	# All nodes are compiled (not only those the output depends on) to show their types
 	var variables : Dictionary = { pos="uv", size="vec2(1.0)", seed="0.0", mode=graph_mode, compile_all_nodes=true }
 	var result : Dictionary = MMFunctionGraph.compile(graph, sample_expressions, parameter_expressions, variables)
@@ -581,8 +585,11 @@ func update_status() -> void:
 	else:
 		compile_types = result.get("function_types", {}).get(scope, {})
 		compile_node_errors = result.get("function_node_errors", {}).get(scope, {})
+	var expression : String = ""
 	if graph_mode == "expression":
-		errors = MMFunctionGraph.compile_expression(graph, parameter_expressions).errors
+		var expression_result : Dictionary = MMFunctionGraph.compile_expression(graph, parameter_expressions)
+		errors = expression_result.errors
+		expression = expression_result.get("expression", "")
 	else:
 		errors = MMGenPixelProcessor.build_shader_model(graph, graph_mode).errors
 	var output : String = scope_data().get("output", "")
@@ -604,10 +611,10 @@ func update_status() -> void:
 			c.self_modulate = Color(0.6, 1.0, 0.6) if node_id == output else Color.WHITE
 			c.tooltip_text = ""
 	if errors.is_empty():
-		status_label.text = "OK"
+		status_label.text = "OK: %s" % expression if expression != "" else "OK"
 	else:
 		status_label.text = "%d error(s): %s" % [ errors.size(), errors[0] ]
-	status_label.tooltip_text = "\n".join(errors)
+	status_label.tooltip_text = "\n".join(errors) if not errors.is_empty() else expression
 	apply_button.disabled = not errors.is_empty()
 	ok_button.disabled = not errors.is_empty()
 
@@ -749,7 +756,7 @@ func do_rebuild_panel() -> void:
 	if graph_mode == "expression":
 		add_section_title("Available parameters")
 		var label : Label = Label.new()
-		label.text = ", ".join(expression_parameters) if not expression_parameters.is_empty() else "(none)"
+		label.text = ", ".join(expression_parameters.keys()) if not expression_parameters.is_empty() else "(none)"
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD
 		side_panel.add_child(label)
 	elif scope == "":

@@ -304,8 +304,7 @@ func test_compile_expression_rejects_globals() -> void:
 	assert_false(MMFunctionGraph.compile_expression(graph, {}).ok)
 
 # An operation added by a plugin: twice(a), with a helper global
-const TWICE_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }
-"
+const TWICE_GLOBAL : String = "float mm_test_twice(float x) { return x*2.0; }\n"
 
 static func compile_twice(compiler : MMFunctionGraph.Compiler, node_id : String, node : Dictionary, _op : String, _operands : Array) -> String:
 	if compiler.types[node.a] != "float":
@@ -338,8 +337,7 @@ func test_plugin_operations() -> void:
 	var r : Dictionary = MMFunctionGraph.compile(graph, [], {}, VARIABLES)
 	assert_true(r.ok, str(r.errors))
 	assert_eq(r.types.out, "float")
-	assert_string_contains("
-".join(r.code), "float fg_1 = mm_test_twice(fg_0); // a")
+	assert_string_contains("\n".join(r.code), "float fg_1 = mm_test_twice(fg_0); // a")
 	assert_string_contains(r.functions[0], "float fg_1 = mm_test_twice(fg_0); // out")
 	# The global is added once, although the operation is used 3 times
 	assert_eq(r.globals, PackedStringArray([ TWICE_GLOBAL ]))
@@ -387,12 +385,28 @@ func test_compile_expression() -> void:
 	var graph : Dictionary = { nodes={ s={ op="param", name="speed" }, two={ op="float", value=2 }, out={ op="mul", a="s", b="two" } }, output="out" }
 	var r : Dictionary = MMFunctionGraph.compile_expression(graph, { speed="$speed" })
 	assert_true(r.ok, str(r.errors))
-	assert_eq(r.expression, "((($speed)*(2.000000000)))")
-	assert_eq(r.type, "float")
+	assert_eq(r.expression, "($speed*2.000000000)")
+
+func test_compile_expression_parenthesizes_operands() -> void:
+	var graph : Dictionary = { nodes={
+		s={ op="param", name="speed" }, m={ op="float", value=-1 }, sum={ op="add", a="s", b="m" },
+		two={ op="float", value=2 }, prod={ op="mul", a="sum", b="two" }, out={ op="sin", a="prod" } }, output="out" }
+	var r : Dictionary = MMFunctionGraph.compile_expression(graph, { speed="$speed" })
+	assert_true(r.ok, str(r.errors))
+	assert_eq(r.expression, "sin((($speed+(-1.000000000))*2.000000000))")
 
 func test_compile_expression_rejects_pixel_operations() -> void:
 	var r : Dictionary = MMFunctionGraph.compile_expression({ nodes={ p={ op="pos" }, out={ op="swizzle", a="p", components="x" } }, output="out" }, {})
 	assert_false(r.ok)
+
+func test_compile_expression_requires_a_float_output() -> void:
+	var r : Dictionary = MMFunctionGraph.compile_expression({ nodes={ out={ op="vec2", value=[ 1, 2 ] } }, output="out" }, {})
+	assert_false(r.ok)
+	r = MMFunctionGraph.compile_expression({ nodes={ out={ op="int", value=1 } }, output="out" }, {})
+	assert_false(r.ok)
+
+func test_replace_word() -> void:
+	assert_eq(MMFunctionGraph.replace_word("fg_1+fg_10*fg_1", "fg_1", "($x)"), "($x)+fg_10*($x)")
 
 func test_value_processor_rejects_position() -> void:
 	var graph : Dictionary = { inputs=[], parameters=[], nodes={ p={ op="pos" }, out={ op="swizzle", a="p", components="x" } }, output="out" }
