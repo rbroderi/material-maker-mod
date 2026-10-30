@@ -586,7 +586,6 @@ func paint(shader_params : Dictionary, end_of_stroke : bool = false, emit_end_of
 	await mm_renderer.thread_run(self.in_thread_paint, [shader_params, end_of_stroke, emit_end_of_stroke, on_mask])
 
 func in_thread_paint(shader_params : Dictionary, end_of_stroke : bool = false, emit_end_of_stroke : bool = true, on_mask : bool = false) -> void:
-	var channels_infos : Array[Dictionary] = PAINT_CHANNELS_MASK if on_mask else PAINT_CHANNELS
 	for p in shader_params.keys():
 		var n : String
 		if PARAMETER_RENAMES.has(p):
@@ -601,22 +600,30 @@ func in_thread_paint(shader_params : Dictionary, end_of_stroke : bool = false, e
 		paint_textures[i*3+2].in_thread_get_texture() 	# Update painted texture
 	emit_signal("painted")
 	if end_of_stroke and emit_end_of_stroke:
-		for i in range(paint_textures.size()/3):
-			init_shader.set_parameter("modulate", Color(1.0, 1.0, 1.0, 1.0))
-			init_shader.set_parameter("use_input_image", true)
-			init_shader.set_parameter("input_image", paint_textures[i*3+2])
-			init_shader.in_thread_render_ext([ paint_textures[i*3] ], Vector2i(texture_size, texture_size))
-			paint_textures[i*3].in_thread_get_texture()
-			init_shader.set_parameter("modulate", Color(0.0, 0.0, 0.0, 0.0))
-			init_shader.set_parameter("use_input_image", false)
-			init_shader.in_thread_render_ext([ paint_textures[i*3+1] ], Vector2i(texture_size, texture_size))
-			paint_textures[i*3+1].in_thread_get_texture()
-		var stroke_state = {}
-		for c in channels_infos.size():
-			var channel_name : String = channels_infos[c].name
-			if has_channel[channel_name]:
-				stroke_state[channel_name] = get_paint_channel(c).next_texture
-		emit_signal("end_of_stroke", stroke_state)
+		in_thread_end_stroke(on_mask)
+
+## Ends the current stroke without painting
+func end_stroke(on_mask : bool = false) -> void:
+	await mm_renderer.thread_run(self.in_thread_end_stroke, [on_mask])
+
+func in_thread_end_stroke(on_mask : bool = false) -> void:
+	var channels_infos : Array[Dictionary] = PAINT_CHANNELS_MASK if on_mask else PAINT_CHANNELS
+	for i in range(paint_textures.size()/3):
+		init_shader.set_parameter("modulate", Color(1.0, 1.0, 1.0, 1.0))
+		init_shader.set_parameter("use_input_image", true)
+		init_shader.set_parameter("input_image", paint_textures[i*3+2])
+		init_shader.in_thread_render_ext([ paint_textures[i*3] ], Vector2i(texture_size, texture_size))
+		paint_textures[i*3].in_thread_get_texture()
+		init_shader.set_parameter("modulate", Color(0.0, 0.0, 0.0, 0.0))
+		init_shader.set_parameter("use_input_image", false)
+		init_shader.in_thread_render_ext([ paint_textures[i*3+1] ], Vector2i(texture_size, texture_size))
+		paint_textures[i*3+1].in_thread_get_texture()
+	var stroke_state = {}
+	for c in channels_infos.size():
+		var channel_name : String = channels_infos[c].name
+		if has_channel[channel_name]:
+			stroke_state[channel_name] = get_paint_channel(c).next_texture
+	emit_signal("end_of_stroke", stroke_state)
 
 func fill(erase : bool, reset : bool = false, emit_end_of_stroke : bool = true) -> void:
 	await paint({ brush_pos=Vector2(0, 0), brush_ppos=Vector2(0, 0), erase=erase, pressure=1.0, fill=true, reset=reset }, true, emit_end_of_stroke)
