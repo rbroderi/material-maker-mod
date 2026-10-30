@@ -50,10 +50,12 @@ The **High Poly Bake** node has the following parameters:
   bounding box
 * **Antialiasing** averages 1, 4 or 16 jittered samples for each texel
 * **Match by name**: the parts (objects) of the current mesh are matched with the parts of
-  the high poly mesh that have the same name, ignoring suffixes such as _low and _high (and
-  numbers such as .001): rays from a part only hit the matching high poly part, so parts close
-  to each other don't bleed into each other's maps. Parts are OBJ objects and groups, and the
-  meshes of glTF and FBX files (all their meshes are loaded)
+  the high poly mesh that have the same name, ignoring case, suffixes such as _low, _high, .lp
+  and -hp (after a separator) and Blender's numbers such as .001: rays from a part only hit
+  the matching high poly part (with all its materials), so parts close to each other don't
+  bleed into each other's maps. Other numbers are kept (bolt1 and bolt2 are different parts).
+  Parts without a match hit all parts, with a warning. Parts are OBJ objects and groups, and
+  the meshes of glTF and FBX files (all their meshes are loaded)
 * **Skew map** is an optional grayscale image in the current mesh's UV space: where it is white,
   rays go along the flat face normal of the current mesh instead of its (smooth) vertex normals,
   which fixes details that are skewed near hard edges

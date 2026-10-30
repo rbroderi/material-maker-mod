@@ -9,8 +9,8 @@ text = "#version 450
 // Hardware ray traced high to low poly baking, first pass: rasterizes the low
 // poly mesh in UV space and writes the rays of its texels (as the software
 // baker, highpoly_fragment.tres, casts them), in 4 G-buffers selected by
-// gbuffer: 0 (ray start, front distance), 1 (ray direction, matching high poly
-// surface), 2 (normal, tangent sign), 3 (tangent, coverage)
+// gbuffer: 0 (ray start, front distance), 1 (ray direction, high poly part
+// the ray can hit), 2 (normal, tangent sign), 3 (tangent, coverage)
 
 layout(location = 0) out vec4 outColor;
 layout(location = 1) in vec3 model_vert;
@@ -18,7 +18,7 @@ layout(location = 2) in vec3 normal;
 layout(location = 3) in vec4 tangent;
 layout(location = 4) in vec2 uv;
 layout(location = 5) in vec3 cage_vert;
-layout(location = 6) flat in int match_surface;
+layout(location = 6) flat in int match_part;
 
 @DECLARATIONS
 
@@ -29,6 +29,7 @@ void main() {
 	vec3 t = tangent.xyz + dFdx(tangent.xyz) * jitter.x + dFdy(tangent.xyz) * jitter.y;
 	t = normalize(t - n * dot(n, t));
 	vec3 cage = cage_vert + dFdx(cage_vert) * jitter.x + dFdy(cage_vert) * jitter.y;
+	vec2 st = uv + dFdx(uv) * jitter.x + dFdy(uv) * jitter.y;
 	vec3 ray_start = vert + n * front_dist;
 	vec3 ray_dir = -n;
 	float front = front_dist;
@@ -41,7 +42,7 @@ void main() {
 		vec3 face_normal = cross(dFdx(model_vert), dFdy(model_vert));
 		if (dot(face_normal, face_normal) > 0.0) {
 			face_normal = normalize(face_normal) * (dot(face_normal, n) < 0.0 ? -1.0 : 1.0);
-			ray_dir = normalize(mix(ray_dir, -face_normal, clamp(texture(skew_tex, uv).r, 0.0, 1.0)));
+			ray_dir = normalize(mix(ray_dir, -face_normal, clamp(textureLod(skew_tex, st, 0.0).r, 0.0, 1.0)));
 			ray_start = vert - ray_dir * front;
 		}
 	}
@@ -50,7 +51,7 @@ void main() {
 			outColor = vec4(ray_start, front);
 			break;
 		case 1:
-			outColor = vec4(ray_dir, float(match_surface));
+			outColor = vec4(ray_dir, float(match_part));
 			break;
 		case 2:
 			outColor = vec4(n, tangent.w < 0.0 ? -1.0 : 1.0);

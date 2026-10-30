@@ -358,6 +358,11 @@ static func make_sprite_sheet(images : Array[Image], columns : int = 0) -> Image
 static func bake(mesh_path : String, maps : Array, size : int, prefix : String, options : Dictionary = {}) -> PackedStringArray:
 	var errors : PackedStringArray = PackedStringArray()
 	var match_names : bool = options.get("match_names", false)
+	if options.get("high", "") == "":
+		for o in [ "match_names", "skew", "high_texture", "software_raytracing" ]:
+			if options.has(o):
+				errors.append("--%s needs --high" % o.replace("_", "-"))
+				return errors
 	var mesh : Mesh = MMMeshLoader.load_mesh(mesh_path, false, match_names)
 	if mesh == null:
 		errors.append("could not load mesh '%s'" % mesh_path)
@@ -365,7 +370,7 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 	var bake_options : Dictionary = { match_by_name=match_names, hardware=not options.get("software_raytracing", false) }
 	for o in [ [ "skew", "skew_map" ], [ "high_texture", "high_texture" ] ]:
 		if options.get(o[0], "") != "":
-			var image : Image = Image.load_from_file(options[o[0]])
+			var image : Image = Image.load_from_file(options[o[0]]) if FileAccess.file_exists(options[o[0]]) else null
 			if image == null:
 				errors.append("could not load image '%s'" % options[o[0]])
 				return errors
@@ -382,16 +387,35 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 		if cage_mesh == null:
 			errors.append("could not load mesh '%s'" % options.cage)
 			return errors
+	if match_names:
+		# Matching nothing would bake as without --match-names (parts without
+		# a match only get a warning)
+		var matches : Dictionary = MMHighPolyBaker.match_parts(mesh, high_mesh)
+		if matches.surface_parts.count(-1) == matches.surface_parts.size():
+			errors.append("--match-names: no part of the mesh (%s) has the name of a part of the high poly mesh (%s)" % [ ", ".join(matches.unmatched), ", ".join(MMHighPolyBaker.get_part_names(high_mesh)) ])
+			return errors
 	var valid_maps : Array = BAKE_MAPS+(Array(MMHighPolyBaker.MAPS) if high_mesh != null else [])
+	# Maps that cannot be baked are errors, before baking anything
+	var baked_maps : Array = []
+	for m in maps:
+		if not m in valid_maps:
+			errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
+			continue
+		if m == "texture" and high_mesh != null:
+			if not bake_options.has("high_texture"):
+				errors.append("the texture map needs --high-texture")
+				continue
+			var error : String = MMHighPolyBaker.check_texture_transfer(high_mesh, bake_options)
+			if error != "":
+				errors.append(error.left(1).to_lower()+error.substr(1))
+				continue
+		baked_maps.append(m)
 	# With --udim, each UDIM tile of the mesh is baked to <prefix>_<map>.<tile>.png
 	var tiles : PackedInt32Array = MMHighPolyBaker.udim_tiles(mesh) if options.get("udim", false) else PackedInt32Array([ 0 ])
 	for tile in tiles:
 		var tile_mesh : Mesh = MMHighPolyBaker.udim_tile_mesh(mesh, tile) if tile != 0 else mesh
 		var tile_cage : Mesh = MMHighPolyBaker.udim_tile_mesh(cage_mesh, tile) if tile != 0 and cage_mesh != null else cage_mesh
-		for m in maps:
-			if not m in valid_maps:
-				errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
-				continue
+		for m in baked_maps:
 			var texture : MMTexture
 			if m in MMHighPolyBaker.MAPS and high_mesh != null:
 				texture = await MMHighPolyBaker.bake(tile_mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, tile_cage, bake_options)

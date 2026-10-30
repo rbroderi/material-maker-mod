@@ -28,8 +28,8 @@ layout(set = 0, binding = 8, std430) readonly buffer Parameters {
 	vec4 distances;			// front, rear
 } parameters;
 
-// t, face, barycentric coordinates (x and y are the matching surface and -1
-// before tracing)
+// Before tracing, y is the high poly part the ray can hit (-1 for any). After
+// tracing: hit distance (-1 for no hit), face index, barycentric coordinates.
 layout(location = 0) rayPayloadEXT vec4 payload;
 
 const int ATTRIBUTES_PER_FACE = 8;
@@ -144,14 +144,15 @@ void main() {
 }
 """
 
-## When matching parts by name, hits on other parts are ignored
+## When matching parts by name, hits on other parts are ignored (the part
+## index is the w component of the second attribute of faces)
 const ANY_HIT : String = """#version 460
 #extension GL_EXT_ray_tracing : require
 layout(set = 0, binding = 6, std430) readonly buffer Attributes { vec4 attributes[]; };
 layout(location = 0) rayPayloadInEXT vec4 payload;
 void main() {
-	int match_surface = int(payload.y);
-	if (match_surface >= 0 && int(attributes[gl_PrimitiveID * 8].w) != match_surface) {
+	int match_part = int(payload.y);
+	if (match_part >= 0 && int(attributes[gl_PrimitiveID * 8 + 1].w) != match_part) {
 		ignoreIntersectionEXT;
 	}
 }

@@ -16,12 +16,13 @@ layout(location = 2) in vec3 normal;
 layout(location = 3) in vec4 tangent;
 layout(location = 4) in vec2 uv;
 layout(location = 5) in vec3 cage_vert;
-layout(location = 6) flat in int match_surface;
+layout(location = 6) flat in int match_part;
 
 @DECLARATIONS
 
-// Attributes of a face: 3 normals (w of the first one is the surface index),
-// 3 colors, then UVs (u0, v0, u1, v1), (u2, v2, 0, 0)
+// Attributes of a face: 3 normals (w of the first one is the surface index,
+// and of the second one the part index), 3 colors, then UVs (u0, v0, u1, v1),
+// (u2, v2, 0, 0)
 const int ATTRIBUTES_PER_FACE = 8;
 
 const int MODE_NORMAL_TANGENT = 0;
@@ -101,7 +102,8 @@ vec4 get_attribute(int index) {
 }
 
 // Same traversal as the ambient occlusion baker, that also returns the
-// face index (stored in the w component of the first vertex of triangles)
+// face index (stored in the w component of the first vertex of triangles).
+// When matching parts by name, faces of other parts are ignored.
 float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hit_bary) {
 	hit_face = -1;
 	hit_bary = vec2(0.0);
@@ -132,8 +134,7 @@ float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hi
 					vec4 tri_a = get_data(j);
 					vec2 bary;
 					float tri_t = intersects_triangle(ray_start, ray_dir, tri_a.xyz, get_data(j + 1).xyz, get_data(j + 2).xyz, bary);
-					// When matching by name, other parts of the high poly mesh are ignored
-					if (tri_t != -1.0 && tri_t < t && (match_surface < 0 || int(get_attribute(int(tri_a.w) * ATTRIBUTES_PER_FACE).w) == match_surface)) {
+					if (tri_t != -1.0 && tri_t < t && (match_part < 0 || int(get_attribute(int(tri_a.w) * ATTRIBUTES_PER_FACE + 1).w) == match_part)) {
 						t = tri_t;
 						hit_face = int(tri_a.w);
 						hit_bary = bary;
@@ -241,6 +242,7 @@ void main() {
 	t = normalize(t - n * dot(n, t));
 	vec3 b = cross(n, t) * (tangent.w < 0.0 ? -1.0 : 1.0);
 	vec3 cage = cage_vert + dFdx(cage_vert) * jitter.x + dFdy(cage_vert) * jitter.y;
+	vec2 st = uv + dFdx(uv) * jitter.x + dFdy(uv) * jitter.y;
 	// Rays start from the cage if there is one, else from the low poly
 	// surface pushed along its normal
 	vec3 ray_start = vert + n * front_dist;
@@ -252,11 +254,12 @@ void main() {
 		ray_dir = front > 0.0 ? (vert - cage) / front : -n;
 	}
 	if (use_skew != 0) {
-		// The skew map bends rays towards the (flat) face normal
+		// The skew map bends rays towards the flat face normal (derivatives of
+		// the position are constant in a triangle)
 		vec3 face_normal = cross(dFdx(model_vert), dFdy(model_vert));
 		if (dot(face_normal, face_normal) > 0.0) {
 			face_normal = normalize(face_normal) * (dot(face_normal, n) < 0.0 ? -1.0 : 1.0);
-			ray_dir = normalize(mix(ray_dir, -face_normal, clamp(texture(skew_tex, uv).r, 0.0, 1.0)));
+			ray_dir = normalize(mix(ray_dir, -face_normal, clamp(textureLod(skew_tex, st, 0.0).r, 0.0, 1.0)));
 			ray_start = vert - ray_dir * front;
 		}
 	}
@@ -313,10 +316,10 @@ void main() {
 				value = vec4((ray_start + ray_dir * hit - aabb_position) / aabb_size, 1.0);
 				break;
 			case MODE_TEXTURE: {
+				// The high poly texture at the hit point, with the high poly UVs
 				vec4 uv01 = get_attribute(base + 6);
-				vec2 uv2 = get_attribute(base + 7).xy;
-				vec2 high_uv = w.x * uv01.xy + w.y * uv01.zw + w.z * uv2;
-				value = vec4(texture(high_texture, high_uv).rgb, 1.0);
+				vec2 high_uv = w.x * uv01.xy + w.y * uv01.zw + w.z * get_attribute(base + 7).xy;
+				value = vec4(textureLod(high_texture, high_uv, 0.0).rgb, 1.0);
 				break;
 			}
 		}

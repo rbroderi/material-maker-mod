@@ -9,12 +9,12 @@ class_name MMHighPolyBaker
 # Options (the options dictionary of bake()):
 # - match_by_name: rays from a part of the low poly mesh (a named surface)
 #   only hit the part of the high poly mesh with the same name, ignoring
-#   _low/_high suffixes, so parts close to each other do not bleed
-# - skew_map: a texture (red channel) that bends rays from the averaged
-#   (smooth) direction (0) to the low poly face normal (1), to fix skewed
-#   details near hard edges
+#   _low/_high suffixes, so parts close to each other don't bleed
+# - skew_map: a texture (red channel, in the low poly UV space) that bends
+#   rays from the smooth direction (0) to the low poly face normal (1), to fix
+#   skewed details near hard edges
 # - high_texture: the texture of the high poly mesh, sampled at the hit point
-#   for the "texture" map
+#   with the high poly UVs for the "texture" map
 # - hardware: use hardware ray tracing when the GPU supports it (the default)
 
 
@@ -25,7 +25,6 @@ class HighPolyData:
 	var bvh : MMTexture
 	var attributes : MMTexture
 	var face_count : int
-	var surface_names : PackedStringArray
 
 static var high_poly_data : Dictionary = {}
 static var baked_maps : Dictionary = {}
@@ -39,15 +38,15 @@ const MAX_BAKED_MAPS : int = 8
 
 ## Merges all triangle surfaces of a mesh into a single indexed surface, and
 ## builds a texture with 8 texels per face: the normals of its 3 vertices
-## (the w component of the first one is the surface index), their colors,
-## then their UVs (u0, v0, u1, v1), (u2, v2, 0, 0)
+## (the w component of the first one is the surface index, and of the second
+## one the part index, see get_surface_parts()), their colors, then their UVs
+## (u0, v0, u1, v1), (u2, v2, 0, 0)
 static func prepare_high_poly(mesh : Mesh) -> Dictionary:
 	var vertices : PackedVector3Array = PackedVector3Array()
 	var indices : PackedInt32Array = PackedInt32Array()
 	var attributes : PackedFloat32Array = PackedFloat32Array()
-	var surface_names : PackedStringArray = PackedStringArray()
+	var surface_parts : PackedInt32Array = get_surface_parts(mesh, get_part_names(mesh))
 	for s in mesh.get_surface_count():
-		surface_names.append(mesh.surface_get_name(s) if mesh is ArrayMesh else "")
 		if mesh.surface_get_primitive_type(s) != Mesh.PRIMITIVE_TRIANGLES:
 			continue
 		var arrays : Array = mesh.surface_get_arrays(s)
@@ -65,13 +64,14 @@ static func prepare_high_poly(mesh : Mesh) -> Dictionary:
 			surface_indices = PackedInt32Array(range(surface_vertices.size()))
 		var offset : int = vertices.size()
 		vertices.append_array(surface_vertices)
+		var part : float = float(surface_parts[s])
 		for f in surface_indices.size()/3:
 			var face : PackedInt32Array = surface_indices.slice(3*f, 3*f+3)
 			for v in 3:
 				indices.append(offset+face[v])
 			for v in 3:
 				var n : Vector3 = normals[face[v]]
-				attributes.append_array([ n.x, n.y, n.z, float(s) if v == 0 else 0.0 ])
+				attributes.append_array([ n.x, n.y, n.z, [ float(s), part, 0.0 ][v] ])
 			for v in 3:
 				var c : Color = colors[face[v]] if colors != null else Color.WHITE
 				attributes.append_array([ c.r, c.g, c.b, c.a ])
@@ -85,7 +85,7 @@ static func prepare_high_poly(mesh : Mesh) -> Dictionary:
 	merged_arrays[Mesh.ARRAY_VERTEX] = vertices
 	merged_arrays[Mesh.ARRAY_INDEX] = indices
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, merged_arrays)
-	return { mesh=merged, attributes=MMTexture.pack_texels(attributes), face_count=indices.size()/3, surface_names=surface_names }
+	return { mesh=merged, attributes=MMTexture.pack_texels(attributes), face_count=indices.size()/3 }
 
 static func get_high_poly_data(mesh : Mesh) -> HighPolyData:
 	if not high_poly_data.has(mesh):
@@ -97,7 +97,6 @@ static func get_high_poly_data(mesh : Mesh) -> HighPolyData:
 		data.bvh.set_texture(MMBvhGenerator.generate(prepared.mesh))
 		data.attributes = MMTexture.from_image(prepared.attributes)
 		data.face_count = prepared.face_count
-		data.surface_names = prepared.surface_names
 		high_poly_data[mesh] = data
 	return high_poly_data[mesh]
 
@@ -163,22 +162,47 @@ static func merge_surfaces(mesh : Mesh) -> Dictionary:
 	merged.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, merged_arrays)
 	return { mesh=merged, surfaces=surfaces }
 
-## A part name without its low/high poly suffix (and Blender's .001 numbers)
+## A part name without its low/high poly suffix (such as _low, _high, .lp or
+## -hp) and Blender's duplicate number (.001), in lower case. The suffix needs
+## a separator, and other numbers are kept (bolt1 and bolt2 are two parts).
 static func part_name(surface_name : String) -> String:
-	var regex : RegEx = RegEx.create_from_string("(?i)([._ -]?\\d+)?[._ -]?(low|high|lowpoly|highpoly|lp|hp)?([._ -]?\\d+)?$")
-	return regex.sub(surface_name.strip_edges(), "").to_lower()
+	var name : String = surface_name.strip_edges().to_lower()
+	var regex : RegEx = RegEx.create_from_string("(\\.\\d{3})?([._ -](low|high|lowpoly|highpoly|lp|hp))?(\\.\\d{3})?$")
+	return regex.sub(name, "")
 
-## For each surface of the low poly mesh, the index of the high poly surface
-## with the same part name, or -1 (no restriction)
-static func match_surfaces(low_mesh : Mesh, high_names : PackedStringArray) -> PackedInt32Array:
-	var high_parts : PackedStringArray = PackedStringArray()
-	for n in high_names:
-		high_parts.append(part_name(n))
-	var rv : PackedInt32Array = PackedInt32Array()
-	for s in low_mesh.get_surface_count():
-		var low_name : String = part_name(low_mesh.surface_get_name(s)) if low_mesh is ArrayMesh else ""
-		rv.append(high_parts.find(low_name) if low_name != "" else -1)
+## The part names of the surfaces of a mesh (see part_name()), each one once,
+## in the order of the surfaces
+static func get_part_names(mesh : Mesh) -> PackedStringArray:
+	var rv : PackedStringArray = PackedStringArray()
+	for s in mesh.get_surface_count():
+		var name : String = part_name(mesh.surface_get_name(s)) if mesh is ArrayMesh else ""
+		if not name in rv:
+			rv.append(name)
 	return rv
+
+## For each surface of a mesh, the index of its part name in part_names, or
+## -1 when it is not in it (or the surface has no name). All surfaces
+## (materials) of a part get the same index.
+static func get_surface_parts(mesh : Mesh, part_names : PackedStringArray) -> PackedInt32Array:
+	var rv : PackedInt32Array = PackedInt32Array()
+	for s in mesh.get_surface_count():
+		var name : String = part_name(mesh.surface_get_name(s)) if mesh is ArrayMesh else ""
+		rv.append(part_names.find(name) if name != "" else -1)
+	return rv
+
+## The parts of a low poly mesh matched with those of a high poly mesh: for
+## each low poly surface, the index of the high poly part with the same name
+## (or -1), and the names of the low poly parts that have no match
+static func match_parts(low_mesh : Mesh, high_mesh : Mesh) -> Dictionary:
+	var surface_parts : PackedInt32Array = get_surface_parts(low_mesh, get_part_names(high_mesh))
+	var unmatched : PackedStringArray = PackedStringArray()
+	for s in surface_parts.size():
+		var name : String = low_mesh.surface_get_name(s) if low_mesh is ArrayMesh else ""
+		if name == "":
+			name = "(unnamed)"
+		if surface_parts[s] == -1 and not name in unmatched:
+			unmatched.append(name)
+	return { surface_parts=surface_parts, unmatched=unmatched }
 
 ## UDIM tiles used by the UV layout of a mesh (1001 is the [0, 1] square).
 ## Godot's V axis points down (V = 1-v of the mesh files), so tile rows are
@@ -254,20 +278,31 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 	if force:
 		baked_maps.erase(key)
 	if not baked_maps.has(key):
+		for s in low_mesh.get_surface_count():
+			if low_mesh.surface_get_arrays(s)[Mesh.ARRAY_TEX_UV] == null:
+				push_error("The mesh has no UVs, it cannot be baked")
+				return await MMMapGenerator.get_map(null, map)
+		if map == "texture":
+			var error : String = check_texture_transfer(high_mesh, options)
+			if error != "":
+				push_error(error)
+				return await MMMapGenerator.get_map(null, map)
 		# Low poly meshes with several surfaces (parts) are merged, and when
-		# matching by name, each vertex gets the high poly surface it can hit
+		# matching by name, each vertex gets the high poly part it can hit
 		var low : Mesh = low_mesh
-		var vertex_matches : PackedFloat32Array = PackedFloat32Array()
-		if low_mesh.get_surface_count() > 1:
+		var vertex_parts : PackedFloat32Array = PackedFloat32Array()
+		if options.get("match_by_name", false):
 			var merged : Dictionary = merge_surfaces(low_mesh)
 			low = merged.mesh
-			if options.get("match_by_name", false):
-				var high_names : PackedStringArray = PackedStringArray()
-				for s in high_mesh.get_surface_count():
-					high_names.append(high_mesh.surface_get_name(s) if high_mesh is ArrayMesh else "")
-				var surface_matches : PackedInt32Array = match_surfaces(low_mesh, high_names)
-				for s in merged.surfaces:
-					vertex_matches.append(surface_matches[s])
+			var matches : Dictionary = match_parts(low_mesh, high_mesh)
+			if not matches.unmatched.is_empty():
+				push_warning("Low poly parts without a high poly part of the same name (their rays hit all parts): %s" % ", ".join(matches.unmatched))
+			for s in merged.surfaces:
+				vertex_parts.append(matches.surface_parts[s])
+			if cage_mesh != null:
+				cage_mesh = merge_surfaces(cage_mesh).mesh
+		elif low_mesh.get_surface_count() > 1:
+			low = merge_surfaces(low_mesh).mesh
 			if cage_mesh != null and cage_mesh.get_surface_count() > 1:
 				cage_mesh = merge_surfaces(cage_mesh).mesh
 		# The seams map is used to dilate the result
@@ -277,7 +312,7 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 		busy = true
 		var texture : MMTexture = MMTexture.new()
 		var start_time : int = Time.get_ticks_msec()
-		await mm_renderer.thread_run(generate, [ low, high_mesh, map, size, front, rear, samples, seams, texture, cage_mesh, options, vertex_matches ])
+		await mm_renderer.thread_run(generate, [ low, high_mesh, map, size, front, rear, samples, seams, texture, cage_mesh, options, vertex_parts ])
 		print_verbose("Baked %s from high poly mesh in %d ms" % [ map, Time.get_ticks_msec()-start_time ])
 		# Only the most recent maps are kept (each one is a 32 bits float texture)
 		while baked_maps.size() >= MAX_BAKED_MAPS:
@@ -285,6 +320,29 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 		baked_maps[key] = texture
 		busy = false
 	return baked_maps[key]
+
+## Why the texture map cannot be baked ("" if it can): it needs the high poly
+## texture and UVs
+static func check_texture_transfer(high_mesh : Mesh, options : Dictionary) -> String:
+	if not options.get("high_texture") is Texture2D:
+		return "The transferred texture map needs the texture of the high poly mesh"
+	for s in high_mesh.get_surface_count():
+		if high_mesh.surface_get_arrays(s)[Mesh.ARRAY_TEX_UV] != null:
+			return ""
+	return "The high poly mesh has no UVs, its texture cannot be transferred"
+
+## An image texture as an MMTexture (8 bits images are converted, as
+## MMTexture only handles float formats)
+static func to_mm_texture(texture : Texture2D) -> MMTexture:
+	var image : Image = texture.get_image() if texture != null else null
+	if image == null:
+		image = Image.create(1, 1, false, Image.FORMAT_RGBAH)
+	elif not image.get_format() in [ Image.FORMAT_RF, Image.FORMAT_RGBAF, Image.FORMAT_RH, Image.FORMAT_RGBAH ]:
+		image = image.duplicate()
+		image.convert(Image.FORMAT_RGBAH)
+	var rv : MMTexture = MMTexture.new()
+	rv.set_texture(ImageTexture.create_from_image(image))
+	return rv
 
 ## Returns the vertices of the cage, in the same order as those of the low
 ## poly mesh, or an empty array if their topologies don't match
@@ -296,18 +354,18 @@ static func get_cage_vertices(low : Mesh, cage_mesh : Mesh) -> PackedVector3Arra
 		return PackedVector3Array()
 	return cage_arrays[Mesh.ARRAY_VERTEX]
 
-## Bakes a map of a (single surface) low poly mesh. vertex_matches is, for
-## each low poly vertex, the high poly surface its rays can hit (-1 for any,
+## Bakes a map of a (single surface) low poly mesh. vertex_parts is, for
+## each low poly vertex, the high poly part its rays can hit (-1 for any,
 ## and empty for no restriction)
-static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, front : float, rear : float, samples : int, seams : MMTexture, texture : MMTexture, cage_mesh : Mesh = null, options : Dictionary = {}, vertex_matches : PackedFloat32Array = PackedFloat32Array()) -> void:
+static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, front : float, rear : float, samples : int, seams : MMTexture, texture : MMTexture, cage_mesh : Mesh = null, options : Dictionary = {}, vertex_parts : PackedFloat32Array = PackedFloat32Array()) -> void:
 	# The software BVH (built in GDScript, slow for large meshes) is not needed
 	# with hardware ray tracing
 	var hardware : bool = options.get("hardware", true) and MMHighPolyBakerRT.is_available()
 	var data : HighPolyData = null if hardware else get_high_poly_data(high_mesh)
 	var low : Mesh = with_tangents(low_mesh)
-	if vertex_matches.is_empty():
-		vertex_matches.resize(low.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size())
-		vertex_matches.fill(-1.0)
+	if vertex_parts.is_empty():
+		vertex_parts.resize(low.surface_get_arrays(0)[Mesh.ARRAY_VERTEX].size())
+		vertex_parts.fill(-1.0)
 	var aabb : AABB = low.get_aabb()
 	var diagonal : float = aabb.size.length()
 	var pipeline : MMMeshRenderingPipeline = MMMeshRenderingPipeline.new()
@@ -319,20 +377,16 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 		if cage_vertices.is_empty():
 			push_error("The cage mesh must have the same topology as the low poly mesh, it is ignored")
 	pipeline.extra_buffers.append((cage_vertices if not cage_vertices.is_empty() else low.surface_get_arrays(0)[Mesh.ARRAY_VERTEX]).to_byte_array())
-	pipeline.extra_buffers.append(vertex_matches.to_byte_array())
+	pipeline.extra_buffers.append(vertex_parts.to_byte_array())
 	pipeline.add_parameter_or_texture("use_cage", "int", 0 if cage_vertices.is_empty() else 1)
-	var dummy : MMTexture = MMTexture.from_image(Image.create(1, 1, false, Image.FORMAT_RGBA8))
-	var skew_map : MMTexture = dummy
-	if options.get("skew_map") is Texture2D:
-		skew_map = MMTexture.new()
-		skew_map.set_texture(options.skew_map)
-	pipeline.add_parameter_or_texture("use_skew", "int", 0 if skew_map == dummy else 1)
-	pipeline.add_parameter_or_texture("skew_tex", "sampler2D", skew_map)
-	var high_texture : MMTexture = dummy
-	if options.get("high_texture") is Texture2D:
-		high_texture = MMTexture.new()
-		high_texture.set_texture(options.high_texture)
+	# Images are converted to a float format (MMTexture only handles those)
+	var skew_map = options.get("skew_map")
+	pipeline.add_parameter_or_texture("use_skew", "int", 1 if skew_map is Texture2D else 0)
+	pipeline.add_parameter_or_texture("skew_tex", "sampler2D", to_mm_texture(skew_map if skew_map is Texture2D else null))
+	var high_option = options.get("high_texture")
+	var high_texture : MMTexture = to_mm_texture(high_option if high_option is Texture2D else null)
 	pipeline.add_parameter_or_texture("high_texture", "sampler2D", high_texture)
+	var dummy : MMTexture = to_mm_texture(null)
 	pipeline.add_parameter_or_texture("bvh_data", "sampler2D", data.bvh if data != null else dummy)
 	pipeline.add_parameter_or_texture("attribute_data", "sampler2D", data.attributes if data != null else dummy)
 	pipeline.add_parameter_or_texture("prev_iteration_tex", "sampler2D", texture)
