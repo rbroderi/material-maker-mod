@@ -206,16 +206,19 @@ static func set_graph_mesh(graph : MMGenGraph, mesh : Mesh) -> void:
 		g.current_mesh = mesh
 		await g.update_map()
 
-## UDIM tiles from a list ("1001-1004,1011"), empty if it is invalid
+## UDIM tiles from a list ("1001-1004,1011", sorted), empty if it is invalid
+## (tiles are from 1001 to 1999, and ranges go up)
 static func parse_udim_tiles(list : String) -> PackedInt32Array:
 	var tiles : PackedInt32Array = PackedInt32Array()
 	for item in list.split(",", false):
 		var bounds : PackedStringArray = item.strip_edges().split("-")
-		if bounds.size() > 2 or not bounds[0].is_valid_int() or not bounds[-1].is_valid_int():
+		if bounds.size() > 2 or not bounds[0].strip_edges().is_valid_int() or not bounds[-1].strip_edges().is_valid_int():
 			return PackedInt32Array()
-		for t in range(bounds[0].to_int(), bounds[-1].to_int()+1):
-			if t < 1001 or t > 1999:
-				return PackedInt32Array()
+		var first : int = bounds[0].to_int()
+		var last : int = bounds[-1].to_int()
+		if first < 1001 or last > 1999 or first > last:
+			return PackedInt32Array()
+		for t in range(first, last+1):
 			if not t in tiles:
 				tiles.append(t)
 	tiles.sort()
@@ -411,8 +414,15 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 				continue
 		baked_maps.append(m)
 	# With --udim, each UDIM tile of the mesh is baked to <prefix>_<map>.<tile>.png
-	var tiles : PackedInt32Array = MMMapGenerator.udim_tiles(mesh) if options.get("udim", false) else PackedInt32Array([ 0 ])
-	for tile in tiles:
+	# UDIM tiles (options.tiles, or all tiles of the mesh with options.udim)
+	# are baked to <prefix>_<map>.<tile>.png
+	var tiles : PackedInt32Array = options.get("tiles", PackedInt32Array())
+	if tiles.is_empty() and options.get("udim", false):
+		tiles = MMMapGenerator.udim_tiles(mesh)
+		if tiles.is_empty():
+			errors.append("the mesh has no UVs in UDIM tiles")
+			return errors
+	for tile in (Array(tiles) if not tiles.is_empty() else [ 0 ]):
 		var tile_mesh : Mesh = MMMapGenerator.get_tile_mesh(mesh, tile) if tile != 0 else mesh
 		# Only the vertices of the cage are used (its UVs don't matter)
 		var tile_cage : Mesh = cage_mesh

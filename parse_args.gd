@@ -22,6 +22,8 @@ var exit_code : int = 0
 ## UDIM tiles exported by --export-material (--udim-tiles, or --udim for the
 ## graph's tiles)
 static func get_udim_tiles(material : MMGenMaterial, options : Dictionary) -> PackedInt32Array:
+	if options.has("tiles"):
+		return options.tiles
 	if options.has("udim_tiles"):
 		return MMCliTools.parse_udim_tiles(options.udim_tiles)
 	if options.get("udim", false):
@@ -228,7 +230,7 @@ Options (they can also be given after "--"):
   --udim                     bake each UDIM tile of the mesh's UVs to <mesh>_<map>.<tile>.png, or with
                              --export-material, export each UDIM tile of the graph (of its Mesh Map and
                              High Poly Bake nodes' mesh and its Image nodes' tile files) to <name>.<tile>.png
-  --udim-tiles <list>        UDIM tiles of --export-material (e.g. 1001-1004,1011)
+  --udim-tiles <list>        UDIM tiles of --bake and --export-material (e.g. 1001-1004,1011)
   --mesh <mesh>              mesh of the graph's Mesh Map and High Poly Bake nodes (as the 3D preview's
                              custom mesh), for --export-material and --render
   --software-raytracing      bake --high maps with the software ray caster (by default, hardware
@@ -369,6 +371,9 @@ func _ready():
 				else:
 					files.push_back(arg)
 		i += 1
+	if not check_udim_options(mode, options):
+		get_tree().quit(1)
+		return
 	if options.has("gpu_budget"):
 		mm_renderer.gpu_memory_budget_override = options.gpu_budget
 	if options.get("low_memory", false):
@@ -632,12 +637,36 @@ func check_requirements(gen : MMGenBase, f : String, options : Dictionary) -> bo
 		exit_code = 2
 	return ok
 
+## Checks --udim, --udim-tiles and --mesh, and sets options.tiles (the list of
+## tiles) and options.mesh_resource (the loaded mesh). Returns false (after
+## showing an error) if they are not valid. Plugin modes can use them.
+func check_udim_options(mode : String, options : Dictionary) -> bool:
+	if options.has("udim_tiles"):
+		options.tiles = MMCliTools.parse_udim_tiles(options.udim_tiles)
+		if options.tiles.is_empty():
+			show_error("ERROR: incorrect UDIM tiles %s (e.g. 1001-1004,1011, from 1001 to 1999)" % options.udim_tiles)
+			return false
+	var builtin : bool = mode in CLI_MODES
+	if (options.has("udim") or options.has("udim_tiles")) and builtin and not mode in [ "--bake", "--export", "--export-material" ]:
+		show_error("ERROR: --udim and --udim-tiles need --bake or --export-material")
+		return false
+	if options.has("mesh"):
+		if builtin and not mode in [ "--export", "--export-material", "--render" ]:
+			show_error("ERROR: --mesh needs --export-material or --render")
+			return false
+		var mesh : Mesh = MMMeshLoader.load_mesh(options.mesh) if FileAccess.file_exists(options.mesh) else null
+		if mesh == null:
+			show_error("ERROR: cannot load the mesh %s" % options.mesh)
+			return false
+		options.mesh_resource = mesh
+	return true
+
 ## Applies --mesh, --preset, then --set values (so they override the
 ## preset's). Seeds are changed afterwards, for each variation. Returns false
 ## (and sets the exit code) if the graph has no such preset.
 func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> bool:
 	if options.has("mesh") and gen is MMGenGraph:
-		var mesh : Mesh = MMMeshLoader.load_mesh(options.mesh)
+		var mesh : Mesh = options.mesh_resource if options.has("mesh_resource") else MMMeshLoader.load_mesh(options.mesh)
 		if mesh == null:
 			show_error("ERROR: cannot load the mesh %s" % options.mesh)
 		else:

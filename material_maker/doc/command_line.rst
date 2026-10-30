@@ -116,8 +116,8 @@ Options
   nodes, and those of the tile files of its Image nodes (whose path contains **<UDIM>** or a
   tile number, such as albedo.1001.png). Textures are named <name>.<tile>.png (for example
   bricks_albedo.1002.png), and MaterialX and USD files use **<UDIM>** in their file names
-* **--udim-tiles <list>** exports these UDIM tiles with **--export-material** (for example
-  1001-1004,1011)
+* **--udim-tiles <list>** bakes (with **--bake**) or exports (with **--export-material**) these
+  UDIM tiles (for example 1001-1004,1011)
 * **--mesh <mesh>** is the mesh of the graph's Mesh Map and High Poly Bake nodes with
   **--export-material** and **--render** (as the 3D preview's custom mesh)
 * **--software-raytracing** bakes **--high** maps without hardware ray tracing, even when the GPU

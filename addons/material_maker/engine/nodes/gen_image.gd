@@ -92,9 +92,10 @@ func set_parameter(n : String, v) -> void:
 ## The UDIM tile loaded in UDIM exports (0 otherwise)
 var udim_tile : int = 0
 
-## A tile number in a file name (albedo.1001.png, albedo_1002.exr)
+## A UDIM tile number (1001 to 1999) in a file name, after a dot
+## (albedo.1001.png). Other numbers are not tiles (albedo_1024.png).
 static func udim_regex() -> RegEx:
-	return RegEx.create_from_string("(?<=[._])1\\d\\d\\d(?=\\.[^./\\\\]+$)")
+	return RegEx.create_from_string("(?<=\\.)1(?!000)\\d\\d\\d(?=\\.[^./\\\\]+$)")
 
 ## The file of the image: paths with <UDIM> (MaterialX and USD's placeholder)
 ## or a tile number load the tile of UDIM exports, and tile 1001 otherwise

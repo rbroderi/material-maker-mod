@@ -263,7 +263,8 @@ static func udim_tile(uv : Vector2) -> int:
 static var mesh_udim_tiles : Dictionary = {}
 
 ## The UDIM tiles used by the UVs of a mesh (sorted). The tile of a face is
-## the tile of its center, since vertices can be on tile borders.
+## the tile of its center, since vertices can be on tile borders. Faces that
+## are not in tiles 1001 to 1999 (negative UVs, U of 10 or more) are ignored.
 static func udim_tiles(mesh : Mesh) -> PackedInt32Array:
 	if mesh == null:
 		return PackedInt32Array()
@@ -281,7 +282,9 @@ static func udim_tiles(mesh : Mesh) -> PackedInt32Array:
 		var indices : PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(uvs.size()))
 		for f in indices.size()/3:
 			var center : Vector2 = (uvs[indices[3*f]]+uvs[indices[3*f+1]]+uvs[indices[3*f+2]])/3.0
-			tiles[udim_tile(center)] = true
+			var tile : int = udim_tile(center)
+			if center.x >= 0.0 and center.x < 10.0 and tile >= 1001 and tile <= 1999:
+				tiles[tile] = true
 	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
 	rv.sort()
 	mesh_udim_tiles[id] = rv
