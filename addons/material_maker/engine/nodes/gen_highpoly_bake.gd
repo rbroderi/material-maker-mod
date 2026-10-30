@@ -48,6 +48,12 @@ const BAKE_MAPS : Array[Dictionary] = [
 		output_type="f",
 		map="normal_tangent",
 		output="texture($TEXTURE, $UV).a"
+	},
+	{
+		name="Transferred texture",
+		output_type="rgb",
+		map="texture",
+		output="texture($TEXTURE, $UV).rgb"
 	}
 ]
 
@@ -57,6 +63,10 @@ const SAMPLES : Array[int] = [ 1, 4, 16 ]
 ## (so the high poly mesh data used for baking is built once)
 static var loaded_meshes : Dictionary = {}
 const MAX_LOADED_MESHES : int = 4
+## Loaded images (skew maps and high poly textures), by path and modification time
+static var loaded_images : Dictionary = {}
+const MAX_LOADED_IMAGES : int = 4
+const IMAGE_FILTERS : Array[String] = [ "*.png,*.jpg,*.jpeg,*.exr,*.hdr,*.tga,*.webp,*.bmp;Image file" ]
 var update_pending : bool = false
 
 
@@ -86,6 +96,12 @@ func get_parameter_defs() -> Array:
 			longdesc="Maximum distance of the high poly surface behind the current mesh, relative to its bounding box diagonal" },
 		{ name="samples", type="enum", label="Antialiasing", default=1,
 			values=[ { name="None", value="1" }, { name="4 samples", value="4" }, { name="16 samples", value="16" } ] },
+		{ name="match_by_name", type="boolean", label="Match by name", default=false,
+			longdesc="Rays from each part (object) of the current mesh only hit the part of the high poly mesh with the same name (ignoring suffixes such as _low and _high)" },
+		{ name="skew_map", type="file", label="Skew map", filters=IMAGE_FILTERS, default="",
+			longdesc="Optional grayscale image in the current mesh's UV space: white bends rays towards the flat face normal, to fix skewed details near hard edges" },
+		{ name="high_texture", type="file", label="High poly texture", filters=IMAGE_FILTERS, default="",
+			longdesc="Texture of the high poly mesh (in its UV space), for the Transferred texture map" },
 	]
 
 func get_map_definition() -> Dictionary:
@@ -95,22 +111,59 @@ func get_mesh_parameter(parameter_name : String) -> Mesh:
 	var path : String = get_parameter(parameter_name)
 	if path == "" or not FileAccess.file_exists(path):
 		return null
-	# High poly materials are separate surfaces, for material ID maps
-	var split_materials : bool = parameter_name == "high_mesh"
+	return load_mesh(path, parameter_name == "high_mesh", get_parameter("match_by_name"))
+
+## Loads a mesh, or returns it from the cache. High poly materials are separate
+## surfaces, for material ID maps, and objects are separate surfaces (parts)
+## when matching them by name.
+static func load_mesh(path : String, split_materials : bool, parts : bool) -> Mesh:
 	# Reload the mesh when the file changes
 	var key : String = "%s:%d:%s" % [ path, FileAccess.get_modified_time(path), split_materials ]
+	if parts:
+		key += ":parts"
 	if not loaded_meshes.has(key):
 		while loaded_meshes.size() >= MAX_LOADED_MESHES:
 			loaded_meshes.erase(loaded_meshes.keys()[0])
-		loaded_meshes[key] = MMMeshLoader.load_mesh(path, split_materials)
+		loaded_meshes[key] = MMMeshLoader.load_mesh(path, split_materials, parts)
 	return loaded_meshes[key]
+
+## The image of a parameter, or null
+func get_image_parameter(parameter_name : String) -> Texture2D:
+	var path : String = get_parameter(parameter_name)
+	if path == "" or not FileAccess.file_exists(path):
+		return null
+	var key : String = "%s:%d" % [ path, FileAccess.get_modified_time(path) ]
+	if not loaded_images.has(key):
+		while loaded_images.size() >= MAX_LOADED_IMAGES:
+			loaded_images.erase(loaded_images.keys()[0])
+		var image : Image = Image.load_from_file(path)
+		loaded_images[key] = ImageTexture.create_from_image(image) if image != null else null
+	return loaded_images[key]
+
+## The current mesh, with its parts as separate surfaces when matching them
+## by name (it is loaded again from its file)
+func get_low_mesh() -> Mesh:
+	if not get_parameter("match_by_name") or not current_mesh.has_meta("file_path"):
+		return current_mesh
+	var path : String = current_mesh.get_meta("file_path")
+	if not FileAccess.file_exists(path):
+		return current_mesh
+	var mesh : Mesh = load_mesh(path, false, true)
+	return mesh if mesh != null else current_mesh
 
 func generate_map() -> MMTexture:
 	var high : Mesh = get_mesh_parameter("high_mesh")
 	if current_mesh == null or high == null:
 		return await MMMapGenerator.get_map(null, "position")
-	return await MMHighPolyBaker.bake(current_mesh, high, get_map_definition().map, 1 << int(get_parameter("size")),
-		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"))
+	var options : Dictionary = {}
+	if get_parameter("match_by_name"):
+		options.match_by_name = true
+	for p in [ "skew_map", "high_texture" ]:
+		var texture : Texture2D = get_image_parameter(p)
+		if texture != null:
+			options[p] = texture
+	return await MMHighPolyBaker.bake(get_low_mesh(), high, get_map_definition().map, 1 << int(get_parameter("size")),
+		get_parameter("front"), get_parameter("rear"), SAMPLES[get_parameter("samples")], false, get_mesh_parameter("cage_mesh"), options)
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
@@ -126,12 +179,12 @@ func deferred_update() -> void:
 func get_texture_parameter_name() -> String:
 	return "o%d_highpoly_%s" % [ get_instance_id(), get_map_definition().map ]
 
-# Mesh paths are stored relative to the project, as for images
+# Mesh and image paths are stored relative to the project, as for images
 
-const MESH_PARAMETERS : Array[String] = [ "high_mesh", "cage_mesh" ]
+const FILE_PARAMETERS : Array[String] = [ "high_mesh", "cage_mesh", "skew_map", "high_texture" ]
 
 func _serialize_data(data: Dictionary) -> Dictionary:
-	for p in MESH_PARAMETERS:
+	for p in FILE_PARAMETERS:
 		if data.parameters.has(p):
 			var path : String = data.parameters[p]
 			path = path.replace(mm_loader.current_project_path, "%PROJECT_PATH%")
@@ -143,7 +196,7 @@ func _serialize_data(data: Dictionary) -> Dictionary:
 func _deserialize(data : Dictionary) -> void:
 	if not data.has("parameters"):
 		return
-	for p in MESH_PARAMETERS:
+	for p in FILE_PARAMETERS:
 		if data.parameters.has(p):
 			var path : String = data.parameters[p]
 			path = path.replace("%PROJECT_PATH%", mm_loader.current_project_path)

@@ -31,6 +31,9 @@ The **High Poly Bake** node outputs the selected map, which can be the following
   surfaces, OBJ usemtl)
 * **Position**: the position of the high poly surface, in the bounding box of the current mesh
 * **Coverage**: 1.0 where rays hit the high poly mesh, 0.0 where they missed it
+* **Transferred texture**: the high poly mesh's own texture (the **High poly texture**
+  parameter), sampled at the hit point with the high poly mesh's UVs, in the UV layout of the
+  current mesh (black where rays missed the high poly mesh)
 
 Parameters
 ++++++++++
@@ -47,6 +50,17 @@ The **High Poly Bake** node has the following parameters:
   surface in front of and behind the current mesh, relative to the diagonal of its
   bounding box
 * **Antialiasing** averages 1, 4 or 16 jittered samples for each texel
+* **Match by name**: the parts (objects) of the current mesh are matched with the parts of
+  the high poly mesh that have the same name, ignoring case, suffixes such as _low, _high, _lp
+  and _hp, and Blender's duplicate numbers (.001): rays from a part only hit the matching high
+  poly part, so parts that are close to each other or interpenetrate don't bake each other.
+  Parts are OBJ objects and groups (o and g lines), and the meshes of glTF and FBX files (all
+  their meshes are then loaded). Rays from parts without a match hit all parts. The Material ID
+  map then has a color for each material of each part
+* **Skew map** is an optional grayscale image in the current mesh's UV space: where it is white,
+  rays go along the flat face normal of the current mesh instead of its smooth vertex normals,
+  which fixes details that are skewed near hard edges (gray values bend rays in between)
+* **High poly texture** is the texture of the high poly mesh, for the **Transferred texture** map
 
 Maps are extended past the borders of UV islands, so they don't show seams when they are
 mipmapped or filtered. UV islands can be mirrored.

@@ -169,26 +169,50 @@ static func render_output_texture(generator : MMGenBase, output : int, size : Ve
 
 ## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors.
 ## With a high poly mesh (options.high), maps are baked from it (see
-## MMHighPolyBaker), using options.cage, front, rear and samples.
+## MMHighPolyBaker), using options.cage, front, rear and samples, and
+## optionally options.match_names, skew (image) and high_texture (image).
 static func bake(mesh_path : String, maps : Array, size : int, prefix : String, options : Dictionary = {}) -> PackedStringArray:
 	var errors : PackedStringArray = PackedStringArray()
-	var mesh : Mesh = MMMeshLoader.load_mesh(mesh_path)
+	var match_names : bool = options.get("match_names", false)
+	if options.get("high", "") == "":
+		for o in [ "match_names", "skew", "high_texture" ]:
+			if options.has(o):
+				errors.append("--%s needs --high" % o.replace("_", "-"))
+				return errors
+	# When matching parts by name, objects are separate surfaces
+	var mesh : Mesh = MMMeshLoader.load_mesh(mesh_path, false, match_names)
 	if mesh == null:
 		errors.append("could not load mesh '%s'" % mesh_path)
 		return errors
 	var high_mesh : Mesh = null
 	if options.get("high", "") != "":
 		# Materials are separate surfaces, for material ID maps
-		high_mesh = MMMeshLoader.load_mesh(options.high, true)
+		high_mesh = MMMeshLoader.load_mesh(options.high, true, match_names)
 		if high_mesh == null:
 			errors.append("could not load mesh '%s'" % options.high)
 			return errors
 	var cage_mesh : Mesh = null
 	if options.get("cage", "") != "":
-		cage_mesh = MMMeshLoader.load_mesh(options.cage)
+		cage_mesh = MMMeshLoader.load_mesh(options.cage, false, match_names)
 		if cage_mesh == null:
 			errors.append("could not load mesh '%s'" % options.cage)
 			return errors
+	var bake_options : Dictionary = {}
+	if match_names:
+		bake_options.match_by_name = true
+		# Matching nothing would bake as without --match-names
+		# (parts without a match only get a warning)
+		var matches : Dictionary = MMHighPolyBaker.match_parts(mesh, high_mesh)
+		if matches.surface_parts.count(-1) == matches.surface_parts.size():
+			errors.append("--match-names: no part of the mesh (%s) has the name of a part of the high poly mesh (%s)" % [ ", ".join(matches.unmatched), ", ".join(MMHighPolyBaker.get_part_names(high_mesh)) ])
+			return errors
+	for o in [ [ "skew", "skew_map" ], [ "high_texture", "high_texture" ] ]:
+		if options.get(o[0], "") != "":
+			var image : Image = Image.load_from_file(options[o[0]]) if FileAccess.file_exists(options[o[0]]) else null
+			if image == null:
+				errors.append("could not load image '%s'" % options[o[0]])
+				return errors
+			bake_options[o[1]] = ImageTexture.create_from_image(image)
 	var valid_maps : Array = BAKE_MAPS.duplicate()
 	if high_mesh != null:
 		# With a high poly mesh, the position map is the high poly surface's
@@ -199,9 +223,17 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 		if not m in valid_maps:
 			errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
 			continue
+		if m == "texture":
+			if not bake_options.has("high_texture"):
+				errors.append("the texture map needs --high-texture")
+				continue
+			var error : String = MMHighPolyBaker.check_texture_transfer(high_mesh, bake_options)
+			if error != "":
+				errors.append(error.left(1).to_lower()+error.substr(1))
+				continue
 		var texture : MMTexture
 		if high_mesh != null and m in MMHighPolyBaker.MAPS:
-			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh)
+			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh, bake_options)
 		else:
 			texture = await MMMapGenerator.get_map(mesh, m, size, true)
 		var file_name : String = "%s_%s.png" % [ prefix, m ]

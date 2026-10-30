@@ -124,6 +124,9 @@ const VALUE_OPTIONS : Dictionary = {
 	"--front": { key="front", type=TYPE_FLOAT, minimum=0.0 },
 	"--rear": { key="rear", type=TYPE_FLOAT, minimum=0.0 },
 	"--samples": { key="samples", type=TYPE_INT, minimum=1 },
+	"--match-names": { key="match_names", type=TYPE_BOOL },
+	"--skew": { key="skew", type=TYPE_STRING },
+	"--high-texture": { key="high_texture", type=TYPE_STRING },
 }
 
 ## Image formats of --render
@@ -152,11 +155,15 @@ Options (they can also be given after "--"):
   --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position,
                              or normal_tangent,height with --high)
   --high <mesh>              high poly mesh for --bake, that adds the normal_tangent, normal_object, height,
-                             color, material_id and position maps
+                             color, material_id, position and texture (with --high-texture) maps
   --front <d>, --rear <d>    ray distances in front of and behind the mesh for --high, relative to the
                              diagonal of its bounding box (default: 0.01)
   --cage <mesh>              cage mesh for --high, with the same topology as the baked mesh
   --samples <n>              antialiasing samples for --high (default: 4)
+  --match-names              with --high, rays from each part (object) of the mesh only hit the high poly
+                             part with the same name (ignoring suffixes such as _low and _high)
+  --skew <image>             skew map for --high: white bends rays towards the flat face normal
+  --high-texture <image>     texture of the --high mesh, transferred by the texture map
   --show-window              do not minimize the window
 """
 
