@@ -9,6 +9,7 @@ class_name MMCliTools
 
 const BAKE_MAPS : Array[String] = [ "position", "normal", "tangent", "ambient_occlusion", "bent_normals", "thickness", "curvature", "seams", "adjacency" ]
 const DEFAULT_BAKE_MAPS : Array[String] = [ "ambient_occlusion", "curvature", "thickness", "normal", "position" ]
+const DEFAULT_HIGH_POLY_MAPS : Array[String] = [ "normal_tangent", "height" ]
 
 
 ## Converts a command line value to a parameter value
@@ -166,18 +167,43 @@ static func render_output_texture(generator : MMGenBase, output : int, size : Ve
 	await wait_for_renders(generator.get_tree())
 	return await generator.render_output_to_texture(output, size)
 
-## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors
-static func bake(mesh_path : String, maps : Array, size : int, prefix : String) -> PackedStringArray:
+## Bakes mesh maps to files named <prefix>_<map>.png, returns the errors.
+## With a high poly mesh (options.high), maps are baked from it (see
+## MMHighPolyBaker), using options.cage, front, rear and samples.
+static func bake(mesh_path : String, maps : Array, size : int, prefix : String, options : Dictionary = {}) -> PackedStringArray:
 	var errors : PackedStringArray = PackedStringArray()
 	var mesh : Mesh = MMMeshLoader.load_mesh(mesh_path)
 	if mesh == null:
 		errors.append("could not load mesh '%s'" % mesh_path)
 		return errors
+	var high_mesh : Mesh = null
+	if options.get("high", "") != "":
+		# Materials are separate surfaces, for material ID maps
+		high_mesh = MMMeshLoader.load_mesh(options.high, true)
+		if high_mesh == null:
+			errors.append("could not load mesh '%s'" % options.high)
+			return errors
+	var cage_mesh : Mesh = null
+	if options.get("cage", "") != "":
+		cage_mesh = MMMeshLoader.load_mesh(options.cage)
+		if cage_mesh == null:
+			errors.append("could not load mesh '%s'" % options.cage)
+			return errors
+	var valid_maps : Array = BAKE_MAPS.duplicate()
+	if high_mesh != null:
+		# With a high poly mesh, the position map is the high poly surface's
+		for m in MMHighPolyBaker.MAPS:
+			if not m in valid_maps:
+				valid_maps.append(m)
 	for m in maps:
-		if not m in BAKE_MAPS:
-			errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(BAKE_MAPS) ])
+		if not m in valid_maps:
+			errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
 			continue
-		var texture : MMTexture = await MMMapGenerator.get_map(mesh, m, size, true)
+		var texture : MMTexture
+		if high_mesh != null and m in MMHighPolyBaker.MAPS:
+			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh)
+		else:
+			texture = await MMMapGenerator.get_map(mesh, m, size, true)
 		var file_name : String = "%s_%s.png" % [ prefix, m ]
 		if await texture.save_to_file(file_name) != OK:
 			errors.append("could not save '%s'" % file_name)

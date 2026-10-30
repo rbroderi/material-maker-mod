@@ -2,6 +2,8 @@ class_name MMMeshRenderingPipeline
 extends MMRenderingPipeline
 
 var mesh : Mesh
+## Additional storage buffers, bound after the mesh data (from binding 5)
+var extra_buffers : Array[PackedByteArray] = []
 
 func draw_list_extra_setup(rd : RenderingDevice, draw_list : int, shader : RID, rids : RIDs):
 	if mesh == null:
@@ -25,6 +27,7 @@ func draw_list_extra_setup(rd : RenderingDevice, draw_list : int, shader : RID, 
 	else:
 		buffers.append(mesh.surface_get_arrays(0)[Mesh.ARRAY_TANGENT].to_byte_array())
 	buffers.append(mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV].to_byte_array())
+	buffers.append_array(extra_buffers)
 	bind_buffer_uniforms(rd, draw_list, shader, buffers, 0, rids)
 	
 	var indexes = mesh.surface_get_arrays(0)[Mesh.ARRAY_INDEX]

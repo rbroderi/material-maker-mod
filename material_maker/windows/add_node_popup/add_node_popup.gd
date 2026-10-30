@@ -155,7 +155,7 @@ func check_quick_connect(obj : Dictionary) -> bool:
 				return false
 			if input_ports.is_empty() or mm_io_types.types[input_ports[0].type].slot_type != qc_slot_type and qc_slot_type != 42:
 				return false
-		elif ref_obj.type == "image" or ref_obj.type == "text" or ref_obj.type == "sdf" or ref_obj.type == "meshmap" or (ref_obj.type == "portal" and ref_obj.io == MMGenPortal.Portal.OUT):
+		elif ref_obj.type == "image" or ref_obj.type == "text" or ref_obj.type == "sdf" or ref_obj.type == "meshmap" or ref_obj.type == "highpoly_bake" or (ref_obj.type == "portal" and ref_obj.io == MMGenPortal.Portal.OUT):
 			return false
 		elif (ref_obj.type == "debug" or ref_obj.type == "buffer" or ref_obj.type == "iterate_buffer" or ref_obj.type == "export") and qc_slot_type != 0 and qc_slot_type != 42:
 			return false

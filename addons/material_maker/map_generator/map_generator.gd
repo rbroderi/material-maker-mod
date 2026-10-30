@@ -202,11 +202,16 @@ static var busy : bool = false
 ## single surface)
 static var merged_meshes : Dictionary = {}
 
-static func get_map(mesh : Mesh, map : String, size : int = 2048, force_generate : bool = false) -> MMTexture:
+## A mesh with a single surface: the mesh itself, or its surfaces merged
+static func get_single_surface_mesh(mesh : Mesh) -> Mesh:
 	if mesh != null and mesh.get_surface_count() > 1:
 		if not merged_meshes.has(mesh):
 			merged_meshes[mesh] = MMMeshLoader.merge_surfaces(mesh)
-		mesh = merged_meshes[mesh]
+		return merged_meshes[mesh]
+	return mesh
+
+static func get_map(mesh : Mesh, map : String, size : int = 2048, force_generate : bool = false) -> MMTexture:
+	mesh = get_single_surface_mesh(mesh)
 	if mesh == null or size <= 0 or mesh.surface_get_arrays(0)[Mesh.ARRAY_TEX_UV] == null:
 		if error_texture == null:
 			error_texture = MMTexture.new()

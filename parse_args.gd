@@ -119,6 +119,11 @@ const VALUE_OPTIONS : Dictionary = {
 	"--format": { key="format", type=TYPE_STRING },
 	"--node": { key="node", type=TYPE_STRING },
 	"--show-window": { key="show_window", type=TYPE_BOOL },
+	"--high": { key="high", type=TYPE_STRING },
+	"--cage": { key="cage", type=TYPE_STRING },
+	"--front": { key="front", type=TYPE_FLOAT, minimum=0.0 },
+	"--rear": { key="rear", type=TYPE_FLOAT, minimum=0.0 },
+	"--samples": { key="samples", type=TYPE_INT, minimum=1 },
 }
 
 ## Image formats of --render
@@ -128,7 +133,7 @@ const HELP : String = """Material Maker command line
 
   material_maker --export-material [options] <files>   export materials for an engine
   material_maker --render --node <node[:output]> [options] <files>   render a node output
-  material_maker --bake [--maps <map,...>] [options] <meshes>   bake mesh maps
+  material_maker --bake [--maps <map,...>] [--high <mesh>] [options] <meshes>   bake mesh maps
   material_maker --list-parameters <files>   list the parameters that can be set
   material_maker -- --help   show this help
 
@@ -144,7 +149,14 @@ Options (they can also be given after "--"):
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
   --node <node[:output]>     node output of --render (outputs are numbered from 0)
   --format <format>          image format of --render (png, exr, jpg or webp)
-  --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position)
+  --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position,
+                             or normal_tangent,height with --high)
+  --high <mesh>              high poly mesh for --bake, that adds the normal_tangent, normal_object, height,
+                             color, material_id and position maps
+  --front <d>, --rear <d>    ray distances in front of and behind the mesh for --high, relative to the
+                             diagonal of its bounding box (default: 0.01)
+  --cage <mesh>              cage mesh for --high, with the same topology as the baked mesh
+  --samples <n>              antialiasing samples for --high (default: 4)
   --show-window              do not minimize the window
 """
 
@@ -360,12 +372,16 @@ func bake_files(files : Array[String], options : Dictionary) -> void:
 		show_error("ERROR: incorrect size 0")
 		get_tree().quit(1)
 		return
+	if options.has("high") and options.maps == MMCliTools.DEFAULT_BAKE_MAPS:
+		options.maps = MMCliTools.DEFAULT_HIGH_POLY_MAPS
+	var failed : bool = false
 	for f in files:
 		var prefix : String = options.output_dir.path_join(f.get_file().get_basename())
-		for e in await MMCliTools.bake(f, options.maps, options.size, prefix):
+		for e in await MMCliTools.bake(f, options.maps, options.size, prefix, options):
 			show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+			failed = true
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(1 if failed else 0)
 
 func list_parameters(files : Array) -> void:
 	for f : String in files:
