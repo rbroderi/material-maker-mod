@@ -56,8 +56,11 @@ func _notification(what : int) -> void:
 	match what:
 		NOTIFICATION_PREDELETE:
 			gpu_textures.erase(texture_id)
-			# At exit, the renderer (and its device) is already gone
-			if is_instance_valid(mm_renderer) and mm_renderer.is_inside_tree():
+			# Most textures never get a rendering device texture (e.g. the
+			# Material node's preview textures, recreated on every shader
+			# update): don't make them wait for the rendering thread. At exit,
+			# the renderer (and its device) is already gone.
+			if rid.is_valid() and is_instance_valid(mm_renderer) and mm_renderer.is_inside_tree():
 				await mm_renderer.thread_run(in_thread_free_rid, [rid, rd])
 
 func get_gpu_size() -> int:
