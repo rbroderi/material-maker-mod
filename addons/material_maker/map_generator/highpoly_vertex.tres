@@ -48,7 +48,9 @@ void main() {
 	uv = uvs[gl_VertexIndex];
 	cage_vert = vec3(cage_positions[3*gl_VertexIndex], cage_positions[3*gl_VertexIndex+1], cage_positions[3*gl_VertexIndex+2]);
 	match_surface = int(match_surfaces[gl_VertexIndex]);
-	// Sub-pixel jitter, for anti-aliasing over several passes
-	gl_Position = vec4(uv*2.0-vec2(1.0)+jitter, 0.0, 1.0);
+	// Anti-aliasing jitters the interpolated attributes in the fragment shader
+	// (moving the triangles would leave texels of UV island borders uncovered
+	// in some passes)
+	gl_Position = vec4(uv*2.0-vec2(1.0), 0.0, 1.0);
 }
 "

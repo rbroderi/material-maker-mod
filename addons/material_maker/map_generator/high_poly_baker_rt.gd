@@ -305,7 +305,7 @@ static func generate(pipeline : MMMeshRenderingPipeline, high_mesh : Mesh, map_m
 	u.add_id(parameter_buffer)
 	invariant_uniforms.append(u)
 	for i in max(1, samples):
-		pipeline.set_parameter("jitter", MMHighPolyBaker.get_jitter(i)*2.0/size)
+		pipeline.set_parameter("jitter", MMHighPolyBaker.get_jitter(i))
 		for g in 4:
 			pipeline.set_parameter("gbuffer", g)
 			pipeline.in_thread_render(Vector2i(size, size), 3, gbuffers[g])

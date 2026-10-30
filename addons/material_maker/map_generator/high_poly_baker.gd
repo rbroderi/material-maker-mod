@@ -33,6 +33,9 @@ static var busy : bool = false
 ## Whether the last bake used hardware ray tracing (see MMHighPolyBakerRT)
 static var last_bake_used_hardware : bool = false
 
+const MAX_HIGH_POLY_DATA : int = 4
+const MAX_BAKED_MAPS : int = 8
+
 
 ## Merges all triangle surfaces of a mesh into a single indexed surface, and
 ## builds a texture with 8 texels per face: the normals of its 3 vertices
@@ -86,6 +89,8 @@ static func prepare_high_poly(mesh : Mesh) -> Dictionary:
 
 static func get_high_poly_data(mesh : Mesh) -> HighPolyData:
 	if not high_poly_data.has(mesh):
+		while high_poly_data.size() >= MAX_HIGH_POLY_DATA:
+			high_poly_data.erase(high_poly_data.keys()[0])
 		var prepared : Dictionary = prepare_high_poly(mesh)
 		var data : HighPolyData = HighPolyData.new()
 		data.bvh = MMTexture.new()
@@ -274,6 +279,9 @@ static func bake(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int, fr
 		var start_time : int = Time.get_ticks_msec()
 		await mm_renderer.thread_run(generate, [ low, high_mesh, map, size, front, rear, samples, seams, texture, cage_mesh, options, vertex_matches ])
 		print_verbose("Baked %s from high poly mesh in %d ms" % [ map, Time.get_ticks_msec()-start_time ])
+		# Only the most recent maps are kept (each one is a 32 bits float texture)
+		while baked_maps.size() >= MAX_BAKED_MAPS:
+			baked_maps.erase(baked_maps.keys()[0])
 		baked_maps[key] = texture
 		busy = false
 	return baked_maps[key]
@@ -355,8 +363,8 @@ static func generate(low_mesh : Mesh, high_mesh : Mesh, map : String, size : int
 		for i in max(1, samples):
 			pipeline.set_parameter("iteration", i+1)
 			pipeline.set_parameter("prev_iteration_tex", texture)
-			# Jitter is in normalized device coordinates (2 units for the texture's width)
-			pipeline.set_parameter("jitter", get_jitter(i)*2.0/size)
+			# Jitter is in pixels (see highpoly_fragment.tres)
+			pipeline.set_parameter("jitter", get_jitter(i))
 			pipeline.in_thread_render(Vector2i(size, size), 3, texture)
 	# Extend the map past UV seams
 	var dilate_pipeline : MMComputeShader = MMComputeShader.new()

@@ -742,12 +742,14 @@ func bake_files(files : Array[String], options : Dictionary) -> void:
 		return
 	if options.has("high") and options.maps == MMCliTools.DEFAULT_BAKE_MAPS:
 		options.maps = MMCliTools.DEFAULT_HIGH_POLY_MAPS
+	var failed : bool = false
 	for f in files:
 		var prefix : String = options.output_dir.path_join(f.get_file().get_basename())
 		for e in await MMCliTools.bake(f, options.maps, options.size, prefix, options):
 			show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+			failed = true
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(1 if failed else 0)
 
 func list_parameters(files : Array) -> void:
 	for f : String in files:

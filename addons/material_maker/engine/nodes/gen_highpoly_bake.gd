@@ -59,8 +59,15 @@ const BAKE_MAPS : Array[Dictionary] = [
 
 const SAMPLES : Array[int] = [ 1, 4, 16 ]
 
-## Loaded meshes, by parameter name, with the path and modification time they were loaded from
-var loaded_meshes : Dictionary = {}
+## Loaded meshes, by path, modification time and options, shared by all nodes
+## (so the high poly mesh data used for baking is built once)
+static var loaded_meshes : Dictionary = {}
+const MAX_LOADED_MESHES : int = 4
+## Loaded images (skew maps and high poly textures), by path and modification time
+static var loaded_images : Dictionary = {}
+const MAX_LOADED_IMAGES : int = 4
+## Meshes of the baked UDIM tile, by slot (see cached())
+var tile_meshes : Dictionary = {}
 var update_pending : bool = false
 
 
@@ -103,11 +110,11 @@ func get_parameter_defs() -> Array:
 func get_map_definition() -> Dictionary:
 	return BAKE_MAPS[get_parameter("map")]
 
-## A value cached in loaded_meshes[slot], loaded again when its key changes
+## A value cached in tile_meshes[slot], created again when its key changes
 func cached(slot : String, key : String, loader : Callable):
-	if not loaded_meshes.has(slot) or loaded_meshes[slot].key != key:
-		loaded_meshes[slot] = { key=key, value=loader.call() }
-	return loaded_meshes[slot].value
+	if not tile_meshes.has(slot) or tile_meshes[slot].key != key:
+		tile_meshes[slot] = { key=key, value=loader.call() }
+	return tile_meshes[slot].value
 
 ## A cache key that changes when the file changes
 static func file_key(path : String) -> String:
@@ -117,19 +124,32 @@ func get_mesh_parameter(parameter_name : String) -> Mesh:
 	var path : String = get_parameter(parameter_name)
 	if path == "" or not FileAccess.file_exists(path):
 		return null
-	var parts : bool = get_parameter("match_by_name")
-	# High poly materials are separate surfaces, for material ID maps (or
-	# objects when matching parts by name)
-	return cached(parameter_name, file_key(path)+(":parts" if parts else ""),
-		func(): return MMMeshLoader.load_mesh(path, parameter_name == "high_mesh", parts))
+	return load_mesh(path, parameter_name == "high_mesh", get_parameter("match_by_name"))
 
+## Loads a mesh, or returns it from the cache (shared by all nodes). High poly
+## materials are separate surfaces, for material ID maps, and objects are
+## separate surfaces (parts) when matching them by name.
+static func load_mesh(path : String, split_materials : bool, parts : bool) -> Mesh:
+	# The mesh is loaded again when the file changes
+	var key : String = "%s:%s:%s" % [ file_key(path), split_materials, parts ]
+	if not loaded_meshes.has(key):
+		while loaded_meshes.size() >= MAX_LOADED_MESHES:
+			loaded_meshes.erase(loaded_meshes.keys()[0])
+		loaded_meshes[key] = MMMeshLoader.load_mesh(path, split_materials, parts)
+	return loaded_meshes[key]
+
+## The image of a parameter (or null), from a cache shared by all nodes
 func get_image_parameter(parameter_name : String) -> Texture2D:
 	var path : String = get_parameter(parameter_name)
 	if path == "" or not FileAccess.file_exists(path):
 		return null
-	return cached(parameter_name, file_key(path), func():
+	var key : String = file_key(path)
+	if not loaded_images.has(key):
+		while loaded_images.size() >= MAX_LOADED_IMAGES:
+			loaded_images.erase(loaded_images.keys()[0])
 		var image : Image = Image.load_from_file(path)
-		return ImageTexture.create_from_image(image) if image != null else null)
+		loaded_images[key] = ImageTexture.create_from_image(image) if image != null else null
+	return loaded_images[key]
 
 ## The current mesh, with the UVs of the baked UDIM tile in [0, 1] (cached, so
 ## bakes of the same tile are not done again). UDIM exports choose the tile.
@@ -143,7 +163,9 @@ func get_low_mesh() -> Mesh:
 	if not get_parameter("match_by_name") or not current_mesh.has_meta("file_path"):
 		return current_mesh
 	var path : String = current_mesh.get_meta("file_path")
-	var mesh : Mesh = cached("low_mesh", file_key(path)+":parts", func(): return MMMeshLoader.load_mesh(path, false, true))
+	if not FileAccess.file_exists(path):
+		return current_mesh
+	var mesh : Mesh = load_mesh(path, false, true)
 	return mesh if mesh != null else current_mesh
 
 func generate_map() -> MMTexture:
