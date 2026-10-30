@@ -118,6 +118,7 @@ var rendering_parameters : Array
 var rendering_return_value
 var rendering_thread_running : bool
 var rendering_thread_working : bool = false
+var rendering_thread_stopping : bool = false
 var rendering_device : RenderingDevice
 var rendering_device_user = null
 ## Highest memory used by Material Maker's textures in the rendering device
@@ -151,6 +152,12 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 			await get_tree().process_frame
 			if rendering_thread == null or not is_inside_tree():
 				return null
+		# Jobs still waiting when the thread is asked to stop never run (the
+		# loops below would spin forever waiting for a thread that has exited)
+		while rendering_thread_stopping and is_inside_tree():
+			await get_tree().process_frame
+		if rendering_thread_stopping:
+			return null
 		rendering_thread_working = true
 		while not rendering_mutex.try_lock():
 			await get_tree().process_frame
@@ -160,6 +167,7 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 		rendering_callable = c
 		rendering_parameters = p
 		rendering_thread_running = not stop_thread
+		rendering_thread_stopping = stop_thread
 		rendering_mutex.unlock()
 		rendering_semaphore.post()
 		var running : bool = true
