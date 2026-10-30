@@ -136,8 +136,10 @@ textures it references (albedo, metallic, roughness, normal, emission and height
 corresponding inputs of the Material node are connected). Albedo and emission textures are
 tagged as srgb_texture, other textures as raw data, and the normal map uses the OpenGL convention.
 Parameters of the Material node (albedo color, metallic, roughness, normal strength, emission
-energy and depth scale) are applied in the MaterialX graph. Ambient occlusion is not exported,
-since those shaders have no input for it.
+energy and depth scale) are applied in the MaterialX graph. Coat, anisotropy, sheen (OpenPBR's
+fuzz) and transmission are exported when their parameter is above 0, with a texture when the
+corresponding input is also connected. Ambient occlusion is not exported, since those shaders
+have no input for it.
 
 The **MaterialX/Procedural** target generates a procedural material: a .mtlx file that defines
 a custom node (*mm_procedural*) whose GLSL implementation (the .glsl file next to it) computes
@@ -188,7 +190,7 @@ USD
 ---
 
 The **USD/UsdPreviewSurface** target generates a .usda file with a UsdPreviewSurface material
-named /Material and its textures (including ambient occlusion). It can be referenced from USD
+named /Material and its textures (including ambient occlusion, and the coat when it is used). It can be referenced from USD
 stages, or imported in applications that support USD materials.
 
 glTF
