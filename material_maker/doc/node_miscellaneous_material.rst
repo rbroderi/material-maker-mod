@@ -28,7 +28,11 @@ roughness, emissive, normal, ambient occlusion, depth maps and subsurface scatte
 The coat, coat roughness, anisotropy, sheen and transmission inputs are multiplied by
 the corresponding parameters, and when they are not connected the parameter value is used
 alone. In the 3D preview, they are shown using Godot's clear coat, anisotropy, rim and
-back light. The export targets don't use them yet.
+back light. Like in the preview, a channel is only used when its parameter is above 0:
+the glTF export writes the clear coat, sheen, anisotropy and transmission with the
+``KHR_materials_clearcoat``, ``KHR_materials_sheen``, ``KHR_materials_anisotropy`` and
+``KHR_materials_transmission`` extensions, with a texture for each connected input.
+The other export targets don't use these channels yet.
 
 Outputs
 +++++++
