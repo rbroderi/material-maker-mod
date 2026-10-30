@@ -222,6 +222,7 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 		for m in MMHighPolyBaker.MAPS:
 			if not m in valid_maps:
 				valid_maps.append(m)
+	var baked_maps : Array = []
 	for m in maps:
 		if not m in valid_maps:
 			errors.append("unknown map '%s' (valid maps: %s)" % [ m, ", ".join(valid_maps) ])
@@ -234,15 +235,58 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 			if error != "":
 				errors.append(error.left(1).to_lower()+error.substr(1))
 				continue
-		var texture : MMTexture
-		if high_mesh != null and m in MMHighPolyBaker.MAPS:
-			texture = await MMHighPolyBaker.bake(mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh, bake_options)
-		else:
-			texture = await MMMapGenerator.get_map(mesh, m, size, true)
-		var file_name : String = "%s_%s.png" % [ prefix, m ]
-		if await texture.save_to_file(file_name) != OK:
-			errors.append("could not save '%s'" % file_name)
-		else:
-			var hardware : bool = high_mesh != null and m in MMHighPolyBaker.MAPS and MMHighPolyBaker.last_bake_used_hardware
-			print("Baked %s%s" % [ file_name, " (hardware ray tracing)" if hardware else "" ])
+		baked_maps.append(m)
+	# UDIM tiles (options.tiles, or all tiles of the mesh with options.udim)
+	# are baked to <prefix>_<map>.<tile>.png
+	var tiles : PackedInt32Array = options.get("tiles", PackedInt32Array())
+	if tiles.is_empty() and options.get("udim", false):
+		tiles = MMMapGenerator.udim_tiles(mesh)
+		if tiles.is_empty():
+			errors.append("the mesh has no UVs in UDIM tiles")
+			return errors
+	for tile in (Array(tiles) if not tiles.is_empty() else [ 0 ]):
+		var tile_mesh : Mesh = MMMapGenerator.get_tile_mesh(mesh, tile) if tile != 0 else mesh
+		for m in baked_maps:
+			var texture : MMTexture
+			if high_mesh != null and m in MMHighPolyBaker.MAPS:
+				texture = await MMHighPolyBaker.bake(tile_mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh, bake_options)
+			else:
+				texture = await MMMapGenerator.get_map(tile_mesh, m, size, true)
+			var file_name : String = "%s_%s.png" % [ prefix, m ] if tile == 0 else "%s_%s.%d.png" % [ prefix, m, tile ]
+			if await texture.save_to_file(file_name) != OK:
+				errors.append("could not save '%s'" % file_name)
+			else:
+				var hardware : bool = high_mesh != null and m in MMHighPolyBaker.MAPS and MMHighPolyBaker.last_bake_used_hardware
+				print("Baked %s%s" % [ file_name, " (hardware ray tracing)" if hardware else "" ])
 	return errors
+
+## UDIM tiles from a list such as "1001-1004,1011" (sorted), or an empty list
+## if it is not valid
+static func parse_udim_tiles(list : String) -> PackedInt32Array:
+	var tiles : PackedInt32Array = PackedInt32Array()
+	for item in list.split(",", false):
+		var bounds : PackedStringArray = item.strip_edges().split("-")
+		if bounds.size() > 2 or not bounds[0].strip_edges().is_valid_int() or not bounds[-1].strip_edges().is_valid_int():
+			return PackedInt32Array()
+		var first : int = bounds[0].to_int()
+		var last : int = bounds[-1].to_int()
+		if first < 1001 or last > 1999 or first > last:
+			return PackedInt32Array()
+		for t in range(first, last+1):
+			if not t in tiles:
+				tiles.append(t)
+	tiles.sort()
+	return tiles
+
+## Sets the mesh of a graph's Mesh Map and High Poly Bake nodes (as the 3D
+## preview's custom mesh does), and waits until their maps are generated
+static func set_graph_mesh(graph : MMGenGraph, mesh : Mesh) -> void:
+	graph.current_mesh = mesh
+	var pending : Array = [ graph ]
+	while not pending.is_empty():
+		for c in pending.pop_back().get_children():
+			if c is MMGenGraph:
+				pending.push_back(c)
+			elif c is MMGenMeshMap:
+				c.current_mesh = mesh
+				await c.update_map()

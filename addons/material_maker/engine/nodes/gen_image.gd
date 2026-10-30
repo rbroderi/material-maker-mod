@@ -8,6 +8,8 @@ class_name MMGenImage
 
 var timer : Timer
 var filetime : int = 0
+## The UDIM tile loaded by UDIM exports (0 otherwise)
+var udim_tile : int = 0
 
 
 func _ready() -> void:
@@ -58,21 +60,77 @@ func get_adjusted_uv(uv : String) -> String:
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
-	if n == "image" and FileAccess.file_exists(v):
-		filetime = get_filetime(v)
+	if n == "image":
+		load_image(get_image_file())
+
+## Loads an image file (if it exists)
+func load_image(file_path : String) -> void:
+	if FileAccess.file_exists(file_path):
+		filetime = get_filetime(file_path)
 		var image : Image = Image.new()
-		if v.get_extension() == "dds":
+		if file_path.get_extension() == "dds":
 			# load_from_file does not work with dds, see godot issue #113063
-			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(v))
+			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(file_path))
 		else:
-			image = Image.load_from_file(v)
+			image = Image.load_from_file(file_path)
 		if image != null:
 			var image_texture : ImageTexture = ImageTexture.create_from_image(image)
 			texture.set_texture(image_texture)
 		mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
+	elif udim_tile != 0:
+		# Tiles without an image file are transparent black
+		push_warning("No image for UDIM tile %d (%s)" % [ udim_tile, file_path ])
+		filetime = 0
+		texture.set_texture(ImageTexture.create_from_image(Image.create_empty(1, 1, false, Image.FORMAT_RGBA8)))
+		mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
+
+## A UDIM tile number (1001 to 1999) in a file name (albedo.1001.png)
+static func udim_regex() -> RegEx:
+	return RegEx.create_from_string("(?<=\\.)1(?!000)\\d\\d\\d(?=\\.[^./\\\\]+$)")
+
+## The image file: in UDIM exports, the file of the tile when the path
+## contains <UDIM> (the placeholder of MaterialX and USD) or a tile number
+## (albedo.1001.png). <UDIM> is tile 1001 otherwise.
+func get_image_file() -> String:
+	var path : String = get_parameter("image")
+	if path.contains("<UDIM>"):
+		return path.replace("<UDIM>", str(udim_tile if udim_tile != 0 else 1001))
+	if udim_tile != 0:
+		var number : RegExMatch = udim_regex().search(path)
+		if number != null:
+			return path.substr(0, number.get_start())+str(udim_tile)+path.substr(number.get_end())
+	return path
+
+## The tiles that have a file, when the path contains <UDIM> or a tile number
+func get_udim_tiles() -> PackedInt32Array:
+	var path : String = get_parameter("image")
+	var file_name : String = path.get_file()
+	var pattern : String
+	if file_name.contains("<UDIM>"):
+		pattern = file_name.replace("<UDIM>", "*")
+	else:
+		var number : RegExMatch = udim_regex().search(file_name)
+		if number == null:
+			return PackedInt32Array()
+		pattern = file_name.substr(0, number.get_start())+"*"+file_name.substr(number.get_end())
+	var tiles : PackedInt32Array = PackedInt32Array()
+	for f in DirAccess.get_files_at(path.get_base_dir()):
+		var number : RegExMatch = udim_regex().search(f)
+		if number != null and f == pattern.replace("*", number.get_string()):
+			tiles.append(number.get_string().to_int())
+	tiles.sort()
+	return tiles
+
+func set_udim_tile(tile : int) -> void:
+	if tile == udim_tile:
+		return
+	var file_path : String = get_image_file()
+	udim_tile = tile
+	if get_image_file() != file_path:
+		load_image(get_image_file())
 
 func _on_timeout() -> void:
-	var file_path : String = get_parameter("image")
+	var file_path : String = get_image_file()
 	var new_filetime : int = get_filetime(file_path)
 	if filetime != new_filetime:
 		filetime = new_filetime
@@ -84,7 +142,7 @@ func _on_timeout() -> void:
 		var image_texture : ImageTexture = ImageTexture.create_from_image(image)
 		if image_texture:
 			texture.set_texture(image_texture)
-		super.set_parameter("image", file_path)
+		super.set_parameter("image", get_parameter("image"))
 		mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
 
 func _serialize(data: Dictionary) -> Dictionary:

@@ -518,13 +518,18 @@ func quick_export() -> void:
 	mm_globals.set_tip_text(
 			"Quick exported %s file(s) to %s" % [len(exports), export_prefix], 3, 1)
 
-func export_material(file_path : String, profile : String) -> void:
+## Exports the current material (each UDIM tile of the graph if udim is true)
+func export_material(file_path : String, profile : String, udim : bool = false) -> void:
 	var project = get_current_project()
 	if project == null:
 		return
 	mm_globals.config.set_value("path", export_profile_config_key(profile), file_path.get_base_dir())
 	var export_prefix = file_path.trim_suffix("."+file_path.get_extension())
-	project.export_material(export_prefix, profile)
+	var tiles : PackedInt32Array = PackedInt32Array()
+	var material_node = project.get_material_node()
+	if udim and material_node is MMGenMaterial:
+		tiles = material_node.get_graph_udim_tiles()
+	project.export_material(export_prefix, profile, tiles)
 	mm_steam.unlock_achievement("ACH_MATERIALIZED")
 
 func export_again_is_disabled() -> bool:
@@ -547,7 +552,7 @@ func export_again() -> void:
 	if export_target == "":
 		return
 	var export_path : String = material_node.get_export_path(export_target)
-	export_material(export_path, export_target)
+	export_material(export_path, export_target, material_node.export_udim.get(export_target, false) if material_node is MMGenMaterial else false)
 
 func create_menu_export_material(menu : MMMenuManager.MenuBase, prefix : String = "",
 		export_profiles = null, add_quick_export : bool = true) -> void:
@@ -629,10 +634,17 @@ func _on_ExportMaterial_id_pressed(id : int) -> void:
 		else:
 			dialog.current_file = tr("unnamed")
 
+		# Graphs with UDIM tiles (the mesh of Mesh Map and High Poly Bake
+		# nodes, tile files of Image nodes) can export each tile
+		var udim_tiles : PackedInt32Array = material_node.get_graph_udim_tiles() if material_node is MMGenMaterial else PackedInt32Array()
+		if not udim_tiles.is_empty():
+			dialog.add_option(tr("UDIM tiles"), [ tr("Tile 1001 only"), tr("All tiles (%s)") % ", ".join(Array(udim_tiles).map(func(t): return str(t))) ],
+				1 if material_node.export_udim.get(profile, false) else 0)
 		add_child(dialog)
 		var files : Array = await dialog.select_files()
 		if files.size() > 0:
-			export_material(files[0], profile)
+			var udim : bool = not udim_tiles.is_empty() and dialog.get_selected_options().get(tr("UDIM tiles"), 0) == 1
+			export_material(files[0], profile, udim)
 
 func create_menu_set_theme(menu : MMMenuManager.MenuBase) -> void:
 	menu.clear()

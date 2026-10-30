@@ -7,6 +7,8 @@ var buffer_name_prefix : String
 
 var export_last_target : String = ""
 var export_paths : Dictionary = {}
+## The export targets last exported with UDIM tiles (for Export again)
+var export_udim : Dictionary = {}
 var uids = {}
 
 var updating : bool = false
@@ -647,18 +649,104 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
-func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
+## The file name of a texture of a UDIM tile: <UDIM> is replaced by the tile
+## number, or the number is inserted before the extension (albedo.png becomes
+## albedo.1002.png)
+static func udim_file_name(file_name : String, tile : int) -> String:
+	if file_name.contains("<UDIM>"):
+		return file_name.replace("<UDIM>", str(tile if tile != 0 else 1001))
+	if tile == 0:
+		return file_name
+	return "%s.%d.%s" % [ file_name.get_basename(), tile, file_name.get_extension() ]
+
+## The UDIM tiles of the graph that contains the material: those of the mesh
+## of its Mesh Map and High Poly Bake nodes, and those of the tile files of
+## its Image nodes (sorted, and empty if only tile 1001 is used)
+func get_graph_udim_tiles() -> PackedInt32Array:
+	var tiles : Dictionary = {}
+	var pending : Array = [ get_parent() ]
+	while not pending.is_empty():
+		var node = pending.pop_back()
+		if node == null:
+			continue
+		for c in node.get_children():
+			if c is MMGenBase:
+				for t in c.get_udim_tiles():
+					tiles[t] = true
+				if c is MMGenGraph:
+					pending.push_back(c)
+	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
+	rv.sort()
+	return PackedInt32Array() if rv == PackedInt32Array([ 1001 ]) else rv
+
+## Makes the nodes of a graph (and of its subgraphs) generate a UDIM tile (0
+## goes back to their own settings)
+static func set_graph_udim_tile(graph : Node, tile : int) -> void:
+	if graph == null:
+		return
+	for c in graph.get_children():
+		if c is MMGenBase:
+			await c.set_udim_tile(tile)
+			if c is MMGenGraph:
+				await set_graph_udim_tile(c, tile)
+
+## Renders an output of the material (or an expression) and saves it to the
+## texture file of an export target (for a UDIM tile if tile is not 0)
+func export_texture_file(f : Dictionary, export_context : Dictionary, size : int, tile : int = 0) -> Error:
+	# Wait until the render queue is empty
+	if mm_deps.get_render_queue_size() > 0:
+		var render_queue_size : int = mm_deps.get_render_queue_size()
+		while true:
+			mm_deps.update()
+			await mm_deps.updated
+			if render_queue_size == mm_deps.get_render_queue_size():
+				break
+			render_queue_size = mm_deps.get_render_queue_size()
+	var file_name = subst_string(f.file_name, export_context)
+	if tile != 0 or file_name.contains("<UDIM>"):
+		file_name = udim_file_name(file_name, tile)
+	var output_index : int
+	if f.has("output"):
+		output_index = f.output
+	elif f.has("expression"):
+		var type = "rgba"
+		var expression = f.expression
+		var equal_position = expression.find("=")
+		if equal_position != -1:
+			var type_string = expression.left(equal_position)
+			type_string = type_string.strip_edges()
+			if type_string == "f" or type_string == "rgb" or type_string == "rgba":
+				type = type_string
+				expression = expression.right(-(equal_position+1))
+		export_output_def = { type: expression, "type":type }
+		output_index = EXPORT_OUTPUT_DEF_INDEX
+	else:
+		# Error! Just ignore it
+		return FAILED
+	var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
+	return await result.save_to_file(file_name)
+
+## Exports the material with an export target (profile). With UDIM tiles,
+## textures are exported for each tile (see udim_file_name()), and templates
+## get ".<UDIM>" as $(udim_suffix) to name them ($(udim_suffix_xml) in XML).
+func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, tiles : PackedInt32Array = PackedInt32Array()) -> void:
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
 	export_last_target = profile
 	export_paths[profile] = prefix
+	if tiles.is_empty():
+		export_udim.erase(profile)
+	else:
+		export_udim[profile] = true
 	var export_context : Dictionary = get_connections_and_parameters_context()
 	export_context["$(path_prefix)"] = prefix
 	export_context["$(file_prefix)"] = prefix.get_file()
 	export_context["$(dir_prefix)"] = prefix.get_base_dir()
 	export_context["$(material_maker_path)"] = MMPaths.get_resource_dir()
 	export_context["$(path_separator)"] = "/"
+	export_context["$(udim_suffix)"] = ".<UDIM>" if not tiles.is_empty() else ""
+	export_context["$(udim_suffix_xml)"] = ".&lt;UDIM&gt;" if not tiles.is_empty() else ""
 	var exported_files : Array = []
 	var overwrite_files : Array = []
 	var export_profile = get_export(profile)
@@ -707,52 +795,35 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 	var total_files : int = 0
 	for f in exported_files:
 		match f.type:
-			"texture", "template":
+			"texture":
+				total_files += max(tiles.size(), 1)
+			"template":
 				total_files += 1
 			"buffers", "buffer_templates":
 				total_files += preview_texture_dependencies.size()
 	var processed_files = 0
 	var error_files = 0
+	if not tiles.is_empty():
+		# Textures of each UDIM tile (nodes generate one tile at a time)
+		for tile in tiles:
+			await set_graph_udim_tile(get_parent(), tile)
+			for f in exported_files:
+				if f.type == "texture":
+					if await export_texture_file(f, export_context, size, tile) != OK:
+						error_files += 1
+					processed_files += 1
+					if progress_dialog:
+						progress_dialog.set_progress(float(processed_files)/float(total_files))
+		await set_graph_udim_tile(get_parent(), 0)
 	for f in exported_files:
 		#print("Exporting ", f)
 		var e: Error = OK
 		match f.type:
 			"texture":
-				# Wait until the render queue is empty
-				if mm_deps.get_render_queue_size() > 0:
-					var render_queue_size : int = mm_deps.get_render_queue_size()
-					while true:
-						mm_deps.update()
-						await mm_deps.updated
-						if render_queue_size == mm_deps.get_render_queue_size():
-							break
-						render_queue_size = mm_deps.get_render_queue_size()
-				var file_name = subst_string(f.file_name, export_context)
-				var output_index : int
-				if f.has("output"):
-					output_index = f.output
-				elif f.has("expression"):
-					var type = "rgba"
-					var expression = f.expression
-					var equal_position = expression.find("=")
-					if equal_position != -1:
-						var type_string = expression.left(equal_position)
-						type_string = type_string.strip_edges()
-						if type_string == "f" or type_string == "rgb" or type_string == "rgba":
-							type = type_string
-							expression = expression.right(-(equal_position+1))
-					export_output_def = { type: expression, "type":type }
-					output_index = EXPORT_OUTPUT_DEF_INDEX
-				else:
-					# Error! Just ignore it
-					e = FAILED
-					processed_files += 1
-					error_files += 1
-					if progress_dialog:
-						progress_dialog.set_progress(float(processed_files)/float(total_files))
+				if not tiles.is_empty():
+					# Already exported for each tile
 					continue
-				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
-				e = await result.save_to_file(file_name)
+				e = await export_texture_file(f, export_context, size)
 				if e != OK:
 					error_files += 1
 				processed_files += 1
@@ -838,6 +909,8 @@ func _serialize_data(data: Dictionary) -> Dictionary:
 	if export_last_target != "":
 		data.export_last_target = export_last_target
 	data.export_paths = export_paths
+	if not export_udim.is_empty():
+		data.export_udim = export_udim
 	return data
 
 func _serialize(data: Dictionary) -> Dictionary:
@@ -851,6 +924,8 @@ func _deserialize(data : Dictionary) -> void:
 		export_last_target = data.export_last_target
 	if data.has("export_paths"):
 		export_paths = data.export_paths.duplicate()
+	if data.has("export_udim"):
+		export_udim = data.export_udim.duplicate()
 
 func get_shader_model_for_edit():
 	var edit_shader_model = shader_model.duplicate()

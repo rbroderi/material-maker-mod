@@ -56,8 +56,8 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			from_website = true
 		if gen != null:
 			add_child(gen)
-			apply_graph_options(gen, f, options)
-			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
+			await apply_graph_options(gen, f, options)
+			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list, options))
 			print("Done")
 			gen.queue_free()
 	if not export_list.is_empty():
@@ -66,7 +66,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 
 ## Exports the materials of a graph (called for each variation, with the
 ## suffix of its files)
-func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array) -> void:
+func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array, options : Dictionary = {}) -> void:
 	var mat_name_lower = name_to_lower(mat_name)
 	var mat_author_lower = name_to_lower(mat_author)
 	var gen_stack : Array[MMGenBase] = [gen]
@@ -101,9 +101,24 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			else:
 				var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
 				print("Saving additional export %s" % file_name)
-			await c.export_material(prefix, best_target, image_size, true)
+			if c is MMGenMaterial:
+				await c.export_material(prefix, best_target, image_size, true, get_udim_tiles(c, options))
+			else:
+				await c.export_material(prefix, best_target, image_size, true)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
+
+## The UDIM tiles exported by --export-material: those of --udim-tiles, or
+## the graph's tiles with --udim
+func get_udim_tiles(material : MMGenMaterial, options : Dictionary) -> PackedInt32Array:
+	if options.has("tiles"):
+		return options.tiles
+	if options.get("udim", false):
+		var tiles : PackedInt32Array = material.get_graph_udim_tiles()
+		if tiles.is_empty():
+			print("The graph has no UDIM tiles, exporting tile 1001 only")
+		return tiles
+	return PackedInt32Array()
 
 const CLI_MODES : Array[String] = [ "--export", "--export-material", "--render", "--bake", "--list-parameters", "--help" ]
 
@@ -128,6 +143,9 @@ const VALUE_OPTIONS : Dictionary = {
 	"--skew": { key="skew", type=TYPE_STRING },
 	"--high-texture": { key="high_texture", type=TYPE_STRING },
 	"--hardware-raytracing": { key="hardware_raytracing", type=TYPE_BOOL },
+	"--udim": { key="udim", type=TYPE_BOOL },
+	"--udim-tiles": { key="udim_tiles", type=TYPE_STRING },
+	"--mesh": { key="mesh", type=TYPE_STRING },
 }
 
 ## Image formats of --render
@@ -167,6 +185,13 @@ Options (they can also be given after "--"):
   --high-texture <image>     texture of the --high mesh, transferred by the texture map
   --hardware-raytracing      cast the rays of --high with the GPU's ray tracing hardware (when the GPU
                              supports Vulkan ray tracing pipelines, else it is not used)
+  --udim                     with --bake, bake each UDIM tile of the mesh's UVs to <mesh>_<map>.<tile>.png;
+                             with --export-material, export the textures of each UDIM tile of the graph
+                             (of the mesh of its Mesh Map and High Poly Bake nodes, and of the tile files
+                             of its Image nodes) to <name>.<tile>.png
+  --udim-tiles <list>        UDIM tiles of --bake and --export-material (e.g. 1001-1004,1011)
+  --mesh <mesh>              mesh of the graph's Mesh Map and High Poly Bake nodes (as the 3D preview's
+                             custom mesh), for --export-material and --render
   --show-window              do not minimize the window
 """
 
@@ -195,7 +220,7 @@ func _ready():
 		get_tree().quit()
 		return
 	var options : Dictionary = parse_options(args)
-	if options.is_empty():
+	if options.is_empty() or not check_udim_options(mode, options):
 		get_tree().quit(1)
 		return
 	# Rendering needs a window (the GPU is not available in headless mode),
@@ -220,6 +245,29 @@ func _ready():
 			await bake_files(files, options)
 		"--list-parameters":
 			await list_parameters(expand_files(files))
+
+## Checks --udim, --udim-tiles and --mesh, and sets options.tiles (a list of
+## tiles) and options.mesh_resource (the loaded mesh). Returns false (after
+## showing an error) if they are not valid.
+func check_udim_options(mode : String, options : Dictionary) -> bool:
+	if options.has("udim_tiles"):
+		options.tiles = MMCliTools.parse_udim_tiles(options.udim_tiles)
+		if options.tiles.is_empty():
+			show_error("ERROR: incorrect UDIM tiles %s (e.g. 1001-1004,1011, from 1001 to 1999)" % options.udim_tiles)
+			return false
+	if (options.has("udim") or options.has("udim_tiles")) and not mode in [ "--bake", "--export", "--export-material" ]:
+		show_error("ERROR: --udim and --udim-tiles need --bake or --export-material")
+		return false
+	if options.has("mesh"):
+		if not mode in [ "--export", "--export-material", "--render" ]:
+			show_error("ERROR: --mesh needs --export-material or --render")
+			return false
+		var mesh : Mesh = MMMeshLoader.load_mesh(options.mesh) if FileAccess.file_exists(options.mesh) else null
+		if mesh == null:
+			show_error("ERROR: cannot load the mesh %s" % options.mesh)
+			return false
+		options.mesh_resource = mesh
+	return true
 
 ## Parses the options of the command line modes, and returns them with the
 ## list of input files (options.files), or an empty dictionary (after
@@ -320,13 +368,15 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 		show_error("ERROR: cannot load %s" % f)
 		return null
 	add_child(gen)
-	apply_graph_options(gen, f, options)
+	await apply_graph_options(gen, f, options)
 	return gen
 
-## Applies --set values
+## Applies --set values and --mesh
 func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
 		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+	if options.has("mesh_resource") and gen is MMGenGraph:
+		await MMCliTools.set_graph_mesh(gen, options.mesh_resource)
 
 ## Loads each graph and calls variation (suffix, gen, f, options) for each of
 ## its variations, then quits. mode is the option named in the error message

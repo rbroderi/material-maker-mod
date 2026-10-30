@@ -93,3 +93,21 @@ so you just have to paste it into Unreal's 5 Python prompt and execute it to cre
 
 When exporting, the target path is not that important (all necessary files will be imported into
 the Unreal project), but the file name will be used as material name.
+
+UDIM tiles
+----------
+
+When the graph has UDIM tiles (Mesh Map and High Poly Bake nodes whose mesh's UVs use several
+tiles, or Image nodes whose path contains **<UDIM>** or a tile number, such as
+albedo.1001.png), the export file dialog has a **UDIM tiles** option that exports the textures
+of each tile: <name>_albedo.1001.png, <name>_albedo.1002.png... For each tile, Mesh Map and
+High Poly Bake nodes generate the tile and Image nodes load the tile's file (a tile without a
+file is transparent black). Other nodes give the same result in all tiles. **Export again**
+remembers the option. On the command line, use **--udim** or **--udim-tiles** (see
+:doc:`command_line`).
+
+Export targets that don't support UDIM tiles (Godot, Unity, Unreal) still reference the
+textures without tile numbers. In the templates of export targets, **$(udim_suffix)** is
+**.<UDIM>** in UDIM exports and empty otherwise, so file names such as
+**$(file_prefix)_albedo$(udim_suffix).png** name the textures of all tiles. In XML files,
+use **$(udim_suffix_xml)** (**.&lt;UDIM&gt;**).

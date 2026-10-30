@@ -581,6 +581,15 @@ func render_output(output_index : int, size : Vector2i) -> Image:
 	var texture : MMTexture = await render_output_to_texture(output_index, size)
 	return (await texture.get_texture()).get_image()
 
+## The UDIM tiles this node can generate (e.g. those of a baked mesh's UVs)
+func get_udim_tiles() -> PackedInt32Array:
+	return PackedInt32Array()
+
+## Makes the node generate a UDIM tile, for UDIM exports (0 goes back to the
+## node's own settings). It can be a coroutine.
+func set_udim_tile(_tile : int) -> void:
+	pass
+
 func get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
 	var rv = _get_shader_code(uv, output_index, context)
 	for v in mm_renderer.get_global_parameters():

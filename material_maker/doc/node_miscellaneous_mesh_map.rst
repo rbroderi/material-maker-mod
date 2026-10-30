@@ -29,7 +29,7 @@ The **Mesh Map** node has the following parameters:
   generated, for meshes whose UVs span several tiles: 1001 is the [0, 1] square, 1002 is on its
   right and 1011 above it. Only the faces of this tile are drawn in the map, with UVs relative
   to the tile, but rays still hit the whole mesh (for ambient occlusion, bent normals and
-  thickness)
+  thickness). UDIM exports generate each tile of the mesh (see :ref:`export-section`)
 
 Example Images
 ++++++++++++++

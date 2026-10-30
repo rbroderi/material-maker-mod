@@ -904,17 +904,19 @@ func get_material_node() -> MMGenMaterial:
 				return g
 	return null
 
-func export_material(export_prefix, profile) -> void:
+## Exports the material (each UDIM tile in tiles, if any) and the export nodes
+func export_material(export_prefix, profile, tiles : PackedInt32Array = PackedInt32Array()) -> void:
 	var exports : Array[MMGenBase]
 
 	var material_node : MMGenMaterial = get_material_node()
 	if material_node != null:
-		await material_node.export_material(export_prefix, profile)
+		await material_node.export_material(export_prefix, profile, 0, false, tiles)
 
 	var stack : Array[MMGenBase] = [top_generator]
 	while stack.size():
 		var node : MMGenBase = stack.pop_back()
-		if node.has_method("export_material"):
+		# The material is already exported
+		if node.has_method("export_material") and node != material_node:
 			exports.append(node)
 		stack.append_array(node.get_children())
 

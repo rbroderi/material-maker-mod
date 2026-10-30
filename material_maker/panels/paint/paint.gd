@@ -845,7 +845,7 @@ func do_save_project(file_name):
 func get_material_node() -> MMGenMaterial:
 	return $Export.get_material_node()
 
-func export_material(export_prefix, profile) -> void:
+func export_material(export_prefix, profile, _tiles : PackedInt32Array = PackedInt32Array()) -> void:
 	var material_textures = {
 		albedo=layers.get_albedo_texture(),
 		metallic=layers.get_metallic_texture(),

@@ -253,6 +253,41 @@ static func create_tile_mesh(mesh : Mesh, tile : int) -> Mesh:
 		rv.set_meta(m, mesh.get_meta(m))
 	return rv
 
+## The UDIM tile of a UV (with Godot's V axis, see get_tile_mesh())
+static func udim_tile(uv : Vector2) -> int:
+	return 1001+int(floor(uv.x))+10*int(floor(1.0-uv.y))
+
+## UDIM tiles of meshes, by mesh instance id (finding them reads all faces)
+static var mesh_udim_tiles : Dictionary = {}
+
+## The UDIM tiles used by the UVs of a mesh (sorted). The tile of a face is
+## the tile of its center, since vertices can be on tile borders. Faces that
+## are not in tiles 1001 to 1999 (negative UVs, U of 10 or more) are ignored.
+static func udim_tiles(mesh : Mesh) -> PackedInt32Array:
+	if mesh == null:
+		return PackedInt32Array()
+	var id : int = mesh.get_instance_id()
+	if mesh_udim_tiles.has(id):
+		return mesh_udim_tiles[id]
+	var tiles : Dictionary = {}
+	for s in mesh.get_surface_count():
+		if mesh.surface_get_primitive_type(s) != Mesh.PRIMITIVE_TRIANGLES:
+			continue
+		var arrays : Array = mesh.surface_get_arrays(s)
+		if arrays[Mesh.ARRAY_TEX_UV] == null:
+			continue
+		var uvs : PackedVector2Array = arrays[Mesh.ARRAY_TEX_UV]
+		var indices : PackedInt32Array = arrays[Mesh.ARRAY_INDEX] if arrays[Mesh.ARRAY_INDEX] != null else PackedInt32Array(range(uvs.size()))
+		for f in indices.size()/3:
+			var center : Vector2 = (uvs[indices[3*f]]+uvs[indices[3*f+1]]+uvs[indices[3*f+2]])/3.0
+			var tile : int = udim_tile(center)
+			if center.x >= 0.0 and center.x < 10.0 and tile >= 1001 and tile <= 1999:
+				tiles[tile] = true
+	var rv : PackedInt32Array = PackedInt32Array(tiles.keys())
+	rv.sort()
+	mesh_udim_tiles[id] = rv
+	return rv
+
 ## Forgets the maps generated for a mesh that is not used anymore
 static func forget_mesh(mesh : Mesh) -> void:
 	if merged_meshes.has(mesh):

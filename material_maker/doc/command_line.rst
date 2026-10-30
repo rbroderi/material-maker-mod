@@ -71,9 +71,19 @@ Options
   is much faster for big high poly meshes. When the GPU or its driver doesn't support Vulkan ray
   tracing pipelines, a warning is shown and maps are baked without it. Baked maps are then followed
   by "(hardware ray tracing)" in the output
+* **--udim** bakes each UDIM tile of the input mesh's UVs with **--bake**, to files named
+  <mesh>_<map>.<tile>.png (for example model_ambient_occlusion.1002.png). With
+  **--export-material**, it exports the textures of each UDIM tile of the graph (see
+  :ref:`export-section`): the tiles of the mesh of its Mesh Map and High Poly Bake nodes (see
+  **--mesh**), and those of the tile files of its Image nodes (whose path contains **<UDIM>** or a
+  tile number, such as albedo.1001.png), to files named <name>.<tile>.png (for example
+  bricks_albedo.1002.png)
+* **--udim-tiles <list>** bakes or exports these UDIM tiles instead (for example 1001-1004,1011)
+* **--mesh <mesh>** is the mesh of the graph's Mesh Map and High Poly Bake nodes with
+  **--export-material** and **--render**, as the custom mesh of the 3D preview
 * **--show-window** keeps the window visible
 
-**--set**, **--seed** and **--variations** work with **--export-material** and **--render**.
+**--set**, **--seed**, **--variations** and **--mesh** work with **--export-material** and **--render**.
 
 Examples
 --------
@@ -84,3 +94,5 @@ Examples
  material_maker --bake --maps normal,curvature --size 2048 -o maps model.obj
  material_maker --bake --high sculpt.obj --maps normal_tangent,height,material_id --front 0.02 -o maps model.obj
  material_maker --bake --high sculpt.obj --high-texture sculpt_albedo.png --match-names --maps normal_tangent,texture -o maps model.obj
+ material_maker --bake --high sculpt.obj --udim --size 2048 -o maps model.obj
+ material_maker --export-material --target Blender --mesh model.obj --udim -o out baked.ptex
