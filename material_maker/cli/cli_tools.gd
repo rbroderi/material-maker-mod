@@ -397,7 +397,12 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 		if matches.surface_parts.count(-1) == matches.surface_parts.size():
 			errors.append("--match-names: no part of the mesh (%s) has the name of a part of the high poly mesh (%s)" % [ ", ".join(matches.unmatched), ", ".join(MMHighPolyBaker.get_part_names(high_mesh)) ])
 			return errors
-	var valid_maps : Array = BAKE_MAPS+(Array(MMHighPolyBaker.MAPS) if high_mesh != null else [])
+	var valid_maps : Array = BAKE_MAPS.duplicate()
+	if high_mesh != null:
+		# With a high poly mesh, the position map is the high poly surface's
+		for m in MMHighPolyBaker.MAPS:
+			if not m in valid_maps:
+				valid_maps.append(m)
 	# Maps that cannot be baked are errors, before baking anything
 	var baked_maps : Array = []
 	for m in maps:
@@ -413,7 +418,6 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 				errors.append(error.left(1).to_lower()+error.substr(1))
 				continue
 		baked_maps.append(m)
-	# With --udim, each UDIM tile of the mesh is baked to <prefix>_<map>.<tile>.png
 	# UDIM tiles (options.tiles, or all tiles of the mesh with options.udim)
 	# are baked to <prefix>_<map>.<tile>.png
 	var tiles : PackedInt32Array = options.get("tiles", PackedInt32Array())
@@ -423,13 +427,12 @@ static func bake(mesh_path : String, maps : Array, size : int, prefix : String, 
 			errors.append("the mesh has no UVs in UDIM tiles")
 			return errors
 	for tile in (Array(tiles) if not tiles.is_empty() else [ 0 ]):
+		# The cage is the same for all tiles (only its vertices are used)
 		var tile_mesh : Mesh = MMMapGenerator.get_tile_mesh(mesh, tile) if tile != 0 else mesh
-		# Only the vertices of the cage are used (its UVs don't matter)
-		var tile_cage : Mesh = cage_mesh
 		for m in baked_maps:
 			var texture : MMTexture
 			if m in MMHighPolyBaker.MAPS and high_mesh != null:
-				texture = await MMHighPolyBaker.bake(tile_mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, tile_cage, bake_options)
+				texture = await MMHighPolyBaker.bake(tile_mesh, high_mesh, m, size, options.get("front", 0.01), options.get("rear", 0.01), options.get("samples", 4), true, cage_mesh, bake_options)
 			else:
 				texture = await MMMapGenerator.get_map(tile_mesh, m, size, true)
 			var file_name : String = "%s_%s.png" % [ prefix, m ] if tile == 0 else "%s_%s.%d.png" % [ prefix, m, tile ]
