@@ -201,7 +201,9 @@ func render_ext(textures : Array[MMTexture], size : Vector2i, output_parameters_
 	for t in input_textures:
 		if t.texture != null and t.texture.released_buffer != "":
 			await t.texture.restore()
-	return await mm_renderer.thread_run(self.in_thread_render_ext, [textures, size, output_parameters_values])
+	# thread_run() returns null when the rendering thread stops (at exit)
+	var status = await mm_renderer.thread_run(self.in_thread_render_ext, [textures, size, output_parameters_values])
+	return status == true
 
 func render_2(rd : RenderingDevice, textures : Array[MMTexture], output_parameters_values, size : Vector2i, rids : RIDs) -> bool:
 	if not shader.is_valid():
