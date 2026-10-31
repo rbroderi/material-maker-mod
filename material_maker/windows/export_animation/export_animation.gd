@@ -25,6 +25,21 @@ var output : int
 
 const BUFFER_NAMES = [ "export_animation_buffer_begin", "export_animation_buffer_end", "export_animation_buffer_anim" ]
 
+const TimeBuffers = preload("res://material_maker/windows/export_animation/time_buffers.gd")
+
+## The buffers the animation depends on, directly or not
+var animation_dependencies : Array[String] = []
+## The Buffer and Iterate Buffer nodes whose inputs use $time
+var animated_buffers : Array = []
+## The buffers that changed when rendered at another time: the Begin and
+## End previews show copies of their textures
+var time_dependent_textures : Array[String] = []
+## True while buffers are rendered at a fixed time (for the previews or the
+## export)
+var rendering_buffers : bool = false
+var previews_need_update : bool = false
+var closing : bool = false
+
 
 func _ready():
 	content_scale_factor = mm_globals.ui_scale_factor()
@@ -75,13 +90,16 @@ func set_source(g, o):
 		var i = buffer_images[image_index]
 		var b : String = BUFFER_NAMES[image_index]
 		# Get parameter values from the shader code
-		mm_deps.buffer_create_shader_material(b, MMShaderMaterial.new(i.material), i.material.shader.code)
+		await mm_deps.buffer_create_shader_material(b, MMShaderMaterial.new(i.material), i.material.shader.code)
 	var begin : float = value_begin.value
 	var end : float = value_end.value
 	image_begin.material.set_shader_parameter("elapsed_time", begin)
 	image_end.material.set_shader_parameter("elapsed_time", end)
 	image_anim.material.set_shader_parameter("begin", begin)
 	image_anim.material.set_shader_parameter("end", end)
+	animation_dependencies = TimeBuffers.get_dependencies(mm_deps.buffers[BUFFER_NAMES[2]].dependencies)
+	animated_buffers = TimeBuffers.get_animated_buffers(animation_dependencies)
+	update_previews()
 
 func show_diff():
 	if ! animation_player.is_playing() and ! image_diff.visible:
@@ -93,11 +111,67 @@ func _on_Begin_value_changed(value):
 	image_begin.material.set_shader_parameter("elapsed_time", value)
 	image_anim.material.set_shader_parameter("begin", value)
 	show_diff()
+	update_previews()
 
 func _on_End_value_changed(value):
 	image_end.material.set_shader_parameter("elapsed_time", value)
 	image_anim.material.set_shader_parameter("end", value)
 	show_diff()
+	update_previews()
+
+## Renders the buffers that use $time at the Begin and End times, and shows
+## copies of their textures in the Begin and End previews, then renders the
+## buffers at the current time again
+func update_previews() -> void:
+	if animated_buffers.is_empty():
+		return
+	previews_need_update = true
+	if rendering_buffers:
+		return
+	rendering_buffers = true
+	while previews_need_update and not closing:
+		previews_need_update = false
+		for preview in [ [ image_begin, value_begin.value ], [ image_end, value_end.value ] ]:
+			MMComputeShader.fixed_time = preview[1]
+			await render_buffers()
+			if closing:
+				break
+			for parameter in time_dependent_textures:
+				var value = mm_deps.dependencies_values.get(parameter)
+				if value is MMTexture:
+					var image : Image = (await value.get_texture()).get_image()
+					if image != null:
+						preview[0].material.set_shader_parameter(parameter, ImageTexture.create_from_image(image))
+	MMComputeShader.fixed_time = -1.0
+	TimeBuffers.invalidate_buffers(animated_buffers)
+	rendering_buffers = false
+
+## Renders the buffers that use $time again (at MMComputeShader.fixed_time)
+## and the buffers of the animation that depend on them, and remembers which
+## buffers changed
+func render_buffers() -> void:
+	var renders : Dictionary = {}
+	for buffer_name in animation_dependencies:
+		renders[buffer_name] = mm_deps.buffers[buffer_name].renders
+	await TimeBuffers.render_buffers(animated_buffers, animation_dependencies)
+	for buffer_name in animation_dependencies:
+		var buffer = mm_deps.buffers.get(buffer_name)
+		if buffer != null and buffer.renders != renders[buffer_name] and not time_dependent_textures.has(buffer_name):
+			time_dependent_textures.append(buffer_name)
+
+## Closes the window once no buffer is rendered at a fixed time
+func close() -> void:
+	closing = true
+	hide()
+	while rendering_buffers:
+		await get_tree().process_frame
+	queue_free()
+
+func _notification(what : int) -> void:
+	# Freed while buffers were rendered at a fixed time
+	if what == NOTIFICATION_PREDELETE and rendering_buffers:
+		MMComputeShader.fixed_time = -1.0
+		TimeBuffers.invalidate_buffers(animated_buffers)
 
 func _on_Timer_timeout():
 	animation_player.play_backwards("show")
@@ -143,15 +217,24 @@ func _on_Export_pressed():
 				filename_fmt = filename.replace(regex_match[0].strings[0], "%0"+str(regex_match[0].strings[0].length())+"d")
 			else:
 				filename_fmt = filename.get_basename()+"_%d."+filename.get_extension()
-		var dependencies : Array[String] = get_animation_dependencies()
-		var animated_buffers : Array = get_animated_buffers(dependencies)
+		# Wait for the previews
+		while rendering_buffers:
+			await get_tree().process_frame
+		if closing:
+			renderer.release(self)
+			return
+		rendering_buffers = not animated_buffers.is_empty()
 		for i in range(0, images):
 			var time : float = begin+(end-begin)*float(i)/float(images)
 			image_anim.material.set_shader_parameter("begin", time)
 			image_anim.material.set_shader_parameter("end", time)
 			if not animated_buffers.is_empty():
 				MMComputeShader.fixed_time = time
-				await render_buffers(animated_buffers, dependencies)
+				await render_buffers()
+				for parameter in mm_deps.buffers[BUFFER_NAMES[2]].dependencies:
+					var value = mm_deps.dependencies_values.get(parameter)
+					if value is MMTexture:
+						image_anim.material.set_shader_parameter(parameter, await value.get_texture())
 			renderer = await renderer.render_material(self, image_anim.material, size, false)
 			if spritesheet_lines > 0:
 				var image : Image = renderer.get_image()
@@ -162,7 +245,10 @@ func _on_Export_pressed():
 		if not animated_buffers.is_empty():
 			# Render the buffers at the current time again
 			MMComputeShader.fixed_time = -1.0
-			invalidate_buffers(animated_buffers)
+			TimeBuffers.invalidate_buffers(animated_buffers)
+			rendering_buffers = false
+			if previews_need_update:
+				update_previews()
 		if spritesheet_lines > 0:
 			spritesheet.save_png(filename)
 		image_anim.material.set_shader_parameter("begin", begin)
@@ -178,73 +264,6 @@ func _on_Export_pressed():
 		mm_globals.set_config("export_animation_end", value_end.value)
 		mm_globals.set_config("export_animation_images", value_images.value)
 		mm_globals.set_config("export_animation_spritesheet", value_spritesheet.selected)
-
-
-## The names of the buffers the exported animation depends on, directly or not
-func get_animation_dependencies() -> Array[String]:
-	var rv : Array[String] = []
-	var to_visit : Array = mm_deps.buffers[BUFFER_NAMES[2]].dependencies.duplicate()
-	while not to_visit.is_empty():
-		var buffer_name : String = to_visit.pop_back()
-		if rv.has(buffer_name) or not mm_deps.buffers.has(buffer_name):
-			continue
-		rv.append(buffer_name)
-		to_visit.append_array(mm_deps.buffers[buffer_name].dependencies)
-		# The output of an Iterate Buffer depends on its other buffers
-		var object : Object = mm_deps.buffers[buffer_name].object
-		if object is MMGenIterateBuffer:
-			to_visit.append_array([ object.buffer_name_init_input, object.buffer_name_loop_input ])
-	return rv
-
-## The Buffer and Iterate Buffer nodes among the given buffers whose inputs
-## use $time: they are rendered again for each frame
-func get_animated_buffers(buffer_names : Array[String]) -> Array:
-	var rv : Array = []
-	for buffer_name in buffer_names:
-		var generator : Object = mm_deps.buffers[buffer_name].object
-		if (generator is MMGenBuffer or generator is MMGenIterateBuffer) and not generator.is_paused and not rv.has(generator):
-			for i in generator.get_input_defs().size():
-				var source : MMGenBase.OutputPort = generator.get_source(i)
-				if source == null:
-					continue
-				var code : MMGenBase.ShaderCode = source.generator.get_shader_code("uv", source.output_index, MMGenContext.new())
-				var code_string : String = code.defs+code.code+str(code.output_values.values())
-				for g in code.globals:
-					code_string += g.code
-				if code_string.contains("elapsed_time"):
-					rv.append(generator)
-					break
-	return rv
-
-## Invalidates Buffer and Iterate Buffer nodes, so they are rendered again
-func invalidate_buffers(generators : Array) -> void:
-	for generator in generators:
-		if generator is MMGenIterateBuffer:
-			generator.set_current_iteration(0)
-			mm_deps.buffer_invalidate(generator.buffer_name_init_input)
-		else:
-			mm_deps.buffer_invalidate("o%d_tex" % generator.get_instance_id())
-
-## Renders the given buffers again (at MMComputeShader.fixed_time), and the
-## buffers of the animation that depend on them, and updates their textures
-## in the animation's material
-func render_buffers(generators : Array, buffer_names : Array[String]) -> void:
-	invalidate_buffers(generators)
-	while true:
-		await get_tree().process_frame
-		var rendering : bool = false
-		for buffer_name in buffer_names:
-			var buffer = mm_deps.buffers.get(buffer_name)
-			# Buffers waiting for a buffer that failed are not rendered
-			if buffer != null and (buffer.status == buffer.Updating or buffer.status == buffer.UpdatingInvalidated or (buffer.status == buffer.Invalidated and buffer.pending_dependencies == 0)):
-				rendering = true
-				break
-		if not rendering:
-			break
-	for parameter in mm_deps.buffers[BUFFER_NAMES[2]].dependencies:
-		var value = mm_deps.dependencies_values.get(parameter)
-		if value is MMTexture:
-			image_anim.material.set_shader_parameter(parameter, await value.get_texture())
 
 
 func _on_VBox_minimum_size_changed():
