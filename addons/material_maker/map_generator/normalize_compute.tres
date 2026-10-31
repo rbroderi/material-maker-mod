@@ -17,8 +17,9 @@ layout(set = 3, binding = 0, std140) restrict buffer MM {
 void main() {
 	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy)+ivec2(0, mm_chunk_y);
 	vec2 image_size = imageSize(OUTPUT_TEXTURE);
-	vec2 uv = pixel/image_size;
-	vec4 v = texture(tex, uv);
+	// Sample at pixel centers (compute shaders have no implicit LOD)
+	vec2 uv = (vec2(pixel)+vec2(0.5))/image_size;
+	vec4 v = textureLod(tex, uv, 0.0);
 
 	if (v.a == 0.0) {
 		// The output texture is not initialized: clear texels outside UV islands
