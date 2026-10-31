@@ -24,8 +24,8 @@ The **Image** node has four parameters:
 * The first parameter defines the image file the node provides.
   It can be modified by clicking the thumbnail and selecting a new image file.
   For UDIM textures, the path can contain **<UDIM>** (for example albedo.<UDIM>.png) or the
-  tile number (albedo.1001.png): the node shows tile 1001, and UDIM exports load the file of
-  each tile (see :ref:`export-section`).
+  tile number (albedo.1001.png): with **<UDIM>**, the node shows tile 1001 (or the lowest tile
+  that has a file), and UDIM exports load the file of each tile (see :ref:`export-section`).
 
 * **Fix Aspect Ratio** will scale the height of non-square images to maintain the correct aspect ratio.
 

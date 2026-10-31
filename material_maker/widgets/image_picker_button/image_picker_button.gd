@@ -14,12 +14,14 @@ func update_image() -> void:
 	if %Image.texture == null:
 		%Image.texture = ImageTexture.new()
 
-	if FileAccess.file_exists(image_path):
+	# Paths with <UDIM> show a tile (1001 or the lowest one)
+	var file_path : String = MMGenImage.get_preview_file(image_path)
+	if FileAccess.file_exists(file_path):
 		var image : Image = Image.new()
-		if image_path.get_extension() == "dds":
-			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(image_path))
+		if file_path.get_extension() == "dds":
+			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(file_path))
 		else:
-			image = Image.load_from_file(image_path)
+			image = Image.load_from_file(file_path)
 		%Image.texture.set_image(image)
 		queue_redraw()
 
@@ -46,7 +48,8 @@ func set_image_path(path : String) -> void:
 	do_set_image_path(path)
 	emit_signal("on_file_selected", path)
 
-func get_filetime(file_path : String) -> int:
+func get_filetime(path : String) -> int:
+	var file_path : String = MMGenImage.get_preview_file(path)
 	if FileAccess.file_exists(file_path):
 		return FileAccess.get_modified_time(file_path)
 	return 0

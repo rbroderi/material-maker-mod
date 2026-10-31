@@ -90,20 +90,38 @@ static func udim_regex() -> RegEx:
 
 ## The image file: in UDIM exports, the file of the tile when the path
 ## contains <UDIM> (the placeholder of MaterialX and USD) or a tile number
-## (albedo.1001.png). <UDIM> is tile 1001 otherwise.
+## (albedo.1001.png). Outside UDIM exports, see get_preview_file().
 func get_image_file() -> String:
 	var path : String = get_parameter("image")
 	if path.contains("<UDIM>"):
-		return path.replace("<UDIM>", str(udim_tile if udim_tile != 0 else 1001))
+		if udim_tile == 0:
+			return get_preview_file(path)
+		return path.replace("<UDIM>", str(udim_tile))
 	if udim_tile != 0:
 		var number : RegExMatch = udim_regex().search(path)
 		if number != null:
 			return path.substr(0, number.get_start())+str(udim_tile)+path.substr(number.get_end())
 	return path
 
+## The file shown outside UDIM exports (thumbnail, previews): for paths that
+## contain <UDIM>, tile 1001, or the lowest tile that has a file if 1001 has
+## none. Other paths are returned unchanged.
+static func get_preview_file(path : String) -> String:
+	if not path.contains("<UDIM>"):
+		return path
+	var tile : int = 1001
+	if not FileAccess.file_exists(path.replace("<UDIM>", str(tile))):
+		var tiles : PackedInt32Array = find_udim_tiles(path)
+		if not tiles.is_empty():
+			tile = tiles[0]
+	return path.replace("<UDIM>", str(tile))
+
 ## The tiles that have a file, when the path contains <UDIM> or a tile number
 func get_udim_tiles() -> PackedInt32Array:
-	var path : String = get_parameter("image")
+	return find_udim_tiles(get_parameter("image"))
+
+## The tiles that have a file, when path contains <UDIM> or a tile number
+static func find_udim_tiles(path : String) -> PackedInt32Array:
 	var file_name : String = path.get_file()
 	var pattern : String
 	if file_name.contains("<UDIM>"):
