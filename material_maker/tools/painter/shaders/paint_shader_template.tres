@@ -361,9 +361,11 @@ void main() {
 	const vec4 _controlled_variation_ = vec4(0.0);
 	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy)+ivec2(0, mm_chunk_y);
 	ivec2 image_size = imageSize(GENERATED_IMAGE);
-	vec2 UV = vec2(pixel)/image_size;
+	// Texel centre, so that seams, tex2view and mesh maps are read without filtering
+	vec2 UV = (vec2(pixel)+vec2(0.5))/vec2(image_size);
 
-	if (use_id_mask && length(texture(id_map_tex, UV)-id_mask_color) > 0.001) {
+	// Nearest ID map texel (the ID map may have another size than the layer)
+	if (use_id_mask && length(texelFetch(id_map_tex, ivec2(UV*vec2(textureSize(id_map_tex, 0))), 0)-id_mask_color) > 0.001) {
 		return;
 	}
 	
