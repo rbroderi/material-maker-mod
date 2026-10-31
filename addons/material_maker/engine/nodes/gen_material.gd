@@ -784,7 +784,9 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 				for t in preview_texture_dependencies.keys():
 					var file_name = subst_string(f.file_name, export_context)
 					file_name = file_name.replace("$(buffer_index)", str(index))
-					var texture : Texture2D = await preview_texture_dependencies[t].get_texture()
+					# Values rounded to the nearest 8 bits level, since convert() truncates
+					var rounded : MMTexture = await preview_texture_dependencies[t].get_rounded_to_8_bits()
+					var texture : Texture2D = await rounded.get_texture()
 					var image : Image = texture.get_image()
 					if image:
 						image.convert(Image.FORMAT_RGBA8)

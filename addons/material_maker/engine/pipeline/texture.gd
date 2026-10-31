@@ -119,8 +119,72 @@ func get_width() -> int:
 func get_height() -> int:
 	return texture_size.y
 
+## Extensions of the image files that are saved with 8 bits per channel
+const EIGHT_BITS_EXTENSIONS : Array[String] = [ "png", "jpg", "webp" ]
+
+## Rounds each value to the nearest 8 bits level k and stores it a quarter of
+## a level above k/255: converting the result to 8 bits then gives k, whether
+## the conversion truncates (as Godot's does) or rounds, even after the
+## precision loss of 16 bits floats.
+const ROUND_TO_8_BITS_SHADER : String = """#version 450
+
+layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+@DECLARATIONS
+
+layout(set = 3, binding = 0, std140) restrict buffer MM {
+	int mm_chunk_y;
+};
+
+void main() {
+	ivec2 pixel = ivec2(gl_GlobalInvocationID.xy)+ivec2(0, mm_chunk_y);
+	vec4 levels = floor(clamp(texelFetch(mm_source, pixel, 0), 0.0, 1.0)*255.0+0.5);
+	imageStore(mm_rounded, pixel, (levels+0.25)/255.0);
+}
+"""
+
+## Compiled rounding shaders, by output texture type
+static var round_to_8_bits_shaders : Dictionary = {}
+static var round_to_8_bits_busy : bool = false
+
+## Returns a texture with the values of this one rounded to the nearest 8 bits
+## level, for files saved with 8 bits per channel. Godot's image conversions
+## to 8 bits truncate values, and rendered values that should be exactly k/255
+## are often a little lower in floats, so most values would lose one level.
+## Returns this texture if the rounding shader fails.
+func get_rounded_to_8_bits() -> MMTexture:
+	if texture_size.x <= 0 or texture_size.y <= 0:
+		return self
+	var output_type : int = MMPipeline.TEXTURE_TYPE_RGBA16F
+	if texture_format == RenderingDevice.DATA_FORMAT_R16_SFLOAT or texture_format == RenderingDevice.DATA_FORMAT_R32_SFLOAT:
+		output_type = MMPipeline.TEXTURE_TYPE_R16F
+	while round_to_8_bits_busy:
+		await Engine.get_main_loop().process_frame
+	round_to_8_bits_busy = true
+	var shader : MMComputeShader = round_to_8_bits_shaders.get(output_type)
+	if shader == null:
+		shader = MMComputeShader.new()
+		shader.add_parameter_or_texture("mm_source", "sampler2D", null)
+		var output_textures : Array[Dictionary] = [ { name="mm_rounded", type=output_type } ]
+		if await shader.set_shader_ext(ROUND_TO_8_BITS_SHADER, output_textures):
+			round_to_8_bits_shaders[output_type] = shader
+		else:
+			shader = null
+	var rv : MMTexture = self
+	if shader != null:
+		shader.set_parameter("mm_source", self)
+		var rounded : MMTexture = MMTexture.new()
+		if await shader.render_ext([ rounded ], texture_size):
+			rv = rounded
+		shader.set_parameter("mm_source", null)
+	round_to_8_bits_busy = false
+	return rv
+
 func save_to_file(file_name : String) -> Error:
-	var texture : ImageTexture = await get_texture()
+	var source : MMTexture = self
+	if file_name.get_extension() in EIGHT_BITS_EXTENSIONS:
+		source = await get_rounded_to_8_bits()
+	var texture : ImageTexture = await source.get_texture()
 	var image : Image = texture.get_image()
 	if image != null:
 		var export_image : Image = image
