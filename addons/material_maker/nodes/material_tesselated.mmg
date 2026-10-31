@@ -43,14 +43,14 @@
 					},
 					{
 						"conditions": "$(connected:roughness_tex)",
+						"expression": "f=$roughness*$roughness_tex($uv)",
 						"file_name": "$(path_prefix)_rough.exr",
-						"output": 13,
 						"type": "texture"
 					},
 					{
 						"conditions": "$(connected:metallic_tex)",
+						"expression": "f=$metallic*$metallic_tex($uv)",
 						"file_name": "$(path_prefix)_metal.exr",
-						"output": 12,
 						"type": "texture"
 					},
 					{
@@ -96,8 +96,8 @@
 					},
 					{
 						"conditions": "$(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
+						"expression": "rgb=vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
 						"file_name": "$(path_prefix)_orm.png",
-						"output": 1,
 						"type": "texture"
 					},
 					{
@@ -151,15 +151,19 @@
 							"$if $(connected:albedo_tex)",
 							"albedo_texture = ExtResource( 1 )",
 							"$fi",
-							"metallic = $(param:metallic)",
 							"$if $(connected:metallic_tex)",
+							"metallic = 1.0",
 							"metallic_texture = ExtResource( 2 )",
 							"metallic_texture_channel = 2",
+							"$else",
+							"metallic = $(param:metallic)",
 							"$fi",
-							"roughness = $(param:roughness)",
 							"$if $(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
+							"roughness = 1.0",
 							"roughness_texture = ExtResource( 2 )",
 							"roughness_texture_channel = 1",
+							"$else",
+							"roughness = $(param:roughness)",
 							"$fi",
 							"$if $(connected:normal_tex)",
 							"normal_enabled = true",
@@ -213,9 +217,8 @@
 						"type": "texture"
 					},
 					{
-						"conditions": "$(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
+						"expression": "rgb=vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
 						"file_name": "$(path_prefix)_orm.png",
-						"output": 1,
 						"type": "texture"
 					},
 					{
@@ -249,9 +252,7 @@
 							"$if $(connected:albedo_tex)",
 							"[ext_resource path=\"$(file_prefix)_albedo.png\" type=\"Texture\" id=1]",
 							"$fi",
-							"$if $(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
 							"[ext_resource path=\"$(file_prefix)_orm.png\" type=\"Texture\" id=2]",
-							"$fi",
 							"$if $(connected:normal_tex)",
 							"[ext_resource path=\"$(file_prefix)_normal.png\" type=\"Texture\" id=3]",
 							"$fi",
@@ -269,9 +270,7 @@
 							"$if $(connected:albedo_tex)",
 							"albedo_texture = ExtResource( 1 )",
 							"$fi",
-							"$if $(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
 							"orm_texture = ExtResource( 2 )",
-							"$fi",
 							"$if $(connected:normal_tex)",
 							"normal_enabled = true",
 							"normal_scale = $(param:normal)",
@@ -317,8 +316,8 @@
 					},
 					{
 						"conditions": "$(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
+						"expression": "rgb=vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
 						"file_name": "$(path_prefix)_orm.png",
-						"output": 1,
 						"type": "texture"
 					},
 					{
@@ -372,15 +371,19 @@
 							"$if $(connected:albedo_tex)",
 							"albedo_texture = ExtResource( 1 )",
 							"$fi",
-							"metallic = $(param:metallic)",
 							"$if $(connected:metallic_tex)",
+							"metallic = 1.0",
 							"metallic_texture = ExtResource( 2 )",
 							"metallic_texture_channel = 2",
+							"$else",
+							"metallic = $(param:metallic)",
 							"$fi",
-							"roughness = $(param:roughness)",
 							"$if $(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
+							"roughness = 1.0",
 							"roughness_texture = ExtResource( 2 )",
 							"roughness_texture_channel = 1",
+							"$else",
+							"roughness = $(param:roughness)",
 							"$fi",
 							"$if $(connected:normal_tex)",
 							"normal_enabled = true",
@@ -1091,7 +1094,11 @@
 							"  m_PrefabAsset: {fileID: 0}",
 							"  m_Name: $(file_prefix)",
 							"  m_Shader: {fileID: 46, guid: 0000000000000000f000000000000000, type: 0}",
+							"$if $(connected:roughness_tex) or $(connected:metallic_tex)",
 							"  m_ShaderKeywords: _METALLICGLOSSMAP _NORMALMAP _PARALLAXMAP",
+							"$else",
+							"  m_ShaderKeywords: _NORMALMAP _PARALLAXMAP",
+							"$fi",
 							"  m_LightmapFlags: 4",
 							"  m_EnableInstancingVariants: 0",
 							"  m_DoubleSidedGI: 0",
@@ -1163,9 +1170,9 @@
 							"    - _DetailNormalMapScale: 1",
 							"    - _DstBlend: 0",
 							"    - _GlossMapScale: 1",
-							"    - _Glossiness: 0.5",
+							"    - _Glossiness: $(expr:1-$(param:roughness))",
 							"    - _GlossyReflections: 1",
-							"    - _Metallic: 0",
+							"    - _Metallic: $(param:metallic)",
 							"    - _Mode: 0",
 							"    - _OcclusionStrength: 1",
 							"    - _Parallax: 0.02",
@@ -1749,7 +1756,11 @@
 							"  m_PrefabAsset: {fileID: 0}",
 							"  m_Name: $(file_prefix)",
 							"  m_Shader: {fileID: 4800000, guid: 6e4ae4064600d784cac1e41a9e6f2e59, type: 3}",
+							"$if $(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
 							"  m_ShaderKeywords: _NORMALMAP_TANGENT_SPACE _NORMALMAP _HEIGHTMAP _PIXEL_DISPLACEMENT _PIXEL_DISPLACEMENT_LOCK_OBJECT_SCALE _DISPLACEMENT_LOCK_TILING_SCALE _MASKMAP _EMISSIVE_COLOR_MAP",
+							"$else",
+							"  m_ShaderKeywords: _NORMALMAP_TANGENT_SPACE _NORMALMAP _HEIGHTMAP _PIXEL_DISPLACEMENT _PIXEL_DISPLACEMENT_LOCK_OBJECT_SCALE _DISPLACEMENT_LOCK_TILING_SCALE _EMISSIVE_COLOR_MAP",
+							"$fi",
 							"  m_LightmapFlags: 4",
 							"  m_EnableInstancingVariants: 0",
 							"  m_DoubleSidedGI: 0",
@@ -1944,7 +1955,7 @@
 							"    - _IridescenceThickness: 1",
 							"    - _LinkDetailsWithBase: 1",
 							"    - _MaterialID: 1",
-							"$if not $(connected:metallic_tex) and ($(connected:ao_tex) or $(connected:roughness_tex)) and $(param:metallic) > 0.0",
+							"$if ($(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)) and $(param:metallic) > 0.0",
 							"    - _Metallic: 1.0",
 							"$else",
 							"    - _Metallic: $(param:metallic)",
@@ -1959,9 +1970,9 @@
 							"    - _ReceivesSSR: 1",
 							"    - _RefractionModel: 0",
 							"    - _SSRefractionProjectionModel: 0",
-							"    - _Smoothness: 1",
+							"    - _Smoothness: $(expr:1-$(param:roughness))",
 							"    - _SmoothnessRemapMax: 1",
-							"    - _SmoothnessRemapMin: $(expr:1-$(param:roughness))",
+							"    - _SmoothnessRemapMin: 0",
 							"    - _SpecularAAScreenSpaceVariance: 0.1",
 							"    - _SpecularAAThreshold: 0.2",
 							"    - _SpecularOcclusionMode: 1",
@@ -2767,7 +2778,9 @@
 							"  m_ValidKeywords:",
 							"  - _NORMALMAP",
 							"  - _PARALLAXMAP",
+							"$if $(connected:roughness_tex) or $(connected:metallic_tex)",
 							"  - _METALLICSPECGLOSSMAP",
+							"$fi",
 							"$if $(connected:emission_tex)",
 							"  m_LightmapFlags: 0",
 							"$else",
@@ -2882,12 +2895,16 @@
 							"    - _GlossMapScale: 0",
 							"    - _Glossiness: 0",
 							"    - _GlossyReflections: 0",
-							"    - _Metallic: 0",
+							"    - _Metallic: $(param:metallic)",
 							"    - _OcclusionStrength: $(param:ao)",
 							"    - _Parallax: $(expr:0.005+(0.08-0.005)*$(param:depth_scale))",
 							"    - _QueueOffset: 0",
 							"    - _ReceiveShadows: 1",
-							"    - _Smoothness: $(param:roughness))",
+							"$if $(connected:roughness_tex) or $(connected:metallic_tex)",
+							"    - _Smoothness: 1",
+							"$else",
+							"    - _Smoothness: $(expr:1-$(param:roughness))",
+							"$fi",
 							"    - _SmoothnessTextureChannel: 0",
 							"    - _SpecularHighlights: 1",
 							"    - _SrcBlend: 1",
@@ -2919,8 +2936,8 @@
 					},
 					{
 						"conditions": "$(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
+						"expression": "rgb=vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
 						"file_name": "$(path_prefix)_orm.png",
-						"output": 1,
 						"type": "texture"
 					},
 					{
@@ -2981,7 +2998,7 @@
 				"type": "rgb"
 			},
 			{
-				"default": "$metallic",
+				"default": "1.0",
 				"label": "",
 				"name": "metallic_tex",
 				"type": "f"
@@ -3057,7 +3074,7 @@
 				"type": "f"
 			},
 			{
-				"rgba": "vec4(vec3($metallic_tex($uv)), 1.0-$roughness_tex($uv))",
+				"rgba": "vec4(vec3($metallic*$metallic_tex($uv)), 1.0-$roughness*$roughness_tex($uv))",
 				"type": "rgba"
 			},
 			{
@@ -3077,7 +3094,7 @@
 				"type": "rgb"
 			},
 			{
-				"rgba": "vec4($metallic_tex($uv), $ao_tex($uv), 1.0, 1.0-$roughness_tex($uv))",
+				"rgba": "vec4($metallic*$metallic_tex($uv), $ao_tex($uv), 1.0, 1.0-$roughness*$roughness_tex($uv))",
 				"type": "rgba"
 			},
 			{
