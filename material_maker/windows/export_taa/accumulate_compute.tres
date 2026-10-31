@@ -17,6 +17,10 @@ layout(set = 3, binding = 0, std140) restrict buffer MM {
 
 const float seed_variation = 0.0;
 
+// The graph is rendered at a fixed time ($time), elapsed_time only changes
+// the jitter
+#define elapsed_time mm_taa_time
+
 @GLOBALS
 
 @DEFINITIONS
@@ -27,6 +31,8 @@ vec4 mm_image(vec2 uv) {
 	@CODE
 	return @OUTPUT_VALUE;
 }
+
+#undef elapsed_time
 
 void main() {
 	vec2 pixel = gl_GlobalInvocationID.xy+vec2(0.5, 0.5+mm_chunk_y);

@@ -11,7 +11,7 @@ const BAKE_MAPS : Array[String] = [ "position", "normal", "tangent", "ambient_oc
 const DEFAULT_BAKE_MAPS : Array[String] = [ "ambient_occlusion", "curvature", "thickness", "normal", "position" ]
 const DEFAULT_HIGH_POLY_MAPS : Array[String] = [ "normal_tangent", "height" ]
 
-const ExportAnimation = preload("res://material_maker/windows/export_animation/export_animation.gd")
+const TimeBuffers = preload("res://material_maker/windows/export_animation/time_buffers.gd")
 
 
 ## Converts a command line value to a parameter value
@@ -281,11 +281,11 @@ static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, f
 	var digits : int = str(frames).length()
 	# Buffer nodes whose inputs use $time (the buffers that depend on them
 	# follow)
-	var animated_buffers : Array = collect_generators(graph, func(g): return ExportAnimation.is_animated_buffer(g))
+	var animated_buffers : Array = collect_generators(graph, func(g): return TimeBuffers.is_animated_buffer(g))
 	for frame in frames:
 		MMComputeShader.fixed_time = duration*float(frame)/float(frames)
 		# They are rendered again at this time (iterations start again)
-		ExportAnimation.invalidate_buffers(animated_buffers)
+		TimeBuffers.invalidate_buffers(animated_buffers)
 		mm_deps.update()
 		var texture : MMTexture = await render_output_texture(resolved.generator, resolved.output, Vector2i(size, size))
 		if separate:

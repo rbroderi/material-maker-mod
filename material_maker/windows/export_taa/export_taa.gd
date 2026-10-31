@@ -1,6 +1,8 @@
 extends Window
 
 
+const TimeBuffers = preload("res://material_maker/windows/export_animation/time_buffers.gd")
+
 var acc_texture : MMTexture
 var avg_texture : MMTexture
 var accumulate_render : MMComputeShader
@@ -9,6 +11,13 @@ var divide_render : MMComputeShader
 var iteration : int = 0
 var force_update : bool = false
 var render_size : Vector2i = Vector2i(512, 512)
+
+## The time the graph is rendered at ($time)
+var taa_time : float
+## The buffer nodes whose inputs use $time (see time_buffers.gd), rendered
+## at taa_time while the window is open
+var animated_buffers : Array = []
+var rendering_buffers : bool = false
 
 func _ready():
 	content_scale_factor = mm_globals.ui_scale_factor()
@@ -33,9 +42,25 @@ func set_source(generator, output):
 		source.code = ""
 		source.output_values.rgba = "preview_2d(uv)"
 		source.output_type = "rgba"
+	# Render the buffers that use $time at the time the window is opened, so
+	# that the whole image shows the graph at that time
+	taa_time = 0.001*float(Time.get_ticks_msec())
+	var texture_names : Array = []
+	for u in source.uniforms:
+		if mm_deps.buffers.has(u.name):
+			texture_names.append(u.name)
+	var dependencies : Array[String] = TimeBuffers.get_dependencies(texture_names)
+	animated_buffers = TimeBuffers.get_animated_buffers(dependencies)
+	if not animated_buffers.is_empty():
+		rendering_buffers = true
+		MMComputeShader.fixed_time = taa_time
+		await TimeBuffers.render_buffers(animated_buffers, dependencies)
+		MMComputeShader.fixed_time = -1.0
+		rendering_buffers = false
 	var shader_template : String = load("res://material_maker/windows/export_taa/accumulate_compute.tres").text
 	var extra_parameters : Array[Dictionary] = []
 	extra_parameters.append({ name="elapsed_time", type="float", value=0.0 })
+	extra_parameters.append({ name="mm_taa_time", type="float", value=taa_time })
 	extra_parameters.append({ name="mm_iteration", type="int", value=0 })
 	extra_parameters.append({ name="mm_accumulate_previous", type="sampler2D", value=acc_texture })
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=MMPipeline.TEXTURE_TYPE_RGBA32F, writeonly=false, keep=true}]
@@ -73,6 +98,13 @@ func set_source(generator, output):
 			divide_render.set_parameter("mm_denoise_threshold", $VBoxContainer/Denoise/Threshold.value)
 			$VBoxContainer/TextureRect.texture = await avg_texture.get_texture()
 			force_update = false
+
+func _notification(what : int) -> void:
+	if what == NOTIFICATION_PREDELETE and not animated_buffers.is_empty():
+		# Render the buffers at the current time again
+		if rendering_buffers:
+			MMComputeShader.fixed_time = -1.0
+		TimeBuffers.invalidate_buffers(animated_buffers)
 
 func _on_Export_pressed():
 	var dialog = preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instantiate()
