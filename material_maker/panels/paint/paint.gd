@@ -982,10 +982,11 @@ func undoredo_command(command : Dictionary) -> void:
 				for c in state.keys():
 					state[c].save_png("d:/redo_%d_%s.png" % [ redo_index, c ])
 			redo_index += 1
-			layer.set_state(state)
 			if layer == layers.selected_layer:
-				layers.select_layer(layers.selected_layer, true, false)
+				# The state is applied when previous selections are done
+				layers.select_layer(layer, true, false, state)
 			else:
+				layer.set_state(state)
 				layers._on_layers_changed()
 			stroke_history.layers[layer].current = command.index
 
