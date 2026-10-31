@@ -223,6 +223,12 @@ signal rendering_time_updated(t)
 func _ready() -> void:
 	init_parameters()
 
+func _notification(what : int) -> void:
+	if what == NOTIFICATION_PREDELETE and is_instance_valid(mm_deps):
+		# Release the values (e.g. textures) this generator gave to mm_deps,
+		# they would be kept until the application exits
+		mm_deps.release_object_values(get_instance_id())
+
 static func get_default_generated_shader() -> ShaderCode:
 	var rv : ShaderCode = ShaderCode.new()
 	rv.output_type = "rgba"

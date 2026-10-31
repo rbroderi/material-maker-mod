@@ -68,6 +68,24 @@ func delete_buffers_from_object(object : Object):
 	for b in remove_buffers:
 		delete_buffer(b)
 
+var released_objects : Dictionary[String, bool] = {}
+var object_value_regex : RegEx = RegEx.create_from_string("^(?:p_|seed_)?o(\\d+)(?:_|$)")
+
+## Releases the values of the dependencies of an object that is being freed
+## (named o<id>_..., p_o<id>_... or seed_o<id>), such as the texture of an
+## Image node. Objects freed in the same frame are released together.
+func release_object_values(object_id : int):
+	if released_objects.is_empty():
+		do_release_object_values.call_deferred()
+	released_objects[str(object_id)] = true
+
+func do_release_object_values():
+	for d in dependencies_values.keys():
+		var m : RegExMatch = object_value_regex.search(d)
+		if m != null and released_objects.has(m.get_string(1)):
+			dependencies_values.erase(d)
+	released_objects.clear()
+
 func buffer_clear_dependencies(buffer_name : String):
 	assert(buffers.has(buffer_name))
 	reset_stats = true
