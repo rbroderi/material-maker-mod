@@ -3162,7 +3162,7 @@
 							"    - _Glossiness: 0",
 							"    - _GlossyReflections: 0",
 							"    - _Metallic: $(param:metallic)",
-							"    - _OcclusionStrength: $(param:ao)",
+							"    - _OcclusionStrength: 1",
 							"    - _Parallax: $(expr:0.005+(0.08-0.005)*$(param:depth_scale))",
 							"    - _QueueOffset: 0",
 							"    - _ReceiveShadows: 1",
