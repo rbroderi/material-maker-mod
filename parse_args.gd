@@ -211,7 +211,11 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 	var i = 0
 	while i < args.size():
 		var arg : String = args[i]
-		var has_value : bool = i+1 < args.size()
+		# The next argument is not a value if it is another option (so
+		# "--node --size 256" is an error, and does not render a node named
+		# "--size"). Values starting with a single "-" (e.g. "--seed -5") are
+		# accepted, except -t and -o.
+		var has_value : bool = i+1 < args.size() and not is_option(args[i+1])
 		var value : String = args[i+1] if has_value else ""
 		var option : Dictionary = VALUE_OPTIONS.get(arg, {})
 		if not option.is_empty():
@@ -219,7 +223,7 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 				options[option.key] = true
 			else:
 				if not has_value:
-					show_error("ERROR: %s needs a value" % arg)
+					show_error("ERROR: missing value for %s" % arg)
 					return {}
 				if (option.type == TYPE_INT and not value.is_valid_int()) or (option.type == TYPE_FLOAT and not value.is_valid_float()):
 					show_error("ERROR: incorrect value for %s: %s" % [ arg, value ])
@@ -232,7 +236,7 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 		match arg:
 			"--size", "--set", "--maps":
 				if not has_value:
-					show_error("ERROR: %s needs a value" % arg)
+					show_error("ERROR: missing value for %s" % arg)
 					return {}
 				match arg:
 					"--size":
@@ -256,6 +260,10 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 		i += 1
 	options.files = files
 	return options
+
+## True if arg is an option (and not the value of the previous option)
+static func is_option(arg : String) -> bool:
+	return arg.begins_with("--") or VALUE_OPTIONS.has(arg)
 
 func expand_files(files : Array[String]) -> Array:
 	var expanded_files = []
