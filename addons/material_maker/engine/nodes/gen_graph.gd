@@ -419,6 +419,21 @@ func check_input_connects(node) -> void:
 		emit_signal("connections_changed", removed_connections, [])
 		connections = new_connections
 
+## Removes the connections from outputs the node does not have anymore
+func check_output_connects(node) -> void:
+	var new_connections : Array = []
+	var removed_connections : Array = []
+	for c in connections:
+		if c.from == node.name and c.from_port >= node.get_output_defs(true).size():
+			removed_connections.push_back(c.duplicate(true))
+		else:
+			new_connections.push_back(c)
+	if !removed_connections.is_empty():
+		connections = new_connections
+		emit_signal("connections_changed", removed_connections, [])
+		for c in removed_connections:
+			get_node(NodePath(c.to)).source_changed(c.to_port)
+
 func create_subgraph(gens : Array) -> MMGenGraph:
 	# Remove material, gen_inputs and gen_outputs nodes
 	var generators = []

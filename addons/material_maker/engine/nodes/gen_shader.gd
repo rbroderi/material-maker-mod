@@ -391,6 +391,7 @@ func set_shader_model(data: Dictionary) -> void:
 			break
 	if get_parent() != null and get_parent().has_method("check_input_connects"):
 		get_parent().check_input_connects(self)
+		get_parent().check_output_connects(self)
 	all_sources_changed()
 
 #
@@ -817,6 +818,9 @@ func do_edit(node, edit_window_scene : PackedScene, tab : String = "") -> void:
 		mm_globals.main_window.add_dialog(edit_window)
 		edit_window.set_model_data(get_shader_model_for_edit())
 		edit_window.node_changed.connect(node.update_shader_generator)
+		if node.has_method("finalize_generator_update"):
+			# Create the undo step when the editor is closed
+			edit_window.editor_window_closed.connect(node.finalize_generator_update)
 		if node.generator is MMGenMaterial:
 			var material : String = node.generator.shader_model.name
 			edit_window.title = "%s - %s" % [material, edit_window.title]
