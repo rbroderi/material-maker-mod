@@ -81,6 +81,11 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			return
 		if gen != null:
 			add_child(gen)
+			if not check_export_targets(gen, f, target):
+				# Nothing is exported for this graph
+				exit_code = 1
+				gen.queue_free()
+				continue
 			if not await apply_graph_options(gen, f, options):
 				gen.queue_free()
 				continue
@@ -93,6 +98,37 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 	print("Shaders: %d compiled, %d from the cache" % [ MMPipeline.shader_cache_misses, MMPipeline.shader_cache_hits ])
 	get_tree().quit(exit_code)
 
+## Returns the export target of a material that matches target: target itself,
+## the same name in another case, or the most similar target (empty if none
+## is similar at all)
+static func find_export_target(target : String, export_profiles : Array) -> String:
+	if export_profiles.has(target):
+		return target
+	for p : String in export_profiles:
+		if p.to_lower() == target.to_lower():
+			return p
+	var best_target : String = ""
+	var best_similarity : float = 0.0
+	for p : String in export_profiles:
+		var similarity : float = p.similarity(target)
+		if similarity > best_similarity:
+			best_similarity = similarity
+			best_target = p
+	return best_target
+
+## Checks that all materials of a graph have an export target that matches
+## target, and shows the valid targets if one does not
+func check_export_targets(gen : MMGenBase, f : String, target : String) -> bool:
+	var gen_stack : Array[MMGenBase] = [gen]
+	while gen_stack.size():
+		var c : MMGenBase = gen_stack.pop_back()
+		gen_stack.append_array(c.get_children())
+		if c.has_method("export_material") and c.has_method("get_export_profiles"):
+			if find_export_target(target, c.get_export_profiles()) == "":
+				show_error("ERROR: %s: unknown export target \"%s\", valid targets are:\n  %s" % [ f.get_file(), target, "\n  ".join(PackedStringArray(c.get_export_profiles())) ])
+				return false
+	return true
+
 func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array) -> void:
 	var mat_name_lower = name_to_lower(mat_name)
 	var mat_author_lower = name_to_lower(mat_author)
@@ -103,15 +139,8 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 		if c.has_method("export_material"):
 			var best_target : String = target
 			if c.has_method("get_export_profiles"):
-				if c.get_export_profiles().find(target) == -1:
-					var best_similarity : float = 0.0
-					for p : String in c.get_export_profiles():
-						var similarity : float = p.similarity(target)
-						if similarity > best_similarity:
-							best_similarity = similarity
-							best_target = p
-					if best_target == "":
-						continue
+				best_target = find_export_target(target, c.get_export_profiles())
+				if best_target != target:
 					print("Using target ", best_target, " (and not ", target, ")")
 			var target_file_name : String = target_file
 			if suffix != "" and not target_file_name.contains("%f"):
