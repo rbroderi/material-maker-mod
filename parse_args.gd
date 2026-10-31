@@ -312,7 +312,11 @@ func _ready():
 	var i = 0
 	while i < args.size():
 		var arg : String = args[i]
-		var has_value : bool = i+1 < args.size()
+		# The next argument is not a value if it is another option (so
+		# "--node --size 256" is an error, and does not render a node named
+		# "--size"). Values starting with a single "-" (e.g. "--seed -5") are
+		# accepted, except -t and -o.
+		var has_value : bool = i+1 < args.size() and not is_option(args[i+1])
 		var value : String = args[i+1] if has_value else ""
 		# (plugin modes add options, see MMPlugins.API.add_cli_mode)
 		var option : Dictionary = VALUE_OPTIONS.get(arg, MMPlugins.cli_options.get(arg, {}))
@@ -321,7 +325,7 @@ func _ready():
 				options[option.key] = true
 			else:
 				if not has_value:
-					show_error("ERROR: %s needs a value" % arg)
+					show_error("ERROR: missing value for %s" % arg)
 					get_tree().quit(1)
 					return
 				if (option.type == TYPE_INT and not value.is_valid_int()) or (option.type == TYPE_FLOAT and not value.is_valid_float()):
@@ -334,7 +338,7 @@ func _ready():
 			i += 1
 			continue
 		if arg in [ "--size", "--set", "--color-space", "--maps" ] and not has_value:
-			show_error("ERROR: %s needs a value" % arg)
+			show_error("ERROR: missing value for %s" % arg)
 			get_tree().quit(1)
 			return
 		match arg:
@@ -571,6 +575,10 @@ func run_rpc_server(files : Array[String], options : Dictionary) -> void:
 			return
 	if rpc_server.start(port) != OK:
 		get_tree().quit(1)
+
+## True if arg is an option (and not the value of the previous option)
+static func is_option(arg : String) -> bool:
+	return arg.begins_with("--") or VALUE_OPTIONS.has(arg) or MMPlugins.cli_options.has(arg)
 
 func expand_files(files : Array[String]) -> Array:
 	var expanded_files = []
