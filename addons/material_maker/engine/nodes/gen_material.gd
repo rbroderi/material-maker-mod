@@ -627,33 +627,69 @@ static func get_template_text(template : String) -> String:
 		return template
 	return in_file.get_as_text()
 
+const CONDITIONAL_DIRECTIVES : Array[String] = [ "$if", "$elif", "$else", "$fi" ]
+
+## Returns the conditional directive ($if, $elif, $else or $fi) a template
+## line starts with (after optional indentation), or an empty string
+static func get_conditional_directive(line : String) -> String:
+	var stripped : String = line.strip_edges(true, false)
+	for d in CONDITIONAL_DIRECTIVES:
+		if stripped.begins_with(d) and (stripped.length() == d.length() or stripped[d.length()] in [ " ", "\t", "\r" ]):
+			return d
+	return ""
+
+## Evaluates the condition of an $if or $elif directive. A condition that
+## cannot be parsed is reported and considered false.
+static func evaluate_condition(condition : String, context : Dictionary) -> bool:
+	condition = subst_string(condition.strip_edges(), context)
+	var expr = Expression.new()
+	var error = expr.parse(condition, [])
+	if error != OK:
+		print("Error in expression "+condition+": "+expr.get_error_text())
+		return false
+	return true if expr.execute() else false
+
+## Keeps the lines of a template that are selected by its $if / $elif /
+## $else / $fi blocks. Blocks can be nested and directives can be indented.
 func process_conditionals(template : String) -> String:
 	var context = get_connections_and_parameters_context()
 	var processed : String = ""
-	# For each nested block: [ skipped by its own condition, skipped by an
-	# enclosing block ], so that blocks nested in skipped ones stay skipped
-	var skip_state : Array = [ [ false, false ] ]
+	# For each open block, whether the lines around it are kept and whether
+	# one of its branches has already been selected
+	var blocks : Array[Dictionary] = []
+	var keep : bool = true
 	for l in template.split("\n"):
 		if l == "":
 			continue
-		elif l.left(4) == "$if ":
-			var outer : bool = skip_state.back()[0] or skip_state.back()[1]
-			var condition = subst_string(l.right(-4), context)
-			var expr = Expression.new()
-			var error = expr.parse(condition, [])
-			if error != OK:
-				print("Error in expression "+condition+": "+expr.get_error_text())
-				skip_state.push_back([ true, outer ])
-				continue
-			skip_state.push_back([ !expr.execute(), outer ])
-		elif l.left(3) == "$fi":
-			if skip_state.size() > 1:
-				skip_state.pop_back()
-		elif l.left(5) == "$else":
-			skip_state.back()[0] = !skip_state.back()[0]
-		elif ! (skip_state.back()[0] or skip_state.back()[1]):
-			processed += l
-			processed += "\n"
+		var directive : String = get_conditional_directive(l)
+		if directive == "":
+			if keep:
+				processed += l
+				processed += "\n"
+		elif directive == "$if":
+			var block : Dictionary = { outer = keep, selected = false }
+			if keep:
+				keep = evaluate_condition(l.strip_edges(true, false).right(-3), context)
+				block.selected = keep
+			blocks.push_back(block)
+		elif blocks.is_empty():
+			print("Template error: "+directive+" without $if")
+		else:
+			var block : Dictionary = blocks.back()
+			match directive:
+				"$elif":
+					keep = false
+					if block.outer and not block.selected:
+						keep = evaluate_condition(l.strip_edges(true, false).right(-5), context)
+						block.selected = keep
+				"$else":
+					keep = block.outer and not block.selected
+					block.selected = true
+				"$fi":
+					keep = block.outer
+					blocks.pop_back()
+	if not blocks.is_empty():
+		print("Template error: missing $fi")
 	return processed
 
 static func process_template(template : String, export_context : Dictionary) -> String:
