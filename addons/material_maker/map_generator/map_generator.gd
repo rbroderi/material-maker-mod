@@ -104,6 +104,14 @@ class UIProgress:
 			mm_globals.main_window.set_tip_text(text+" ("+str(progress)+"%)", 0.0 if (progress >= 100) else 1.0)
 
 
+## Shows the progress of generate() (called deferred, in the main thread). The
+## progress object is an argument of the deferred call so that the call holds
+## a reference to it: generate() runs in the rendering thread and drops its
+## reference when it returns, and a deferred call on the object itself could
+## run while it is being freed ("Bad address index" in set_progress()).
+static func show_progress(progress, v : float) -> void:
+	progress.set_progress(v)
+
 static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture):
 	assert(mesh != null)
 	print.call_deferred("Generating %s map for mesh %s" % [ map, str(mesh) ])
@@ -112,8 +120,8 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 		progress = UIProgress.new()
 	else:
 		progress = DefaultProgress.new()
-	progress.set_text.call_deferred("Generating "+map+" map")
-	progress.set_progress.call_deferred(0)
+	progress.set_text("Generating "+map+" map")
+	show_progress.call_deferred(progress, 0.0)
 	var pixels : int = size/4
 	var map_definition : Dictionary = MAP_DEFINITIONS[map]
 	var mesh_pipeline : MMMeshRenderingPipeline = MMMeshRenderingPipeline.new()
@@ -151,7 +159,7 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 			await mesh_pipeline.set_shader(vertex_shader, fragment_shader)
 			print.call_deferred("Casting %d rays..." % ray_count)
 			for i in range(ray_count):
-				progress.set_progress.call_deferred(float(i)/ray_count)
+				show_progress.call_deferred(progress, float(i)/ray_count)
 				mesh_pipeline.set_parameter("iteration", i+1)
 				mesh_pipeline.set_parameter("prev_iteration_tex", texture)
 				mesh_pipeline.in_thread_render(Vector2i(size, size), 3, texture)
@@ -193,7 +201,7 @@ static func generate(mesh : Mesh, map : String, size : int, texture : MMTexture)
 			postprocess_pipeline.in_thread_render_ext([texture], Vector2i(size, size))
 			#texture.save_to_file("d:/debug_%d.png" % debug_index)
 			debug_index += 1
-		progress.set_progress.call_deferred(1.0)
+		show_progress.call_deferred(progress, 1.0)
 
 static var busy : bool = false
 
