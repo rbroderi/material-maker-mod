@@ -26,8 +26,12 @@ Procedural shaders
 The **Godot/Godot 4 Shader**, **Unity/Built-in Shader** and **Unreal/Unreal Engine 5 Shader**
 targets (from the *More export targets* plugin, enabled by default) export the material as a
 shader that computes the graph, instead of textures: the material keeps its detail at any
-resolution, without a texture budget. Buffers of the graph (for example the ones of normal map
-nodes) are exported as PNG textures that the shader samples (so they have 8 bits per channel).
+resolution, without a texture budget. Buffers of the graph (for example the ones of normal map,
+warp and fill nodes) are exported as EXR textures that the shader samples, with the precision
+Material Maker computes them with (16 or 32 bit floats): 8 bit textures would show steps in
+heights and normals, and break the data of fill nodes. The engines import them as uncompressed,
+linear textures (an .import file for Godot, a .meta file for Unity, import settings in the
+script for Unreal).
 
 * **Godot 4**: a .gdshader and a .tres ShaderMaterial. The parameters of the graph are shader
   uniforms (with their current values), so they can be changed in Godot's inspector. Coat,
