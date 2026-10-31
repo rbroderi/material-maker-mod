@@ -21,6 +21,8 @@ void main() {
 	vec2 uv = (vec2(pixel)+vec2(0.5))/image_size;
 
 	if (textureLod(tex, uv, 0.0).a == 0.0) {
+		// The output texture is not initialized: clear texels outside UV islands
+		imageStore(OUTPUT_TEXTURE, pixel, vec4(0.0));
 		return;
 	}
 
