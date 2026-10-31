@@ -42,13 +42,11 @@
 						"type": "texture"
 					},
 					{
-						"conditions": "$(connected:roughness_tex)",
 						"expression": "f=$roughness*$roughness_tex($uv)",
 						"file_name": "$(path_prefix)_rough.exr",
 						"type": "texture"
 					},
 					{
-						"conditions": "$(connected:metallic_tex)",
 						"expression": "f=$metallic*$metallic_tex($uv)",
 						"file_name": "$(path_prefix)_metal.exr",
 						"type": "texture"
@@ -2935,7 +2933,6 @@
 						"type": "texture"
 					},
 					{
-						"conditions": "$(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
 						"expression": "rgb=vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
 						"file_name": "$(path_prefix)_orm.png",
 						"type": "texture"
@@ -2968,9 +2965,7 @@
 							"$if $(connected:albedo_tex)",
 							"- assign $(file_prefix)_albedo.png to the Albedo texture in the graph",
 							"$fi",
-							"$if $(connected:ao_tex) or $(connected:roughness_tex) or $(connected:metallic_tex)",
 							"- assign $(file_prefix)_orm.png to the ORM texture in the graph",
-							"$fi",
 							"$if $(connected:emission_tex)",
 							"- assign $(file_prefix)_emission.png to the Emission texture in the graph",
 							"$fi",
