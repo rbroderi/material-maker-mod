@@ -337,6 +337,10 @@ func api_create_node(params : Dictionary):
 		var item = mm_globals.main_window.node_library_manager.get_item(params.type)
 		if item != null:
 			data = item.item.duplicate(true)
+	# (the loader recognizes remote nodes by their widgets, that new ones
+	# don't have yet)
+	if data.get("type") == "remote" and not data.has("widgets"):
+		data.widgets = []
 	if params.has("name"):
 		data.name = params.name
 	return await change_graph("Create node", func(graph : MMGenGraph):
