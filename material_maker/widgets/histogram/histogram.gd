@@ -41,7 +41,8 @@ func get_histogram_texture() -> Texture2D:
 func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 	if ! is_inside_tree():
 		return
-	if !force and generator == g and output == o:
+	# is_same() because a freed generator is == null
+	if !force and is_same(generator, g) and output == o:
 		return
 	if is_instance_valid(generator) and generator.is_connected("parameter_changed",Callable(self,"on_parameter_changed")):
 		generator.disconnect("parameter_changed",Callable(self,"on_parameter_changed"))
@@ -56,6 +57,8 @@ func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 			source = generator.get_shader_code("uv", output, context)
 			if source.output_type == "":
 				source = MMGenBase.get_default_generated_shader()
+	else:
+		generator = null
 	# Update shader
 	var shader_code : String = MMGenBase.generate_preview_shader(source, source.output_type, "uniform vec2 mm_texture_size;void fragment() {COLOR = preview_2d(UV);}")
 	var shader_material : MMShaderMaterial = MMShaderMaterial.new($ViewportImage/ColorRect.material)

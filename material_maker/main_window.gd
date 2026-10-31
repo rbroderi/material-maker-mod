@@ -1400,6 +1400,9 @@ func update_preview_2d() -> void:
 		var output_index : int = -1
 		if preview == null or not is_instance_valid(preview.generator):
 			previews[i].clear()
+			if i == 0:
+				histogram.set_generator(null)
+				projects_panel.preview_2d_background.set_generator(null)
 			continue
 		generator = preview.generator
 		output_index = preview.output_index
