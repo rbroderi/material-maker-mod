@@ -13,6 +13,7 @@ static func name_to_lower(s : String) -> String:
 func export_files(files, output_dir, target, target_file, image_size) -> void:
 	var website_materials : Array = []
 	var export_list : PackedStringArray = PackedStringArray()
+	var failed : bool = false
 	for f : String in files:
 		var basename : String = f.get_file().get_basename()
 		var mat_name : String = f.get_file().get_basename()
@@ -57,6 +58,11 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 		var mat_author_lower = name_to_lower(mat_author)
 		if gen != null:
 			add_child(gen)
+			if not check_export_targets(gen, f, target):
+				# Nothing is exported for this graph
+				failed = true
+				gen.queue_free()
+				continue
 			var gen_stack : Array[MMGenBase] = [gen]
 			while gen_stack.size():
 				var c : MMGenBase = gen_stack.pop_back()
@@ -64,15 +70,8 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 				if c.has_method("export_material"):
 					var best_target : String = target
 					if c.has_method("get_export_profiles"):
-						if c.get_export_profiles().find(target) == -1:
-							var best_similarity : float = 0.0
-							for p : String in c.get_export_profiles():
-								var similarity : float = p.similarity(target)
-								if similarity > best_similarity:
-									best_similarity = similarity
-									best_target = p
-							if best_target == "":
-								continue
+						best_target = find_export_target(target, c.get_export_profiles())
+						if best_target != target:
 							print("Using target ", best_target, " (and not ", target, ")")
 					var target_file_name : String = target_file
 					target_file_name = target_file_name.replace("%f", basename)
@@ -93,7 +92,38 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 			gen.queue_free()
 	if not export_list.is_empty():
 		print(",\n".join(export_list))
-	get_tree().quit()
+	get_tree().quit(1 if failed else 0)
+
+## Returns the export target of a material that matches target: target itself,
+## the same name in another case, or the most similar target (empty if none
+## is similar at all)
+static func find_export_target(target : String, export_profiles : Array) -> String:
+	if export_profiles.has(target):
+		return target
+	for p : String in export_profiles:
+		if p.to_lower() == target.to_lower():
+			return p
+	var best_target : String = ""
+	var best_similarity : float = 0.0
+	for p : String in export_profiles:
+		var similarity : float = p.similarity(target)
+		if similarity > best_similarity:
+			best_similarity = similarity
+			best_target = p
+	return best_target
+
+## Checks that all materials of a graph have an export target that matches
+## target, and shows the valid targets if one does not
+func check_export_targets(gen : MMGenBase, f : String, target : String) -> bool:
+	var gen_stack : Array[MMGenBase] = [gen]
+	while gen_stack.size():
+		var c : MMGenBase = gen_stack.pop_back()
+		gen_stack.append_array(c.get_children())
+		if c.has_method("export_material") and c.has_method("get_export_profiles"):
+			if find_export_target(target, c.get_export_profiles()) == "":
+				show_error("ERROR: %s: unknown export target \"%s\", valid targets are:\n  %s" % [ f.get_file(), target, "\n  ".join(PackedStringArray(c.get_export_profiles())) ])
+				return false
+	return true
 
 func _ready():
 	RenderingServer.set_default_clear_color(Color.BLACK)
