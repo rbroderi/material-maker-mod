@@ -118,6 +118,8 @@ func do_update_shaders() -> void:
 			sources[i] = get_default_generated_shader()
 		if sources[i].output_type == "":
 			sources[i] = get_default_generated_shader()
+		# Declared (and set when rendering) if the input uses $time
+		sources[i].add_uniform("elapsed_time", "float", 0.0)
 		if sources[i].output_type != "f":
 			new_is_greyscale = false
 	var f32 = get_parameter("f32")
