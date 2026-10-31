@@ -41,8 +41,9 @@ func do_update_from_layers(layers_array : Array, item : TreeItem, selected_layer
 		new_item.set_meta("layer", l)
 		new_item.set_tooltip_text(0, str(new_item.get_instance_id()))
 		if l == selected_layer:
-			new_item.select(0)
+			# Set first, so selecting the item does not select the layer again
 			selected_item = new_item
+			new_item.select(0)
 		do_update_from_layers(l.layers, new_item, selected_layer)
 
 func _get_drag_data(_position : Vector2):

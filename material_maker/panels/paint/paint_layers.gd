@@ -9,6 +9,12 @@ var shaders = []
 var texture_size = 0
 var layers : Array[MMLayer] = []
 var selected_layer : MMLayer
+## Layer of the latest select_layer call
+var requested_layer : MMLayer = null
+## select_layer calls go through the painter's init shader, so they run one
+## after the other: ticket of the next call and of the running call
+var select_layer_next_ticket : int = 0
+var select_layer_current_ticket : int = 0
 
 @onready var albedo = $Albedo
 @onready var metallic = $Metallic
@@ -105,7 +111,22 @@ func get_occlusion_texture():
 func _on_Tree_selection_changed(_old_selected : TreeItem, new_selected : TreeItem) -> void:
 	select_layer(new_selected.get_meta("layer"))
 
-func select_layer(layer : MMLayer, force : bool = false, update_last : bool = true) -> void:
+## Selects a layer (if state is not empty, it is first applied to the layer)
+func select_layer(layer : MMLayer, force : bool = false, update_last : bool = true, state : Dictionary = {}) -> void:
+	requested_layer = layer
+	var ticket : int = select_layer_next_ticket
+	select_layer_next_ticket += 1
+	while ticket != select_layer_current_ticket:
+		await get_tree().process_frame
+	# A plain selection is skipped if a newer one is waiting
+	var superseded : bool = ticket < select_layer_next_ticket-1 and layer != null and not force and state.is_empty()
+	if not superseded:
+		if not state.is_empty():
+			layer.set_state(state)
+		await do_select_layer(layer, force, update_last)
+	select_layer_current_ticket += 1
+
+func do_select_layer(layer : MMLayer, force : bool, update_last : bool) -> void:
 	if layer == selected_layer and not force:
 		return
 	if painter_node == null:
@@ -388,12 +409,15 @@ func set_normal_options(paint_normal, paint_depth_as_bump, bump_strength):
 func load(data : Dictionary, file_name : String):
 	var dir_name = file_name.left(file_name.rfind("."))
 	layers.clear()
+	requested_layer = null
 	load_layers(data.layers, layers, dir_name)
 	_on_layers_changed()
 	if !layers.is_empty():
 		for i in range(32):
 			await get_tree().process_frame
-		select_layer(layers[0])
+		# Unless the user selected a layer in the meantime
+		if requested_layer == null:
+			await select_layer(layers[0])
 
 func load_layers(data_layers : Array, layers_array : Array[MMLayer], path : String, first_index : int = 0) -> int:
 	for l in data_layers:
