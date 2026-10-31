@@ -65,6 +65,7 @@ graph (and in **list_nodes**).
   "perlin"), from a library item (**item**, a dictionary as stored in library files) or, with
   the user interface, from a library item path (such as "Noise/Voronoi"), and returns its name
 * **delete_node(node)**, **connect(from, to, from_port, to_port)**, **disconnect(from, to, from_port, to_port)**
+  (ports are numbered from 0, and connect fails if a node does not have the given port)
 * **list_presets()** returns the names of the presets of the graph's remote nodes, and
   **apply_preset(name)** applies one to the remote nodes that have it
 * **save_preset(name, node)** saves the current values of a remote node as a preset (an existing
