@@ -125,6 +125,14 @@ def import_texture(src, dest):
     unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([import_task])
     return import_task.get_objects()[0]
 
+def import_data_texture(src, dest):
+    """Imports a texture that holds data (not colors): linear, with mask compression"""
+    texture = import_texture(src, dest)
+    texture.set_editor_property('srgb', False)
+    texture.set_editor_property('compression_settings', unreal.TextureCompressionSettings.TC_MASKS)
+    unreal.EditorAssetLibrary.save_loaded_asset(texture)
+    return texture
+
 def read_text_file(path):
     with open(path, 'r') as f:
         return f.read()
