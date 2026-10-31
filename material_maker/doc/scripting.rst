@@ -60,6 +60,7 @@ graph (and in **list_nodes**).
   "perlin"), from a library item (**item**, a dictionary as stored in library files) or, with
   the user interface, from a library item path (such as "Noise/Voronoi"), and returns its name
 * **delete_node(node)**, **connect(from, to, from_port, to_port)**, **disconnect(from, to, from_port, to_port)**
+  (ports are numbered from 0, and connect fails if a node does not have the given port)
 * **reseed(offset)** changes the seeds of all nodes that are not locked (cannot be undone)
 * **render(node, output, size, path)** renders a node output to a PNG, EXR, JPEG or WebP file
   (outputs are numbered from 0, as with **--render** on the command line)

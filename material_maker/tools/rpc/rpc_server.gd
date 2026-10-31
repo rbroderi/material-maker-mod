@@ -380,6 +380,14 @@ func api_connect(params : Dictionary):
 		var to : MMGenBase = get_generator(graph, params.to)
 		if from == null or to == null:
 			return null
+		# Same ports as in the graph editor (the Material node's outputs are
+		# only used for previews and cannot be connected)
+		var output_count : int = from.get_output_defs().size()
+		if from_port < 0 or from_port >= output_count:
+			return fail("node '%s' has no output %d (it has %d)" % [ params.from, from_port, output_count ])
+		var input_count : int = to.get_input_defs().size()
+		if to_port < 0 or to_port >= input_count:
+			return fail("node '%s' has no input %d (it has %d)" % [ params.to, to_port, input_count ])
 		if not graph.connect_children(from, from_port, to, to_port):
 			return fail("cannot connect %s to %s" % [ params.from, params.to ])
 		return true)
