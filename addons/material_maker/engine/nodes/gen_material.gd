@@ -723,6 +723,20 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 				dependencies[u.name] = u.value
 	return dependencies if generates_code else null
 
+## Saves a texture as an EXR file with 4 channels (as shaders sample it), and
+## the precision of float textures (8 bit textures become half floats)
+static func save_buffer_exr(image : Image, file_name : String) -> Error:
+	if image.is_compressed():
+		image.decompress()
+	match image.get_format():
+		Image.FORMAT_RGBAF, Image.FORMAT_RGBAH:
+			pass
+		Image.FORMAT_RF, Image.FORMAT_RGF, Image.FORMAT_RGBF:
+			image.convert(Image.FORMAT_RGBAF)
+		_:
+			image.convert(Image.FORMAT_RGBAH)
+	return image.save_exr(file_name)
+
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
 	reset_uids()
 	if size == 0:
@@ -870,8 +884,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					var texture : Texture2D = await export_texture_dependencies[t].get_texture()
 					var image : Image = texture.get_image()
 					if image:
-						image.convert(Image.FORMAT_RGBA8)
-						e = image.save_png(file_name)
+						if file_name.get_extension().to_lower() == "exr":
+							# EXR files keep the precision of float textures
+							# (e.g. iterate buffers)
+							e = save_buffer_exr(image, file_name)
+						else:
+							image.convert(Image.FORMAT_RGBA8)
+							e = image.save_png(file_name)
 						if e != OK:
 							error_files += 1
 					else:
