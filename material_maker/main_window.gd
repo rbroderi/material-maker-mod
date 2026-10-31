@@ -849,7 +849,8 @@ func create_new_graph_edit_if_needed() -> MMGraphEdit:
 
 func do_load_material(filename : String, update_hierarchy : bool = true) -> bool:
 	var graph_edit : MMGraphEdit = create_new_graph_edit_if_needed()
-	await graph_edit.load_file(filename)
+	if not await graph_edit.load_file(filename):
+		return false
 	if update_hierarchy:
 		hierarchy.update_from_graph_edit(get_current_graph_edit())
 	print("Current mesh: ", current_mesh)

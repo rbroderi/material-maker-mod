@@ -217,7 +217,15 @@ func api_load(params : Dictionary):
 	if not FileAccess.file_exists(params.path):
 		return fail("file '%s' not found" % params.path)
 	if mm_globals.main_window != null:
+		var projects = mm_globals.main_window.projects_panel.get_projects()
+		var previous_tab : int = projects.current_tab
+		var tab_count : int = projects.get_tab_count()
 		if not await mm_globals.main_window.do_load_material(params.path):
+			# Close the project that was created for the file, so the
+			# current graph is still the one that was open
+			if projects.get_tab_count() > tab_count:
+				projects.do_close_tab(tab_count)
+				projects.current_tab = previous_tab
 			return fail("cannot load '%s'" % params.path)
 	else:
 		var graph : MMGenBase = await mm_loader.load_gen(params.path)

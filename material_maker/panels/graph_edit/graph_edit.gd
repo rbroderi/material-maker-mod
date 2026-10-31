@@ -780,6 +780,10 @@ func load_file(filename) -> bool:
 		rescued = true
 	else:
 		new_generator = await mm_loader.load_gen(filename)
+	if new_generator != null and not new_generator is MMGenGraph:
+		# Files that are not graphs (e.g. node files) cannot be edited as materials
+		new_generator.free()
+		new_generator = null
 	if new_generator != null:
 		set_save_path(filename)
 		set_new_generator(new_generator)
