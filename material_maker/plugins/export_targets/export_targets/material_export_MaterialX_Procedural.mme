@@ -31,7 +31,7 @@
 		},
 		{
 			"conditions": "not $(connected:metallic_tex)",
-			"expression": "f=$metallic_tex($uv)",
+			"expression": "f=$metallic",
 			"file_name": "$(path_prefix)_baked_metallic.png",
 			"type": "texture"
 		},
