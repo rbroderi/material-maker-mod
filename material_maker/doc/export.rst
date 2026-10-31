@@ -30,8 +30,9 @@ resolution, without a texture budget. Buffers of the graph (for example the ones
 warp and fill nodes) are exported as EXR textures that the shader samples, with the precision
 Material Maker computes them with (16 or 32 bit floats): 8 bit textures would show steps in
 heights and normals, and break the data of fill nodes. The engines import them as uncompressed,
-linear textures (an .import file for Godot, a .meta file for Unity, import settings in the
-script for Unreal).
+linear textures without mipmaps (an .import file for Godot, a .meta file for Unity, import
+settings in the script for Unreal), and the shaders read them at full resolution as Material
+Maker does (the LOD output of buffers does not blur them).
 
 * **Godot 4**: a .gdshader and a .tres ShaderMaterial. The parameters of the graph are shader
   uniforms (with their current values), so they can be changed in Godot's inspector. Coat,

@@ -421,6 +421,16 @@ func process_option_rename_buffers(s : String, is_declaration : bool = false) ->
 		index += 1
 	return s
 
+## Textures are sampled at mipmap level 0, as in Material Maker (whose buffer
+## textures have no mipmaps), even if the engine generates mipmaps: a Buffer's
+## LOD output and Unity's tex2D (that picks a level from the screen-space
+## derivatives) would blur them. Must follow the hlsl, unity and unreal5 options.
+func process_option_sample_level_0(s : String, is_declaration : bool = false) -> String:
+	if is_declaration:
+		s = s.replace("#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, lod)", "#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, 0.0)")
+		s = s.replace("return tex2D(tex, uv);", "return tex2Dlod(tex, float4(uv, 0.0, 0.0));")
+	return s
+
 func process_option_unity(s : String, is_declaration : bool = false) -> String:
 	s = s.replace("elapsed_time", "_Time.y")
 	return s
