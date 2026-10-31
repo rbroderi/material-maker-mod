@@ -11,6 +11,8 @@ const BAKE_MAPS : Array[String] = [ "position", "normal", "tangent", "ambient_oc
 const DEFAULT_BAKE_MAPS : Array[String] = [ "ambient_occlusion", "curvature", "thickness", "normal", "position" ]
 const DEFAULT_HIGH_POLY_MAPS : Array[String] = [ "normal_tangent", "height" ]
 
+const ExportAnimation = preload("res://material_maker/windows/export_animation/export_animation.gd")
+
 
 ## Converts a command line value to a parameter value
 static func parse_value(s : String):
@@ -277,10 +279,13 @@ static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, f
 		return resolved.error
 	var images : Array[Image] = []
 	var digits : int = str(frames).length()
+	# Buffer nodes whose inputs use $time (the buffers that depend on them
+	# follow)
+	var animated_buffers : Array = collect_generators(graph, func(g): return ExportAnimation.is_animated_buffer(g))
 	for frame in frames:
 		MMComputeShader.fixed_time = duration*float(frame)/float(frames)
-		# Buffers are rendered again at this time
-		invalidate_buffers(graph)
+		# They are rendered again at this time (iterations start again)
+		ExportAnimation.invalidate_buffers(animated_buffers)
 		mm_deps.update()
 		var texture : MMTexture = await render_output_texture(resolved.generator, resolved.output, Vector2i(size, size))
 		if separate:
@@ -301,14 +306,6 @@ static func render_flipbook(graph : MMGenBase, node_spec : String, size : int, f
 	if await MMTexture.from_image(sheet).save_to_file(file_name) != OK:
 		return "could not save '%s'" % file_name
 	return ""
-
-## Invalidates the buffers of the nodes of a graph (in its subgraphs too), so
-## they are rendered again
-static func invalidate_buffers(graph : MMGenBase) -> void:
-	for buffer_name in mm_deps.buffers.keys():
-		var object = mm_deps.buffers[buffer_name].object
-		if (object is MMGenBuffer or object is MMGenIterateBuffer or object is MMGenIterateBufferV2 or object is MMGenGpuReduction or object is MMGenSbsFxMap) and graph.is_ancestor_of(object):
-			mm_deps.buffer_invalidate(buffer_name)
 
 ## The generators under root (in its subgraphs too, and including the
 ## buffers that are children of nodes, such as value processors') for which
