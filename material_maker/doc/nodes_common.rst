@@ -76,6 +76,9 @@ Parameters are used to configure nodes. The following types are supported:
   same material). Other predefined material types can fully benefit from this
   feature.
 
+  In the loop of an **Iterate Buffer** node, the *$iteration* variable holds the
+  number of the current iteration (it is 0 everywhere else).
+
   Randomness can be added to any node by using the *$rnd(min, max)* function,
   that will generate a random number between *min* and *max*. The node's seed
   can then be modified, copied or locked using the die button. Alternatively,

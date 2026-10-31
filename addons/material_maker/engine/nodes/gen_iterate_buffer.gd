@@ -72,7 +72,8 @@ func get_parameter_defs() -> Array:
 		{ name="size", label="Size", type="size", first=4, last=13, default=4 },
 		{ name="shrink", label="Shrink", type="boolean", default=false },
 		{ name="autostop", label="Auto stop", type="boolean", default=false },
-		{ name="iterations", label="Iterations", type="float", min=1, max=50, step=1, default=5 },
+		{ name="iterations", label="Iterations", type="float", min=1, max=50, step=1, default=5,
+			longdesc="Number of loop iterations: a number or an expression of named parameters ($name), that can be larger than the slider's maximum" },
 		{ name="filter", label="Filter", type="boolean", default=true },
 		{ name="mipmap", label="Mipmap", type="boolean", default=true },
 		{ name="f32", label="32 bits", type="boolean", default=false }
@@ -111,6 +112,9 @@ func do_update_shaders() -> void:
 	var new_is_greyscale = true
 	for i in 2:
 		var context : MMGenContext = MMGenContext.new()
+		# $iteration in the loop's shaders
+		if i == 1:
+			context.iteration_variable = iteration_param_name
 		var source_output = get_source(i)
 		if source_output != null:
 			sources[i] = source_output.generator.get_shader_code("uv", source_output.output_index, context)
