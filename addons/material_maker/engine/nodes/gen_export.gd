@@ -89,6 +89,10 @@ func export_material(prefix : String, _profile : String, size : int = 0, command
 		size = get_image_size()
 	var source = get_source(0)
 	if source != null:
+		# Buffers used by the source may not be rendered yet (e.g. when exporting
+		# from the command line right after loading the graph): wait until the
+		# render queue is empty, as material exports do
+		await MMGenMaterial.wait_for_render_queue()
 		var texture : MMTexture = await source.generator.render_output_to_texture(source.output_index, Vector2i(size, height if height > 0 else size))
 		if parameters.suffix != "":
 			var filename : String = interpret_file_name(parameters.suffix, prefix.get_base_dir())

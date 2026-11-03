@@ -885,7 +885,8 @@ func export_material_with_profile(prefix : String, profile : String, size : int 
 ## while iterate buffers iterate, so this does not stop when it is stable
 ## (that exported textures of unfinished iterate buffers), but only gives up
 ## when it does not change for a long time (a buffer that never finishes).
-func wait_for_render_queue() -> void:
+## Also used by Export nodes.
+static func wait_for_render_queue() -> void:
 	const STUCK_TIMEOUT_MS : int = 60000
 	var render_queue_size : int = mm_deps.get_render_queue_size()
 	var render_progress : int = mm_deps.render_progress
