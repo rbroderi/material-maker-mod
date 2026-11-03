@@ -116,7 +116,7 @@
 							"$definitions",
 							"void vertex() {",
 							"$if $(param:world)",
-							"\ttexcoords_3d = (vec4(VERTEX, 1.0)*WORLD_MATRIX).xyz;",
+							"\ttexcoords_3d = (vec4(VERTEX, 1.0)*MODEL_MATRIX).xyz;",
 							"$else",
 							"\ttexcoords_3d = VERTEX;",
 							"$fi",
