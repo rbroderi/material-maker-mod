@@ -1,0 +1,3 @@
+# Build tree (sources of dependencies, intermediate files, OCIO install)
+build/
+__pycache__/

@@ -1,0 +1,3 @@
+# Build outputs of native/ocio (Material Maker works without them)
+*
+!.gitignore
