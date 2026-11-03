@@ -24,6 +24,8 @@ var is_paused : bool = false
 ## Named parameters used by the size offset expression (their changes resize
 ## the buffer)
 var size_named_parameters : Array = []
+## Why the size offset expression is invalid ("" if it is valid)
+var size_offset_error : String = ""
 ## Dimensions of the buffer in the size uniforms of the shaders that read it
 var published_dimensions : Vector2i = Vector2i(-1, -1)
 
@@ -178,11 +180,32 @@ func get_input_dimensions() -> Vector2i:
 func get_size_relative_to_input(input_width : int) -> int:
 	return clamp(roundi(log(float(input_width))/log(2.0))+get_size_offset(), 0, 14)
 
-## The size offset (an expression of named parameters, or a number)
+## Returns the size offset (rounded to an integer). It can be an expression
+## of the graph's named parameters, that are then kept in size_named_parameters.
+## Invalid expressions give 0 and set size_offset_error.
 func get_size_offset() -> int:
+	if version != VERSION_COMPLEX:
+		return 0
 	var offset : Dictionary = calculate_float_parameter("size_offset")
 	size_named_parameters = offset.get("used_named_parameters", [])
-	return roundi(offset.get("value", 0.0))
+	var error : String = ""
+	var value : float = 0.0
+	if offset.has("value") and is_finite(offset.value):
+		value = offset.value
+	else:
+		error = offset.get("error", "not a number")
+	if error != size_offset_error:
+		size_offset_error = error
+		if error != "":
+			push_warning("Buffer %s: invalid size offset \"%s\" (%s), 0 is used instead" % [ name, str(get_parameter("size_offset")), error ])
+	return roundi(value)
+
+## A warning shown under the node when the size offset is invalid
+func get_size_warning() -> String:
+	if version != VERSION_COMPLEX or int(get_parameter("size_mode")) == SIZE_MODE_ABSOLUTE:
+		return ""
+	get_size_offset()
+	return "Invalid size offset" if size_offset_error != "" else ""
 
 ## Returns the buffer's size (as log2), that depends on its size mode
 func get_buffer_size() -> int:
@@ -329,6 +352,10 @@ func update_buffer_size() -> void:
 		# Remote nodes can set the size before the buffer is created
 		var buffer_name : String = "o%d_tex" % get_instance_id()
 		if mm_deps.buffers.has(buffer_name):
+			# The size offset may use other named parameters
+			get_size_offset()
+			for p in size_named_parameters:
+				mm_deps.buffer_add_dependency(buffer_name, p)
 			mm_deps.buffer_invalidate(buffer_name)
 
 func get_input_defs() -> Array:
@@ -386,8 +413,10 @@ func do_update_shader() -> void:
 			if version == VERSION_OLD:
 				notify_output_change(1)
 		await mm_deps.buffer_create_compute_material("o%d_tex" % get_instance_id(), shader_compute)
-		# Named parameters of the size offset resize the buffer
-		get_buffer_size()
+		# The buffer is resized when the named parameters of its size offset
+		# change (also registered in Absolute mode, so they are in place if the
+		# size mode changes)
+		get_size_offset()
 		for p in size_named_parameters:
 			mm_deps.buffer_add_dependency("o%d_tex" % get_instance_id(), p)
 		mm_deps.update()
@@ -395,9 +424,10 @@ func do_update_shader() -> void:
 		print("buffer is invalid")
 
 func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
-	if parameter_name in size_named_parameters:
-		# The buffer is resized (and rendered again)
-		return false
+	if parameter_name in size_named_parameters and not shader_compute.get_parameters().has(parameter_name):
+		# Only the size offset uses this named parameter: the buffer is resized
+		# and rendered again, unless the size offset is not used
+		return version != VERSION_COMPLEX or int(get_parameter("size_mode")) == SIZE_MODE_ABSOLUTE
 	if value != null:
 		shader_compute.set_parameter(parameter_name, value)
 	return false

@@ -378,24 +378,47 @@ func get_parameter(n : String):
 		var parameter_def = get_parameter_def(n)
 		return parameter_def.default
 
+## Evaluates a float parameter that can be an expression of the graph's named
+## parameters ($name). Returns a dictionary with the numeric value (missing if
+## the expression is invalid, error then describes the problem) and, for
+## expressions, the ids of the named parameters it uses.
 func calculate_float_parameter(n : String) -> Dictionary:
 	var return_value : Dictionary = {}
 	var value = get_parameter(n)
-	if value is float:
-		return_value.value = value
+	if value is float or value is int:
+		return_value.value = float(value)
 	elif value is String:
 		var parent : Node = get_parent()
-		if parent.has_method("get_named_parameters"):
+		if parent != null and parent.has_method("get_named_parameters"):
 			return_value.used_named_parameters = []
-			var named_parameters : Dictionary = get_parent().get_named_parameters()
-			for np in named_parameters.keys():
-				if value.find("$"+np) != -1:
+			var named_parameters : Dictionary = parent.get_named_parameters()
+			# Replace whole names only ($size must not change $size2)
+			var regex : RegEx = RegEx.create_from_string("\\$([A-Za-z_][A-Za-z0-9_]*)")
+			var replaced : String = ""
+			var last : int = 0
+			for m in regex.search_all(value):
+				var np : String = m.get_string(1)
+				if not named_parameters.has(np):
+					return_value.error = "unknown named parameter $"+np
+					continue
+				if not named_parameters[np].id in return_value.used_named_parameters:
 					return_value.used_named_parameters.push_back(named_parameters[np].id)
-					value = value.replace("$"+np, str(named_parameters[np].value))
+				replaced += value.substr(last, m.get_start()-last)+"(%s)" % str(named_parameters[np].value)
+				last = m.get_end()
+			value = replaced+value.substr(last)
 		var expression : Expression = Expression.new()
-		var error = expression.parse(value, [])
-		if error == OK:
-			return_value.value = expression.execute()
+		if return_value.has("error"):
+			pass
+		elif expression.parse(value, []) != OK:
+			return_value.error = expression.get_error_text()
+		else:
+			var result = expression.execute([], null, false)
+			if expression.has_execute_failed():
+				return_value.error = expression.get_error_text()
+			elif not (result is float or result is int):
+				return_value.error = "not a number"
+			else:
+				return_value.value = float(result)
 	return return_value
 
 class CustomGradientSorter:

@@ -69,6 +69,11 @@ The **Advanced Buffer** node has 3 parameters:
   In *Relative to input* mode, the ratio is applied to the input's, so 1:1 keeps the input's
   width and height (a 1024x512 input gives a 512x256 buffer with a size offset of -1)
 
+When the *size offset* is an expression, changing one of the named parameters it uses resizes
+the buffer and renders it again, with the nodes that read it. If the expression is invalid (a
+syntax error, an unknown named parameter or a result that is not a number), a size offset of 0
+is used, a warning is printed and *Invalid size offset* is shown under the node.
+
 Advanced Buffer nodes show their resolution (for example 512x256 px) and format (16F, 32F or 8 bits, grayscale or RGBA)
 under the node. An orange warning is shown when an 8 bits buffer stores grayscale data (such as
 heights) or feeds a node that computes normals or uses heights, because 256 levels are usually

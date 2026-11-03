@@ -245,14 +245,14 @@ func _draw() -> void:
 		draw_string_outline(buffer_timing_font, Vector2i(0, size.y+12), str(generator.rendering_time)+"ms", HORIZONTAL_ALIGNMENT_CENTER, size.x, 12, 4, Color.BLACK)
 		draw_string(buffer_timing_font, Vector2i(0, size.y+12), str(generator.rendering_time)+"ms", HORIZONTAL_ALIGNMENT_CENTER, size.x, 12, time_color)
 		@warning_ignore_restore("narrowing_conversion")
-	# Size and format of buffers, and precision warnings
+	# Size and format of buffers, and size and precision warnings
 	if generator.has_method("get_badge"):
 		var badge_font : Font = preload("res://material_maker/theme/font_rubik/Rubik-416.ttf")
 		var y : int = int(size.y)+(26 if generator.rendering_time > 0 else 12)
 		var lines : Array = [ [ generator.get_badge(), Color(0.75, 0.75, 0.75) ] ]
-		var warning : String = generator.get_precision_warning()
-		if warning != "":
-			lines.append([ warning, Color(1.0, 0.65, 0.2) ])
+		for warning in [ generator.get_size_warning(), generator.get_precision_warning() ]:
+			if warning != "":
+				lines.append([ warning, Color(1.0, 0.65, 0.2) ])
 		for l in lines:
 			draw_string_outline(badge_font, Vector2i(0, y), l[0], HORIZONTAL_ALIGNMENT_CENTER, int(size.x), 12, 4, Color.BLACK)
 			draw_string(badge_font, Vector2i(0, y), l[0], HORIZONTAL_ALIGNMENT_CENTER, int(size.x), 12, l[1])
