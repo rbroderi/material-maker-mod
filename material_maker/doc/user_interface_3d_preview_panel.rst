@@ -49,3 +49,17 @@ Rotating the object or the camera will automatically disable the object's rotate
 
 The mouse wheel can be used to move the camera along its longitudinal axis (hense zooming
 forward or backward).
+
+The *Export* menu's *Render* section makes presentation renders of the previewed object
+from the current view:
+
+* **Path traced render...** renders the object with a progressive GPU path tracer and saves
+  it as a PNG (tone mapped as the preview) or linear EXR file. The object is lit by the
+  environment's panorama (the sun is not used yet), and its material uses the Material
+  node's albedo, metallic, roughness, emission, normal, coat and sheen (depth is not
+  used). *Samples* sets the quality and *Transparent background* removes the background.
+
+* **Turntable...** renders a full turn of the object with the 3D preview, as a sprite sheet,
+  or as a PNG sequence if the file name contains ``#`` (replaced by the frame number).
+
+*Size* is the size of the rendered images.

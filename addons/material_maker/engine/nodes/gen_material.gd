@@ -6,6 +6,18 @@ class_name MMGenMaterial
 var buffer_name_prefix : String
 
 var export_last_target : String = ""
+
+## Outputs of the standard Material node (material.mmg), used by the path
+## tracer
+const OUTPUT_ALBEDO : int = 0
+const OUTPUT_ORM : int = 1
+const OUTPUT_EMISSION : int = 2
+const OUTPUT_NORMAL : int = 3
+const OUTPUT_DEPTH : int = 4
+const OUTPUT_SSS : int = 5
+const OUTPUT_HEIGHT : int = 8
+const OUTPUT_EXTRA : int = 14
+const OUTPUT_TRANSMISSION : int = 19
 var export_paths : Dictionary = {}
 var uids = {}
 
