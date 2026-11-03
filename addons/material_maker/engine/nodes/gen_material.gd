@@ -206,6 +206,8 @@ func update() -> void:
 		return
 	var processed_preview_shader : String = process_conditionals(shader_model.preview_shader)
 	preview_conditionals = processed_preview_shader
+	if MMOpenPBRPreview.is_enabled():
+		processed_preview_shader = MMOpenPBRPreview.apply(processed_preview_shader, shader_model.preview_shader)
 	var result = process_shader(processed_preview_shader)
 	result.shader_code = MMGenBase.remove_constant_declarations(result.shader_code)
 	mm_deps.buffer_create_shader_material(buffer_name_prefix, MMShaderMaterial.new(preview_material), result.shader_code)

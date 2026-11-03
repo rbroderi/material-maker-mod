@@ -43,8 +43,37 @@ func _ready() -> void:
 			2: SpeedMedium.button_pressed = true
 			3: SpeedFast.button_pressed = true
 
+	add_shading_option()
+
 func _open() -> void:
-	pass
+	if openpbr != null:
+		openpbr.set_pressed_no_signal(MMOpenPBRPreview.is_enabled())
+
+var openpbr : CheckBox = null
+
+## Adds the shading model option of the preview: Godot's, or an
+## approximation of OpenPBR (see MMOpenPBRPreview)
+func add_shading_option() -> void:
+	var grid : GridContainer = $VBoxContainer/Model
+	var label : Label = Label.new()
+	label.theme_type_variation = &"MM_PanelMenuSubPanelLabel"
+	label.text = "Shading"
+	grid.add_child(label)
+	openpbr = CheckBox.new()
+	openpbr.text = "OpenPBR"
+	openpbr.tooltip_text = "Lights the preview with an approximation of the OpenPBR surface model (coat, fuzz, anisotropy and transmission layered as in OpenPBR)"
+	openpbr.set_pressed_no_signal(MMOpenPBRPreview.is_enabled())
+	openpbr.toggled.connect(_on_openpbr_toggled)
+	grid.add_child(openpbr)
+
+func _on_openpbr_toggled(toggled_on : bool) -> void:
+	mm_globals.set_config(MMOpenPBRPreview.SETTING, toggled_on)
+	# Regenerate the preview shaders of the Material nodes of all projects
+	var projects = mm_globals.main_window.projects_panel.get_projects()
+	for i in projects.get_tab_count():
+		var project = projects.get_tab(i)
+		if project.has_method("get_material_node") and project.get_material_node() != null:
+			project.get_material_node().update()
 
 func update_model_selector() -> void:
 	var objects_count : int = preview3D.objects.get_child_count()

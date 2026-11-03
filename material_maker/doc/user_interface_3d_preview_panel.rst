@@ -36,6 +36,12 @@ When generating a map from a custom mesh, an image node for the generated map wi
 be stored in the clipboard, and it is possible to directly paste that node into about
 a material graph.
 
+The *Model* menu also has an **OpenPBR** shading option, that replaces Godot's direct lighting
+in the preview with an approximation of the OpenPBR surface model: a coat (IOR 1.6) over
+fuzz (sheen) over an anisotropic GGX base, with thin walled transmission. Godot does not allow
+replacing its whole lighting model, so ambient light and reflections still use Godot's model.
+This option only changes the preview: exported materials are not modified.
+
 The *Environment* menu provides different environments, as well as tonemap options.
 
 In the 3D view, the view can be rotated about the yaw and the pitch axes (from the
