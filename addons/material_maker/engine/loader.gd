@@ -191,9 +191,12 @@ func load_gen(filename: String) -> MMGenBase:
 		var data = string_to_dict_tree(file.get_as_text())
 		if data != null:
 			current_project_path = filename.get_base_dir()
+			missing_node_types = PackedStringArray()
 			var generator = await create_gen(data)
 			if generator:
 				generator.set_meta("file_path", filename)
+				if not missing_node_types.is_empty():
+					push_warning("%s: nodes of unknown types (%s) were loaded as placeholders" % [ filename.get_file(), ", ".join(missing_node_types) ])
 			current_project_path = ""
 			return generator
 	return null
@@ -221,6 +224,8 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 		if g != null:
 			g.orig_name = g.name
 			var orig_name = g.name
+			if g is MMGenMissing:
+				g.set_port_counts(connections)
 			if gen_graph.add_generator(g):
 				g.position += position
 				rv.generators.append(g)
@@ -237,6 +242,9 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 		else:
 			print("Cannot connect %s:%d to %s:%d" % [c.from, c.from_port, c.to, c.to_port])
 	return rv
+
+## Types of the nodes that were loaded as placeholders (reset by load_gen)
+var missing_node_types : PackedStringArray = PackedStringArray()
 
 func fix_data(data : Dictionary) -> Dictionary:
 	if data.has("nodes") and data.has("connections") and data.has("label") and data.label == "HBAO":
@@ -313,6 +321,12 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 					print("Cannot find description for "+data.type)
 				else:
 					generator.model = data.type
+		if generator == null and data.type is String and data.type != "":
+			# Nodes of unknown types are kept as placeholders
+			if not data.type in missing_node_types:
+				missing_node_types.append(data.type)
+				push_warning("Unknown node type %s, loaded as a placeholder" % data.type)
+			generator = MMGenMissing.new()
 		if generator != null:
 			generator.name = data.type
 	if generator == null:
