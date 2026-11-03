@@ -827,6 +827,7 @@ func export_material_with_profile(prefix : String, profile : String, size : int 
 		progress_dialog.queue_free()
 	if dim_color_rect != null:
 		dim_color_rect.queue_free()
+	await MMPlugins.call_export_hooks(self, prefix, profile)
 	if error_files == 0:
 		mm_globals.set_tip_text("Files succesfully exported as \"%s\"" % prefix, 5, 1)
 		return

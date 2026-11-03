@@ -1,0 +1,23 @@
+{
+	"name": "Example plugin",
+	"lib": [
+		{
+			"icon_data": "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAKRJREFUeJzt0LENgEAQxMA7+u/5SaGCkcDOVptY3pk58+Cc15zdnS//1/ycAmgBTQG0gKYAWkBTAC2gKYAW0BRAC2gKoAU0BdACmgJoAU0BtICmAFpAUwAtoCmAFtAUQAtoCqAFNAXQApoCaAFNAbSApgBaQFMALaApgBbQFEALaAqgBTQF0AKaAmgBTQG0gKYAWkBTAC2gKYAW0BRAC2gKoAU0N7sRGXx1jitrAAAAAElFTkSuQmCC",
+			"name": "example_stripes",
+			"parameters": {
+				"count": 8.0
+			},
+			"tree_item": "Example/Stripes",
+			"type": "example_stripes"
+		},
+		{
+			"icon_data": "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAYAAACqaXHeAAAAAXNSR0IArs4c6QAAAShJREFUeJztm8EOwyAMQ2Hi/3+ZnZcdIhTKo7LfbdqglmXStLA+55xtgd77z+c4PPv+Nj60ABobQAugGXHNRnav4ex6p5FPgA2gBdCM7D7+NHSfIJ8AG0ALoBnVCXbXjNM1SD4BNoAWQLNcA7L7dnUNr86/2kfE8fIJsAG0AJq0BrztfcFqjZBPgA2gBdCkNYB+Xt99/TiffAJsAC2AptwHnGZVT/Z7+QTYAFoAzfV9QEZVn3wCbAAtgCY9HxB5e18QkU+ADaAF0JTPB5zuE3bvG8gnwAbQAmjK5wMip88LeG+wiA2gBdBsrwGR2/YOI/IJsAG0AJrHa0DktmcN+QTYAFoAzV8NqK651fFP7/9nyCfABtACaHprrbQI6f8cVZFPgA2gBdB8ARyGVpaBcjXhAAAAAElFTkSuQmCC",
+			"name": "example_maze",
+			"parameters": {
+				"size": 16.0
+			},
+			"tree_item": "Example/Maze",
+			"type": "example_maze"
+		}
+	]
+}

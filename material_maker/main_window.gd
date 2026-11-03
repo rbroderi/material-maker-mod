@@ -117,6 +117,7 @@ const MENU : Array[Dictionary] = [
 	{ menu="Tools/Set painting environment", submenu="paint_environment", mode="paint", not_in_ports=["HTML5"] },
 	{ menu="Tools/-" },
 	{ menu="Tools/Environment editor", command="environment_editor", not_in_ports=["HTML5"] },
+	{ menu="Tools/Plugins...", command="show_plugins", not_in_ports=["HTML5"] },
 	#{ menu="Tools/Generate screenshots for the library nodes", command="generate_screenshots", mode="material" },
 
 	{ menu="Help/User manual", command="show_doc", shortcut="F1" },
@@ -187,6 +188,11 @@ func _ready() -> void:
 
 	# Set window title
 	get_window().set_title(ProjectSettings.get_setting("application/config/name")+" v"+ProjectSettings.get_setting("application/config/actual_release"))
+
+	# Plugins add nodes, libraries, export targets and menu items
+	MMPlugins.load_plugins()
+	for l in MMPlugins.get_libraries():
+		node_library_manager.add_plugin_library(l)
 
 	layout.load_panels()
 	library = get_panel("Library")
@@ -274,10 +280,42 @@ func do_update_menus() -> void:
 	else:
 		menu_bar_class = mm_globals.menu_manager.MenuBarGodot
 	var menu_bar = menu_bar_class.new($VBoxContainer/TopBar/Menu)
-	mm_globals.menu_manager.create_menus(MENU, self, menu_bar)
+	mm_globals.menu_manager.create_menus(get_menu_definition(), self, menu_bar)
 	menu_update_requested = false
 
+## The main menu, with the items of plugins (in the Plugins menu, or after an
+## item of another menu)
+func get_menu_definition() -> Array[Dictionary]:
+	var menu : Array[Dictionary] = MENU.duplicate()
+	for i in MMPlugins.menu_items.size():
+		var item : Dictionary = MMPlugins.menu_items[i]
+		var entry : Dictionary = { menu=item.menu+"/"+item.label, command="run_plugin_menu_item", command_parameter=i }
+		# After the given item, or at the end of the menu
+		var position : int = -1
+		var after_position : int = -1
+		for j in menu.size():
+			if menu[j].menu.begins_with(item.menu+"/"):
+				position = j+1
+			if item.after != "" and menu[j].menu == item.menu+"/"+item.after:
+				after_position = j+1
+		if after_position != -1:
+			position = after_position
+		if position == -1:
+			menu.append(entry)
+		else:
+			menu.insert(position, entry)
+	return menu
+
+func run_plugin_menu_item(index : int) -> void:
+	MMPlugins.menu_items[index].callable.call()
+
+func show_plugins() -> void:
+	var dialog = load("res://material_maker/windows/plugins/plugins_dialog.gd").new()
+	add_child(dialog)
+	dialog.popup_centered(Vector2i(560, 400))
+
 func _exit_tree() -> void:
+	MMPlugins.unload_plugins()
 	# Save the window position and size to remember it when restarting the application
 	mm_globals.config.set_value("window", "screen", get_window().current_screen)
 	mm_globals.config.set_value("window", "maximized", (get_window().mode == Window.MODE_MAXIMIZED) || ((get_window().mode == Window.MODE_EXCLUSIVE_FULLSCREEN) or (get_window().mode == Window.MODE_FULLSCREEN)))

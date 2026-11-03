@@ -14,6 +14,7 @@ modes. The window is minimized (rendering needs a GPU), unless **--show-window**
  material_maker --render --node <node[:output]> [options] <input_files>
  material_maker --bake [--maps <map,...>] [options] <mesh_files>
  material_maker --list-parameters <input_files>
+ material_maker --plugin <command> [<arguments>]
  material_maker -- --help
 
 Input files are .ptex files (wildcards are accepted). The mode and options can be given before
@@ -32,6 +33,8 @@ Modes
   thickness, curvature, seams, adjacency) of .obj, .gltf, .glb or .fbx meshes to files named
   <mesh>_<map>.png
 * **--list-parameters** lists the parameters that can be set with **--set**, with their values
+* **--plugin <command> [<arguments>]** runs a command of a plugin (see :ref:`plugins-section`),
+  with the arguments that follow it
 
 Options
 -------
