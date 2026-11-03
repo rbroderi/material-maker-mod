@@ -33,6 +33,9 @@ var texture_id : int = 0
 var rendered : bool = false
 ## RAM copy of a spilled texture, uploaded again by get_texture_rid()
 var spilled_image : Image = null
+## The rendering device texture that was last counted in the peak memory
+## (see register())
+var counted_rid : RID = RID()
 
 const BYTES_PER_PIXEL : Dictionary = {
 	RenderingDevice.DATA_FORMAT_R16_SFLOAT: 2,
@@ -83,8 +86,14 @@ func touch() -> void:
 	register.call_deferred()
 
 func register() -> void:
-	if rid.is_valid() and not gpu_textures.has(texture_id):
-		gpu_textures[texture_id] = weakref(self)
+	if rid.is_valid():
+		if not gpu_textures.has(texture_id):
+			gpu_textures[texture_id] = weakref(self)
+		# The memory used by the textures only grows when one of them gets a
+		# new rendering device texture (rendered, resized or uploaded again)
+		if rid != counted_rid and mm_renderer:
+			counted_rid = rid
+			mm_renderer.update_peak_texture_memory()
 	if mm_renderer:
 		mm_renderer.request_texture_budget_check()
 

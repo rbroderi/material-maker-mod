@@ -128,7 +128,8 @@ var rendering_device_served : int = 0
 ## (buffers, images...), in bytes
 var peak_texture_memory : int = 0
 
-## Updates peak_texture_memory (in the main thread)
+## Updates peak_texture_memory (called when a texture gets a new rendering
+## device texture, see MMTexture.register())
 func update_peak_texture_memory() -> void:
 	peak_texture_memory = max(peak_texture_memory, MMTexture.get_gpu_memory_usage().bytes)
 
@@ -192,13 +193,9 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 		rendering_thread_working = false
 		if is_inside_tree():
 			await get_tree().process_frame
-		# Textures are registered in deferred calls
-		update_peak_texture_memory()
 		return rv
 	else:
-		var rv = await c.callv(p)
-		update_peak_texture_memory()
-		return rv
+		return await c.callv(p)
 
 func create_rendering_device():
 	rendering_device = RenderingServer.create_local_rendering_device()
