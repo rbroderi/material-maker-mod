@@ -81,8 +81,8 @@ func update_node() -> void:
 	for i in range(parameter_count):
 		var p = generator.get_parameter_defs()[i]
 		var control = create_parameter_control(p, false)
-		setup_linked_control_callbacks(control, false)
 		if control != null:
+			setup_linked_control_callbacks(control, false)
 			control.name = p.name
 			controls[control.name] = control
 			var widget = generator.get_widget(p.name)
@@ -349,7 +349,10 @@ func annotate_linked_controls(p : String, is_setup : bool) -> void:
 	var widget : Dictionary = generator.get_widget(p)
 	if not widget.is_empty() and widget.type == "linked_control":
 		for w in widget.linked_widgets:
-			var node : GraphNode = get_parent().get_node(NodePath("node_" + w.node))
+			var node : GraphNode = get_parent().get_node_or_null(NodePath("node_" + w.node))
+			# Placeholders for unknown node types have no controls
+			if node == null or not node.controls.has(w.widget):
+				continue
 			var control : Control = node.controls[w.widget]
 			var linked_params : Array[Dictionary]
 
