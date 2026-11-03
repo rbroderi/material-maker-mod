@@ -37,7 +37,7 @@ static func get_animated_buffers(buffer_names : Array[String]) -> Array:
 ## True if generator is a buffer node (that is not paused) and one of its
 ## inputs uses $time
 static func is_animated_buffer(generator : Object) -> bool:
-	if not (generator is MMGenBuffer or generator is MMGenIterateBuffer or generator is MMGenIterateBufferV2 or generator is MMGenGpuReduction or generator is MMGenSbsFxMap):
+	if not (generator is MMGenBuffer or generator is MMGenIterateBuffer or generator is MMGenIterateBufferV2 or generator is MMGenGpuReduction or (generator is MMGenBase and generator.get_type() == "sbs_fxmap")):
 		return false
 	if generator.get("is_paused") == true:
 		return false

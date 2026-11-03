@@ -273,7 +273,6 @@ var node_types : Dictionary = {
 	paint_layer = MMGenPaintLayer,
 	iterate_buffer = MMGenIterateBuffer,
 	iterate_buffer_v2 = MMGenIterateBufferV2,
-	sbs_fxmap = MMGenSbsFxMap,
 	statistics = MMGenStatistics,
 	pixel_processor = MMGenPixelProcessor,
 	value_processor = MMGenValueProcessor,

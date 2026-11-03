@@ -55,6 +55,10 @@ func extract_ifs(shader : String) -> Array:
 	var level : int = 0
 	ifs.push_back({ type=SHARP_IF, condition=true, level=level, start=0, end=0 })
 	var expr : Expression = Expression.new()
+	# For each open #if: true if it is evaluated here, false for #ifdef and
+	# #ifndef, that are left to the shader compiler with their #elif, #else
+	# and #endif
+	var evaluated : Array[bool] = []
 	while true:
 		var next_level : int = level
 		var next_sharp : int = shader.find("#", start)
@@ -64,7 +68,19 @@ func extract_ifs(shader : String) -> Array:
 			break
 		var eol : int = shader.find("\n", next_sharp)
 		var line = shader.substr(next_sharp, eol-next_sharp)
+		if line.left(6) == "#ifdef" or line.left(7) == "#ifndef":
+			evaluated.push_back(false)
+			start = next_sharp + 1
+			continue
+		elif (line.left(5) == "#elif" or line.left(5) == "#else") and not evaluated.is_empty() and not evaluated.back():
+			start = next_sharp + 1
+			continue
+		elif line.left(6) == "#endif" and not evaluated.is_empty() and not evaluated.back():
+			evaluated.pop_back()
+			start = next_sharp + 1
+			continue
 		if line.left(3) == "#if":
+			evaluated.push_back(true)
 			type = SHARP_IF
 			condition=line.right(-3)
 			level += 1
@@ -77,6 +93,8 @@ func extract_ifs(shader : String) -> Array:
 		elif line.left(6) == "#endif":
 			type = SHARP_ENDIF
 			next_level -= 1
+			if not evaluated.is_empty():
+				evaluated.pop_back()
 		else:
 			start = next_sharp + 1
 			continue

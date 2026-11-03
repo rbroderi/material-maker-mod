@@ -167,7 +167,7 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   options }**)
 * node types implemented by scripts: **api.add_node_type(type, script)**, for nodes that shader
   definitions (.mmg files) cannot describe. **script** extends **MMGenBase** (see the engine's
-  generators, such as **MMGenSbsFxMap**), and nodes whose **"type"** is **type** in graph files
+  generators, such as **MMGenIterateBufferV2**), and nodes whose **"type"** is **type** in graph files
   are created from it. The types of Material Maker's nodes and node definitions cannot be
   replaced, and a type that another plugin already added is not replaced either (the plugin gets
   an error)
@@ -218,7 +218,7 @@ also loaded by versions that do not save it, in a line of the graph's long descr
   and the plugins they come from (**{ "example_stripes": "example" }**, **""** for other types)
 * **features**: features of this fork: buffer_release, buffer_size_relative_to_input,
   buffer_size_expressions, pass_size, iterate_buffer_v2, iteration_variable, unorm16, rg_formats,
-  store_rounding, node_types, missing_node_placeholders, sbs_fxmap
+  store_rounding, node_types, missing_node_placeholders
 
 When a graph is saved, the plugins of its nodes (node types added by plugin scripts and node
 definitions of plugins, also in subgraphs) are added to its **requires**, with the installed version
