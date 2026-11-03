@@ -54,12 +54,16 @@ states, that are connected to the loop. All states are rendered by a single shad
 iteration, so the loop always reads the states of the previous iteration. Its parameters are:
 
 * the number of *states* (1 to 4)
-* the *size mode*, *size* and *size offset*, as in the Advanced Buffer node
+* the *size mode*, *size*, *size offset* and *aspect ratio*, as in the Advanced Buffer node
 * the number of *iterations*, a number or an expression of named parameters and of *$pass_size*
-  (the width of the states in pixels)
-* *filter*, and the *rounding* of 8 and 16 bits integer states
+  (the width of the states in pixels). Names are replaced whole ($size does not change $size2)
+* *filter*, and the *rounding* of the states that are not 32 bits floats (for the format really
+  used, if the GPU does not support the selected one)
 * the *format* of each state (16 or 32 bits floats, 8 or 16 bits integers), and whether it only
   stores the *RG* channels
+
+The node shows the size and the format of each state, and a warning when the number of
+iterations or the size offset is an invalid expression.
 
 In the loop, *$iteration* is 1 for the first loop pass, and *iterations* loop passes follow the
 initialization.

@@ -250,7 +250,8 @@ func _draw() -> void:
 		var badge_font : Font = preload("res://material_maker/theme/font_rubik/Rubik-416.ttf")
 		var y : int = int(size.y)+(26 if generator.rendering_time > 0 else 12)
 		var lines : Array = [ [ generator.get_badge(), Color(0.75, 0.75, 0.75) ] ]
-		for warning in [ generator.get_size_warning(), generator.get_precision_warning() ]:
+		var size_warning : String = generator.get_size_warning() if generator.has_method("get_size_warning") else ""
+		for warning in [ size_warning, generator.get_precision_warning() ]:
 			if warning != "":
 				lines.append([ warning, Color(1.0, 0.65, 0.2) ])
 		for l in lines:
