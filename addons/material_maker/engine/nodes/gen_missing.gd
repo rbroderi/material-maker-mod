@@ -3,8 +3,9 @@ extends MMGenBase
 class_name MMGenMissing
 
 
-## Placeholder for a node whose type is unknown (for example a node of a newer
-## version of Material Maker, or of a node library that is not installed).
+## Placeholder for a node whose type is unknown (for example a node of a plugin
+## that is not installed or enabled, of a newer version of Material Maker, or
+## of a node library that is not installed).
 ## It keeps the node's data and connections, saves them unchanged, and outputs
 ## magenta.
 
@@ -22,7 +23,10 @@ func get_type_name() -> String:
 	return "Missing: %s" % get_type()
 
 func get_description() -> String:
-	return "This node's type (%s) is unknown: it may come from a newer version of Material Maker or from a node library that is not installed. It outputs magenta, and is saved unchanged with the graph." % get_type()
+	var plugin : String = MMPlugins.get_missing_node_type_plugin(get_type())
+	if plugin != "":
+		return "This node's type (%s) is unknown: it comes from %s. It outputs magenta, and is saved unchanged with the graph." % [ get_type(), plugin ]
+	return "This node's type (%s) is unknown: it may come from a plugin that is not installed or enabled, from a newer version of Material Maker or from a node library that is not installed. It outputs magenta, and is saved unchanged with the graph." % get_type()
 
 ## Sets the port counts from the connections of the graph that contains the
 ## node (the node's definition, that would give them, is missing)

@@ -68,7 +68,8 @@ the node's data with anything else it saves (and **_deserialize(data)** reads it
 type load from graphs, and the plugin's library can list them (with **"type": "<type>"**
 items). The types of Material Maker's nodes and node definitions cannot be replaced, and a type
 that another plugin already added is not replaced either (plugins are loaded after their
-dependencies). Material Maker cannot load nodes of a plugin that is not installed or enabled.
+dependencies). Nodes of a plugin that is not installed or enabled are loaded as placeholders
+(see below).
 
 .. code-block:: gdscript
 
@@ -76,6 +77,35 @@ dependencies). Material Maker cannot load nodes of a plugin that is not installe
 
     func _enable(api) -> void:
         api.add_node_type("my_node", load(api.plugin_path.path_join("my_node.gd")))
+
+Materials that need plugins
+---------------------------
+
+When a material is saved, the plugins its nodes come from (node types and node definitions of
+plugins, also in subgraphs) are saved in its **requires** dictionary, with the installed version
+of each plugin as minimum version, and the type of each of those nodes. Materials that use no
+plugin nodes have no **requires** dictionary.
+
+.. code-block:: json
+
+    "requires": {
+        "plugins": { "example": ">=1.0" },
+        "node_types": { "example_maze": "example", "example_stripes": "example" }
+    }
+
+When a material is loaded, Material Maker checks that those plugins are installed, enabled
+and recent enough, and that they have those node types. If not, a *Missing requirements*
+dialog names the missing plugins (installed but disabled, not installed, too old or that could
+not be loaded) and their nodes (on the command line, a warning is printed instead, and the
+export goes on). Those nodes are loaded as magenta placeholders: their tooltip names the
+plugin, and they are saved unchanged with the material, with the plugins they need, so the
+material is complete again once the plugin is enabled.
+
+Graph files written by other tools can also list node types (**"node_types": ["type", ...]**)
+and a minimum version of Material Maker (**"material_maker": ">=1.4"**). When the material is
+saved, the plugins it lists that are not available are kept (Material Maker cannot tell whether
+they are still needed), and so are higher minimum versions of plugins and the requirements that
+Material Maker does not know (they are ignored when loading).
 
 The **material_maker/plugins/example** folder contains an example plugin (disabled by default)
 that adds two nodes (a node definition, and a node type that generates a maze) in a library, a

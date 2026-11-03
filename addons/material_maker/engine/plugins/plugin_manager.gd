@@ -25,6 +25,10 @@ class_name MMPlugins
 # missing, too old, disabled, failed to load or depend on it is not loaded.
 # Their scripts can add menu items, command line commands
 # (material_maker --plugin <command> [arguments]), export hooks and node types.
+#
+# Graph files list the plugins whose nodes they use (see
+# get_graph_requirements), and what is missing is reported when they are
+# loaded (see check_requirements).
 
 
 const CONFIG_SECTION : String = "plugins"
@@ -74,6 +78,11 @@ static var commands : Dictionary = {}
 static var export_hooks : Array[Callable] = []
 ## Node types of plugins (type -> { plugin, script })
 static var node_types : Dictionary = {}
+## Node definitions (.mmg files) of plugins (type -> plugin id)
+static var node_definitions : Dictionary = {}
+## Plugins that loaded graphs need for node types that are missing
+## (type -> { plugin, version }, see check_requirements)
+static var missing_node_type_plugins : Dictionary = {}
 static var loaded : bool = false
 static var discovered : bool = false
 static var configs : Dictionary = {}
@@ -224,6 +233,11 @@ static func load_plugin(plugin : Dictionary, config : ConfigFile) -> String:
 	var nodes : String = config.get_value("plugin", "nodes", "")
 	if nodes != "":
 		mm_loader.get_predefined_generators_from_dir(path.path_join(nodes))
+		var dir : DirAccess = DirAccess.open(path.path_join(nodes))
+		if dir != null:
+			for file_name in dir.get_files():
+				if file_name.get_extension() == "mmg":
+					node_definitions[file_name.get_basename()] = plugin.id
 	var export_targets : String = config.get_value("plugin", "export_targets", "")
 	if export_targets != "":
 		load_export_targets(path.path_join(export_targets))
@@ -295,6 +309,168 @@ static func load_plugin_file(plugin_id : String, file_name : String) -> Resource
 		if p.id == plugin_id and p.get("loaded", false) and p.error == "":
 			return load(p.path.path_join(file_name))
 	return null
+
+## A plugin's description (empty if it is not installed)
+static func get_plugin(plugin_id : String) -> Dictionary:
+	for p in plugins:
+		if p.id == plugin_id:
+			return p
+	return {}
+
+## The plugin a node type comes from ("" if none): the plugin that adds it,
+## or for a missing type, the plugin a loaded graph said it comes from
+static func get_node_type_plugin(type : String) -> String:
+	if node_types.has(type):
+		return node_types[type].plugin
+	if node_definitions.has(type):
+		return node_definitions[type]
+	if missing_node_type_plugins.has(type) and not mm_loader.has_node_type(type):
+		return missing_node_type_plugins[type].plugin
+	return ""
+
+## What a graph (its data, as saved in .ptex files) needs: the plugins of its
+## nodes (with the installed version as minimum version) and their node types,
+##	{ "plugins": { "example": ">=1.0" }, "node_types": { "example_maze": "example" } }
+## or an empty dictionary. Nodes of missing types keep the plugin (and minimum
+## version) their graph was loaded with. declared is the requirements the
+## graph was loaded with: its plugins that are not loaded (they may still be
+## needed), its higher minimum versions and its other keys (e.g. a
+## "material_maker" minimum version) are kept.
+static func get_graph_requirements(data : Dictionary, declared : Dictionary = {}) -> Dictionary:
+	var rv : Dictionary = {}
+	for k in declared.keys():
+		if not k in [ "plugins", "node_types" ]:
+			rv[k] = declared[k]
+	var required_plugins : Dictionary = {}
+	var required_types : Dictionary = {}
+	var stack : Array = [ data ]
+	while not stack.is_empty():
+		var node = stack.pop_back()
+		if not node is Dictionary:
+			continue
+		if node.get("type") is String:
+			var plugin_id : String = get_node_type_plugin(node.type)
+			if plugin_id != "":
+				required_types[node.type] = plugin_id
+				if mm_loader.has_node_type(node.type):
+					add_required_plugin(required_plugins, plugin_id, get_plugin(plugin_id).version)
+				else:
+					add_required_plugin(required_plugins, plugin_id, missing_node_type_plugins.get(node.type, {}).get("version", ""))
+		if node.get("nodes") is Array:
+			stack.append_array(node.nodes)
+	if declared.get("plugins") is Dictionary:
+		for plugin_id in declared.plugins.keys():
+			var plugin : Dictionary = get_plugin(plugin_id)
+			if required_plugins.has(plugin_id) or not plugin.get("loaded", false) or plugin.error != "":
+				add_required_plugin(required_plugins, plugin_id, declared.plugins[plugin_id])
+	if not required_plugins.is_empty():
+		rv.plugins = required_plugins
+	if not required_types.is_empty():
+		rv.node_types = required_types
+	return rv
+
+## Adds a plugin to the plugins of requirements (id -> ">=version"), keeping
+## the highest minimum version
+static func add_required_plugin(required_plugins : Dictionary, plugin_id : String, requirement) -> void:
+	var version : String = get_required_version(requirement)
+	var previous_version : String = get_required_version(required_plugins.get(plugin_id))
+	if not required_plugins.has(plugin_id) or (version != "" and (previous_version == "" or compare_versions(version, previous_version) > 0)):
+		required_plugins[plugin_id] = (">="+version) if version != "" else ""
+
+## The minimum version of a requirement (">=1.2" or "1.2"), or "" when there
+## is none or it cannot be compared
+static func get_required_version(requirement) -> String:
+	if not requirement is String:
+		return ""
+	var version : String = requirement.strip_edges().trim_prefix(">=").strip_edges()
+	if RegEx.create_from_string("^[0-9]+(\\.[0-9]+)*$").search(version) == null:
+		return ""
+	return version
+
+## What a graph needs that is missing (empty if nothing), from its
+## requirements (see get_graph_requirements; "node_types" can also be a list
+## of types, and "material_maker" a minimum version of Material Maker) and the
+## types of its nodes that were loaded as placeholders. The plugins of missing
+## node types are remembered (see get_node_type_plugin).
+static func check_requirements(requires : Dictionary, placeholder_types : PackedStringArray = PackedStringArray()) -> PackedStringArray:
+	var missing : PackedStringArray = PackedStringArray()
+	var mm_version : String = get_required_version(requires.get("material_maker"))
+	var current_version : String = ProjectSettings.get_setting("application/config/actual_release", "")
+	if mm_version != "" and compare_versions(current_version, mm_version) < 0:
+		missing.append("Material Maker %s or later (this is %s)" % [ mm_version, current_version ])
+	var required_plugins : Dictionary = requires.plugins if requires.get("plugins") is Dictionary else {}
+	var required_types = requires.get("node_types")
+	var unknown_types : PackedStringArray = placeholder_types.duplicate()
+	# Missing node types, by plugin
+	var plugin_types : Dictionary = {}
+	for plugin_id in required_plugins.keys():
+		plugin_types[plugin_id] = PackedStringArray()
+	if required_types is Dictionary:
+		for type in required_types.keys():
+			var plugin_id = required_types[type]
+			if not plugin_id is String or plugin_id == "" or mm_loader.has_node_type(type):
+				continue
+			if not plugin_types.has(plugin_id):
+				plugin_types[plugin_id] = PackedStringArray()
+			plugin_types[plugin_id].append(type)
+			var index : int = unknown_types.find(type)
+			if index != -1:
+				unknown_types.remove_at(index)
+			missing_node_type_plugins[type] = { plugin=plugin_id, version=str(required_plugins.get(plugin_id, "")) }
+	elif required_types is Array:
+		for type in required_types:
+			if type is String and not mm_loader.has_node_type(type) and not type in unknown_types:
+				unknown_types.append(type)
+	# Types that another graph said come from a plugin
+	for type in unknown_types.duplicate():
+		var plugin_id : String = get_node_type_plugin(type)
+		if plugin_id != "":
+			if not plugin_types.has(plugin_id):
+				plugin_types[plugin_id] = PackedStringArray()
+			plugin_types[plugin_id].append(type)
+			unknown_types.remove_at(unknown_types.find(type))
+	for plugin_id in plugin_types.keys():
+		var types : PackedStringArray = plugin_types[plugin_id]
+		var plugin : Dictionary = get_plugin(plugin_id)
+		var version : String = get_required_version(required_plugins.get(plugin_id))
+		var problem : String = ""
+		if plugin.is_empty():
+			problem = "not installed"
+		elif not plugin.enabled:
+			problem = "disabled"
+		elif plugin.error != "":
+			problem = "not loaded: %s" % plugin.error
+		elif version != "" and compare_versions(plugin.version, version) < 0:
+			problem = "version %s or later is needed, %s is installed" % [ version, plugin.version ]
+		elif not types.is_empty():
+			problem = "version %s does not have these node types" % plugin.version
+		if problem == "":
+			continue
+		var description : String = "the plugin \"%s\" (%s)" % [ plugin.get("name", plugin_id), problem ]
+		if not types.is_empty():
+			types.sort()
+			description += ", for nodes of type %s" % ", ".join(types)
+		missing.append(description)
+	if not unknown_types.is_empty():
+		unknown_types.sort()
+		missing.append("nodes of unknown types (%s)" % ", ".join(unknown_types))
+	return missing
+
+## The plugin that a loaded graph said nodes of a missing type come from,
+## with its state (e.g. 'the plugin "Example", which is disabled'), or "" if
+## none did
+static func get_missing_node_type_plugin(type : String) -> String:
+	var plugin_id : String = get_node_type_plugin(type)
+	if plugin_id == "":
+		return ""
+	var plugin : Dictionary = get_plugin(plugin_id)
+	if plugin.is_empty():
+		return "the plugin \"%s\", which is not installed" % plugin_id
+	if not plugin.enabled:
+		return "the plugin \"%s\", which is disabled" % plugin.name
+	if plugin.error != "":
+		return "the plugin \"%s\", which could not be loaded" % plugin.name
+	return "the plugin \"%s\"" % plugin.name
 
 static func unload_plugins() -> void:
 	for p in plugins:

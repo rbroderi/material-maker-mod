@@ -195,8 +195,20 @@ func load_gen(filename: String) -> MMGenBase:
 			var generator = await create_gen(data)
 			if generator:
 				generator.set_meta("file_path", filename)
-				if not missing_node_types.is_empty():
-					push_warning("%s: nodes of unknown types (%s) were loaded as placeholders" % [ filename.get_file(), ", ".join(missing_node_types) ])
+				# Requirements are saved again with the graph (see
+				# MMPlugins.get_graph_requirements), and what is missing is
+				# shown (see MMPlugins.check_requirements)
+				var requires : Dictionary = data.requires if data.get("requires") is Dictionary else {}
+				if not requires.is_empty():
+					generator.set_meta("requires", requires)
+				var missing : PackedStringArray = MMPlugins.check_requirements(requires, missing_node_types)
+				if not missing.is_empty():
+					generator.set_meta("missing_requirements", missing)
+					var message : String = "%s needs %s" % [ filename.get_file(), "; ".join(missing) ]
+					if not missing_node_types.is_empty():
+						generator.set_meta("placeholder_types", missing_node_types)
+						message += " (its nodes of types %s are magenta placeholders)" % ", ".join(missing_node_types)
+					push_warning(message)
 			current_project_path = ""
 			return generator
 	return null

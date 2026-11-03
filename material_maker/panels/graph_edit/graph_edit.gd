@@ -624,7 +624,7 @@ func crash_recovery_save() -> void:
 			if not FileAccess.file_exists(save_crash_recovery_path):
 				break
 			i += 1
-	var data = top_generator.serialize()
+	var data = serialize_graph()
 	var file : FileAccess = FileAccess.open(save_crash_recovery_path, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify(data))
@@ -786,6 +786,7 @@ func load_file(filename) -> bool:
 		if rescued:
 			set_need_save(true)
 		#print("Material has %d buffers" % find_buffers(new_generator))
+		show_missing_requirements(filename, new_generator)
 		return true
 	else:
 		var dialog : AcceptDialog = AcceptDialog.new()
@@ -798,6 +799,24 @@ func load_file(filename) -> bool:
 		dialog.connect("popup_hide", Callable(dialog, "queue_free"))
 		dialog.popup_centered()
 		return false
+
+## Tells what a loaded graph needs that is missing (plugins..., see
+## MMPlugins.check_requirements)
+func show_missing_requirements(filename : String, graph : MMGenBase) -> void:
+	var missing : PackedStringArray = graph.get_meta("missing_requirements", PackedStringArray())
+	if missing.is_empty():
+		return
+	var text : String = "%s needs:\n\n- %s\n\n" % [ filename.get_file(), "\n- ".join(missing) ]
+	text += "Plugins are installed, enabled and disabled in Tools > Plugins... (changes are applied when Material Maker starts again)."
+	if graph.has_meta("placeholder_types"):
+		text += "\n\nNodes of missing types are shown as magenta placeholders, and are saved unchanged with the material."
+	var dialog = preload("res://material_maker/windows/accept_dialog/accept_dialog.tscn").instantiate()
+	dialog.title = "Missing requirements"
+	dialog.dialog_text = text
+	dialog.dialog_autowrap = true
+	dialog.min_size.x = 600
+	mm_globals.main_window.add_dialog(dialog)
+	dialog.ask()
 
 func load_from_data(filename, data) -> bool:
 	var test_json_conv = JSON.new()
@@ -817,10 +836,20 @@ func load_from_recovery(filename) -> bool:
 	if new_generator != null:
 		set_new_generator(new_generator)
 		set_need_save(true)
+		show_missing_requirements(filename, new_generator)
 		return true
 	return false
 
 # Save
+
+## The graph's data as saved in files, with what it needs (see
+## MMPlugins.get_graph_requirements)
+func serialize_graph() -> Dictionary:
+	var data : Dictionary = top_generator.serialize()
+	var requires : Dictionary = MMPlugins.get_graph_requirements(data, top_generator.get_meta("requires", {}))
+	if not requires.is_empty():
+		data.requires = requires
+	return data
 
 func generate_project_thumbnail() -> String:
 	var preview_vp : SubViewport
@@ -872,7 +901,7 @@ func save_as() -> bool:
 func save_file(filename : String) -> bool:
 	generator.set_meta("file_path", filename)
 	mm_loader.current_project_path = filename.get_base_dir()
-	var data = top_generator.serialize()
+	var data = serialize_graph()
 	data["project_thumbnail"] = await generate_project_thumbnail()
 	mm_loader.current_project_path = ""
 	var e: Error
