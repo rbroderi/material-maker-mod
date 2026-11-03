@@ -3,12 +3,24 @@ extends Node
 func show_error(message : String):
 	print(message)
 
+## Shows an error about a file that cannot be loaded or rendered: the other
+## files are still processed, but the exit code is 1 (unless another error
+## already set it)
+func show_file_error(message : String) -> void:
+	show_error(message)
+	if exit_code == 0:
+		exit_code = 1
+
 static func name_to_lower(s : String) -> String:
 	s = s.strip_edges()
 	s = s.to_lower()
 	s = s.replace(" ", "_")
 	s = s.remove_chars("()/\"")
 	return s
+
+## Exit code of the modes that process graph files: 1 when a file cannot be
+## loaded or rendered (see show_file_error)
+var exit_code : int = 0
 
 func export_files(files, output_dir, target, target_file, image_size, options : Dictionary = {}) -> void:
 	var website_materials : Array = []
@@ -42,16 +54,18 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 					break
 			error = http_request.request(MMPaths.WEBSITE_ADDRESS+"/api/getMaterial?id="+str(asset_index))
 			if error != OK:
+				show_file_error("ERROR: cannot download asset %d" % asset_index)
 				continue
 			data = ( await http_request.request_completed )[3].get_string_from_utf8()
 			json = JSON.new()
 			if json.parse(data) != OK or ! json.data is Dictionary:
+				show_file_error("ERROR: cannot download asset %d" % asset_index)
 				continue
 			var parse_result : Dictionary = json.data
 			if json.parse(parse_result.json) == OK and json.data is Dictionary:
 				gen = await mm_loader.create_gen(json.data)
 			else:
-				print("Failed to download asset ", asset_index)
+				show_file_error("ERROR: cannot download asset %d" % asset_index)
 				continue
 			from_website = true
 		if gen != null:
@@ -60,9 +74,11 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
+		else:
+			show_file_error("ERROR: cannot load %s" % f)
 	if not export_list.is_empty():
 		print(",\n".join(PackedStringArray(export_list)))
-	get_tree().quit()
+	get_tree().quit(exit_code)
 
 ## Exports the materials of a graph (called for each variation, with the
 ## suffix of its files)
@@ -303,7 +319,7 @@ func expand_files(files : Array[String]) -> Array:
 func load_graph(f : String, options : Dictionary) -> MMGenBase:
 	var gen = await mm_loader.load_gen(f)
 	if gen == null:
-		show_error("ERROR: cannot load %s" % f)
+		show_file_error("ERROR: cannot load %s" % f)
 		return null
 	add_child(gen)
 	apply_graph_options(gen, f, options)
@@ -312,7 +328,7 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 ## Applies --set values
 func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
-		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+		show_file_error("ERROR: %s: %s" % [ f.get_file(), e ])
 
 ## Loads each graph and calls variation (suffix, gen, f, options) for each of
 ## its variations, then quits. mode is the option named in the error message
@@ -329,7 +345,7 @@ func process_graph_files(files : Array, options : Dictionary, variation : Callab
 		await for_each_variation(gen, options, variation.bind(gen, f, options))
 		gen.queue_free()
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(exit_code)
 
 ## Calls callable once per variation, after changing the seeds, with the
 ## suffix of the variation's files
@@ -348,7 +364,7 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), MMCliTools.spec_to_file_part(options.node), suffix, options.format ])
 	var error : String = await MMCliTools.render_node(gen, options.node, options.size, file_name)
 	if error != "":
-		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
+		show_file_error("ERROR: %s: %s" % [ f.get_file(), error ])
 	else:
 		print("Rendered %s" % file_name)
 
@@ -368,12 +384,14 @@ func bake_files(files : Array[String], options : Dictionary) -> void:
 		show_error("ERROR: incorrect size 0")
 		get_tree().quit(1)
 		return
+	var failed : bool = false
 	for f in files:
 		var prefix : String = options.output_dir.path_join(f.get_file().get_basename())
 		for e in await MMCliTools.bake(f, options.maps, options.size, prefix):
 			show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+			failed = true
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(1 if failed else 0)
 
 func list_parameters(files : Array) -> void:
 	for f : String in files:
@@ -384,4 +402,4 @@ func list_parameters(files : Array) -> void:
 		for l in MMCliTools.list_parameters(gen):
 			print("  "+l)
 		gen.queue_free()
-	get_tree().quit()
+	get_tree().quit(exit_code)

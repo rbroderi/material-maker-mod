@@ -57,6 +57,13 @@ Options
 
 **--set**, **--seed** and **--variations** work with **--export-material** and **--render**.
 
+Exit code
+---------
+
+Material Maker exits with code 0 when all files were processed, and 1 when the options are not
+valid. Files that cannot be loaded, rendered or baked (and graphs whose **--set** values cannot be
+applied) are reported with an error, the other files are still processed, and the exit code is 1.
+
 Examples
 --------
 
