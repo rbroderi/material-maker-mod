@@ -58,6 +58,13 @@ The **Advanced Buffer** node has the following parameters:
   0 and alpha 1 when the buffer is read), which uses half the memory of RGBA (for example for 2D
   vectors or UV maps). It is ignored for grayscale inputs
 
+* the *rounding* of stored values (8 bits, 16 bits integers and 16 bits floats; 32 bits floats
+  are not rounded): *GPU* stores values as the GPU does, which varies between GPUs (values exactly
+  halfway between two steps are rounded down by some GPUs and up by others, and some GPUs truncate
+  16 bits floats instead of rounding them), *Half down* and *Half up* round values to the nearest
+  step themselves (ties down or up, toward or away from 0 for negative 16 bits floats), so buffers
+  hold exactly the same values on all GPUs
+
 * the *size mode*: *Absolute* uses the *texture resolution*, and *Relative to output* uses the
   size of the graph's material multiplied by 2 to the power of *size offset*, so the buffer
   follows the output resolution when it is changed (including the size of command line exports)

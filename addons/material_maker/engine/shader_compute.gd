@@ -9,9 +9,10 @@ func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits :
 	return await compute_shader.set_shader_from_shadercode(shader_code, is_32_bits, [], is_8_bits)
 
 ## Sets the shader with a storage format (MMPipeline.STORAGE_*), storing only
-## the red and green channels if rg is true
-func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false) -> bool:
-	return await compute_shader.set_shader_from_shadercode_storage(shader_code, storage, rg)
+## the red and green channels if rg is true, and rounding stored values as
+## the GPU does or to the nearest step (MMPipeline.ROUNDING_*)
+func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, rounding : int = MMPipeline.ROUNDING_GPU) -> bool:
+	return await compute_shader.set_shader_from_shadercode_storage(shader_code, storage, rg, rounding)
 
 func get_parameters() -> Dictionary:
 	return compute_shader.get_parameters()

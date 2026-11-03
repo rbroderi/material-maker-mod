@@ -126,6 +126,34 @@ static func get_texture_type_storage(texture_type : int) -> int:
 			return STORAGE_16
 	return STORAGE_16F
 
+## Rounding of buffer stores: as the GPU does, or to the nearest step with
+## ties rounded down or up
+const ROUNDING_GPU       : int = 0
+const ROUNDING_HALF_DOWN : int = 1
+const ROUNDING_HALF_UP   : int = 2
+
+## GLSL that rounds outColor before it is stored with a storage format
+## (STORAGE_*), so the store is exact and gives the same result on all GPUs
+## (they round ties differently, and some truncate 16 bits floats). Values
+## are rounded to the nearest step: multiples of 1/255 or 1/65535 for 8 and
+## 16 bits integers (after clamping between 0 and 1), 16 bits floats for
+## STORAGE_16F (ties toward or away from 0). 32 bits floats are not rounded.
+static func get_store_rounding_code(rounding : int, storage : int) -> String:
+	if rounding == ROUNDING_GPU:
+		return ""
+	var round_function : String = "ceil(%s-0.5)" if rounding == ROUNDING_HALF_DOWN else "floor(%s+0.5)"
+	match storage:
+		STORAGE_8, STORAGE_16:
+			var k : String = "255.0" if storage == STORAGE_8 else "65535.0"
+			# precise: the product is a 32 bits float before it is rounded (GPUs
+			# that fuse it with the rounding into a multiply-add would round
+			# differently)
+			return "{ precise vec4 mm_value = clamp(outColor, 0.0, 1.0)*%s; outColor = %s/%s; }" % [ k, round_function % "mm_value", k ]
+		STORAGE_16F:
+			# 11 significant bits for normal 16 bits floats, steps of 2^-24 for subnormals
+			return "{ ivec4 mm_exponent; frexp(abs(outColor), mm_exponent); vec4 mm_step = exp2(vec4(max(mm_exponent-11, ivec4(-24)))); outColor = sign(outColor)*%s*mm_step; }" % (round_function % "(abs(outColor)/mm_step)")
+	return ""
+
 const OUTPUT_TEXTURE_USAGE_BITS : int = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
 
 static var output_texture_type_supported : Dictionary[int, bool] = {}

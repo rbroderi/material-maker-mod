@@ -33,5 +33,6 @@ void main() {
 	vec2 uv = pixel/image_size;
 	@CODE
 	vec4 outColor = @OUTPUT_VALUE;
+	@STORE_ROUNDING
 	imageStore(OUTPUT_TEXTURE, ivec2(pixel), outColor);
 }"

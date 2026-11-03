@@ -29,6 +29,10 @@ var render_time : int = 0
 
 var local_size : int = 32
 
+## GLSL that rounds outColor before it is stored (see get_store_rounding_code),
+## for templates with @STORE_ROUNDING
+var store_rounding : String = ""
+
 
 func _init():
 	clear()
@@ -93,24 +97,28 @@ func set_shader_from_shadercode_ext(shader_template : String, shader_code : MMGe
 	replaces["@DEFINITIONS"] = shader_code.defs
 	replaces["@CODE"] = shader_code.code
 	replaces["@OUTPUT_VALUE"] = shader_code.output_values.rgba
+	replaces["@STORE_ROUNDING"] = store_rounding
 
 	return await set_shader_ext(shader_template, output_textures_desc, replaces)
 
 func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits : bool = false, extra_parameters : Array[Dictionary] = [], is_8_bits : bool = false) -> bool:
 	var storage : int = STORAGE_32F if is_32_bits else (STORAGE_8 if is_8_bits else STORAGE_16F)
-	return await set_shader_from_shadercode_storage(shader_code, storage, false, extra_parameters)
+	return await set_shader_from_shadercode_storage(shader_code, storage, false, ROUNDING_GPU, extra_parameters)
 
 ## Sets the shader of a buffer, that stores the shader's output with a storage
 ## format (STORAGE_*), with only the red and green channels if rg is true.
 ## Formats the GPU does not support fall back to supported ones (see
-## get_texture_type()).
-func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, extra_parameters : Array[Dictionary] = []) -> bool:
+## get_texture_type()). Stored values are rounded as the GPU does or to the
+## nearest step of the format (ROUNDING_*, see get_store_rounding_code()).
+func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, rounding : int = ROUNDING_GPU, extra_parameters : Array[Dictionary] = []) -> bool:
 	var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
 	
 	extra_parameters.append({ name="elapsed_time", type="float", value=0.0 })
 	
 	var channels : int = 1 if (shader_code.output_type == "f") else (2 if rg else 4)
 	var output_texture_type : int = get_texture_type(channels, storage)
+	# Round for the format that is really used (after fallbacks)
+	store_rounding = get_store_rounding_code(rounding, get_texture_type_storage(output_texture_type))
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 	
 	return await set_shader_from_shadercode_ext(shader_template, shader_code, output_textures, extra_parameters)

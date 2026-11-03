@@ -71,6 +71,9 @@ func get_parameter_defs() -> Array:
 				longdesc="Store 16 bits integers (65536 evenly spaced levels between 0 and 1) instead of 16 bits floats (ignored if 32 bits is set)" })
 			parameter_defs.push_back({ name="rg", label="RG", type="boolean", default=false,
 				longdesc="Store only the red and green channels of color inputs, for half the memory (blue is 0 and alpha 1 when the buffer is read)" })
+			parameter_defs.push_back({ name="rounding", label="Rounding", type="enum", default=0,
+				values=[ { name="GPU", value="gpu" }, { name="Half down", value="half_down" }, { name="Half up", value="half_up" } ],
+				longdesc="How values are rounded when they are stored as 8 bits, 16 bits integers or 16 bits floats: as the GPU does (it varies between GPUs: values halfway between two steps are rounded down or up, and some GPUs truncate 16 bits floats), or to the nearest step with ties rounded down or up (the same on all GPUs)" })
 			parameter_defs.push_back({ name="size_mode", label="Size mode", type="enum", default=0,
 				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" } ],
 				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset" })
@@ -131,6 +134,12 @@ func get_storage() -> int:
 		return MMPipeline.STORAGE_8
 	return MMPipeline.STORAGE_16F
 
+## How stored values are rounded (MMPipeline.ROUNDING_*)
+func get_rounding() -> int:
+	if version != VERSION_COMPLEX:
+		return MMPipeline.ROUNDING_GPU
+	return int(get_parameter("rounding"))
+
 ## The number of channels the buffer stores: 1 (grayscale), 2 (RG) or 4
 func get_channel_count() -> int:
 	if is_greyscale:
@@ -163,6 +172,9 @@ func is_parameter_used(n : String) -> bool:
 			return not get_parameter("f32")
 		"rg":
 			return not is_greyscale
+		"rounding":
+			# 32 bits floats are not rounded
+			return not get_parameter("f32")
 	return true
 
 const STORAGE_NAMES : Array[String] = [ "16F", "32F", "8 bits", "16 bits" ]
@@ -297,7 +309,7 @@ func do_update_shader() -> void:
 	else:
 		source = get_default_generated_shader()
 	var rg : bool = version == VERSION_COMPLEX and get_parameter("rg")
-	var shader_status : bool = await shader_compute.set_shader_from_shadercode_storage(source, get_storage(), rg)
+	var shader_status : bool = await shader_compute.set_shader_from_shadercode_storage(source, get_storage(), rg, get_rounding())
 	if shader_status:
 		var new_is_greyscale = shader_compute.is_greyscale()
 		if new_is_greyscale != is_greyscale:
@@ -360,7 +372,7 @@ func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
 	source.output_type = "rgba"
 	var compute_shader : MMComputeShader = MMComputeShader.new()
 	var texture : MMTexture = MMTexture.new()
-	if await compute_shader.set_shader_from_shadercode_storage(source, MMPipeline.STORAGE_16):
+	if await compute_shader.set_shader_from_shadercode_storage(source, MMPipeline.STORAGE_16, false, get_rounding()):
 		await compute_shader.render_ext([texture], size)
 	return texture
 
