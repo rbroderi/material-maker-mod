@@ -15,6 +15,7 @@ modes. The window is minimized (rendering needs a GPU), unless **--show-window**
  material_maker --bake [--maps <map,...>] [options] <mesh_files>
  material_maker --list-parameters <input_files>
  material_maker --rpc [--rpc-port <port>] [<input_file>]
+ material_maker --plugin <command> [<arguments>]
  material_maker -- --help
 
 Input files are .ptex files (wildcards are accepted). The mode and options can be given before
@@ -35,6 +36,8 @@ Modes
 * **--list-parameters** lists the parameters that can be set with **--set**, with their values
 * **--rpc** starts a JSON-RPC server to control Material Maker from scripts (see
   :ref:`scripting-section`), and runs until the server's **quit** method is called
+* **--plugin <command> [<arguments>]** runs a command of a plugin (see :ref:`plugins-section`),
+  with the arguments that follow it
 
 Options
 -------

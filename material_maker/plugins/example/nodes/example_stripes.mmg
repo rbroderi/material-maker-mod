@@ -1,0 +1,41 @@
+{
+	"name": "example_stripes",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"count": 8.0
+	},
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+
+		],
+		"instance": "",
+		"longdesc": "Vertical stripes (a node added by the example plugin)",
+		"name": "Example Stripes",
+		"outputs": [
+			{
+				"f": "step(0.5, fract($uv.x*$count))",
+				"longdesc": "The stripes",
+				"shortdesc": "Output",
+				"type": "f"
+			}
+		],
+		"parameters": [
+			{
+				"default": 8.0,
+				"label": "Count",
+				"max": 32.0,
+				"min": 1.0,
+				"name": "count",
+				"step": 1.0,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Example stripes"
+	},
+	"type": "shader"
+}

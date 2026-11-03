@@ -10,4 +10,5 @@ Material Maker User Manual
    base_library
    export
    command_line
+   plugins
    scripting

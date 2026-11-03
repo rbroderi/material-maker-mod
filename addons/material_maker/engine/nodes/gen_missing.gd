@@ -1,0 +1,84 @@
+@tool
+extends MMGenBase
+class_name MMGenMissing
+
+
+## Placeholder for a node whose type is unknown (for example a node of a plugin
+## that is not installed or enabled, of a newer version of Material Maker, or
+## of a node library that is not installed).
+## It keeps the node's data and connections, saves them unchanged, and outputs
+## magenta.
+
+
+## The node's data, as loaded
+var data : Dictionary = {}
+var input_count : int = 0
+var output_count : int = 1
+
+
+func get_type() -> String:
+	return data.get("type", "missing")
+
+func get_type_name() -> String:
+	return "Missing: %s" % get_type()
+
+func get_description() -> String:
+	var plugin : String = MMPlugins.get_missing_node_type_plugin(get_type())
+	if plugin != "":
+		return "This node's type (%s) is unknown: it comes from %s. It outputs magenta, and is saved unchanged with the graph." % [ get_type(), plugin ]
+	return "This node's type (%s) is unknown: it may come from a plugin that is not installed or enabled, from a newer version of Material Maker or from a node library that is not installed. It outputs magenta, and is saved unchanged with the graph." % get_type()
+
+## Sets the port counts from the connections of the graph that contains the
+## node (the node's definition, that would give them, is missing)
+func set_port_counts(connections : Array) -> void:
+	for c in connections:
+		if c.get("to") == name:
+			input_count = max(input_count, int(c.to_port)+1)
+		if c.get("from") == name:
+			output_count = max(output_count, int(c.from_port)+1)
+
+func get_input_defs() -> Array:
+	var rv : Array = []
+	for i in input_count:
+		rv.append({ name="in%d" % i, label="", type="rgba" })
+	return rv
+
+func get_output_defs(_show_hidden : bool = false) -> Array:
+	var rv : Array = []
+	for i in output_count:
+		rv.append({ type="rgba" })
+	return rv
+
+func _get_shader_code(_uv : String, _output_index : int, _context : MMGenContext) -> ShaderCode:
+	var rv : ShaderCode = ShaderCode.new()
+	rv.output_type = "rgba"
+	rv.output_values.f = "1.0"
+	rv.output_values.rgb = "vec3(1.0, 0.0, 1.0)"
+	rv.output_values.rgba = "vec4(1.0, 0.0, 1.0, 1.0)"
+	return rv
+
+func serialize() -> Dictionary:
+	var rv : Dictionary = data.duplicate(true)
+	rv.name = name
+	rv.node_position = { x=position.x, y=position.y }
+	# Only the states that can be changed in the graph view
+	if minimized != (data.get("minimized", false) == true):
+		if minimized:
+			rv.minimized = true
+		else:
+			rv.erase("minimized")
+	if preview != int(data.get("preview", -1)):
+		if preview >= 0:
+			rv.preview = preview
+		else:
+			rv.erase("preview")
+	return rv
+
+func deserialize(new_data : Dictionary) -> void:
+	data = new_data.duplicate(true)
+	if data.has("name"):
+		name = data.name
+	if data.has("node_position"):
+		position = Vector2(data.node_position.x, data.node_position.y)
+	preview = int(data.get("preview", -1))
+	minimized = data.get("minimized", false) == true

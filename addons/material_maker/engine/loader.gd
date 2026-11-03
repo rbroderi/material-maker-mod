@@ -191,9 +191,24 @@ func load_gen(filename: String) -> MMGenBase:
 		var data = string_to_dict_tree(file.get_as_text())
 		if data != null:
 			current_project_path = filename.get_base_dir()
+			missing_node_types = PackedStringArray()
 			var generator = await create_gen(data)
 			if generator:
 				generator.set_meta("file_path", filename)
+				# Requirements are saved again with the graph (see
+				# MMPlugins.get_graph_requirements), and what is missing is
+				# shown (see MMPlugins.check_requirements)
+				var requires : Dictionary = data.requires if data.get("requires") is Dictionary else {}
+				if not requires.is_empty():
+					generator.set_meta("requires", requires)
+				var missing : PackedStringArray = MMPlugins.check_requirements(requires, missing_node_types)
+				if not missing.is_empty():
+					generator.set_meta("missing_requirements", missing)
+					var message : String = "%s needs %s" % [ filename.get_file(), "; ".join(missing) ]
+					if not missing_node_types.is_empty():
+						generator.set_meta("placeholder_types", missing_node_types)
+						message += " (its nodes of types %s are magenta placeholders)" % ", ".join(missing_node_types)
+					push_warning(message)
 			current_project_path = ""
 			return generator
 	return null
@@ -221,6 +236,8 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 		if g != null:
 			g.orig_name = g.name
 			var orig_name = g.name
+			if g is MMGenMissing:
+				g.set_port_counts(connections)
 			if gen_graph.add_generator(g):
 				g.position += position
 				rv.generators.append(g)
@@ -238,6 +255,9 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 			print("Cannot connect %s:%d to %s:%d" % [c.from, c.from_port, c.to, c.to_port])
 	return rv
 
+## Types of the nodes that were loaded as placeholders (reset by load_gen)
+var missing_node_types : PackedStringArray = PackedStringArray()
+
 func fix_data(data : Dictionary) -> Dictionary:
 	if data.has("nodes") and data.has("connections") and data.has("label") and data.label == "HBAO":
 		data.type = "hbao"
@@ -247,6 +267,32 @@ func fix_data(data : Dictionary) -> Dictionary:
 		data.erase("shader_model")
 		data.type = "height_blend_levels"
 	return data
+
+## Node types implemented by generator scripts (plugins add theirs, see
+## MMPlugins.API.add_node_type)
+var node_types : Dictionary = {
+	material_export = MMGenMaterial,
+	autoexport = MMGenAutoExport,
+	buffer = MMGenBuffer,
+	image = MMGenImage,
+	text = MMGenText,
+	iterate_buffer = MMGenIterateBuffer,
+	meshmap = MMGenMeshMap,
+	sdf = MMGenSDF,
+	ios = MMGenIOs,
+	switch = MMGenSwitch,
+	export = MMGenExport,
+	comment = MMGenComment,
+	webcam = MMGenWebcam,
+	debug = MMGenDebug,
+	reroute = MMGenReroute,
+	comment_line = MMGenCommentLine,
+	portal = MMGenPortal,
+}
+
+## Whether nodes of a type can be created (by a script or a node definition)
+func has_node_type(type : String) -> bool:
+	return node_types.has(type) or MMPlugins.node_types.has(type) or predefined_generators.has(type)
 
 func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 	if fix:
@@ -261,25 +307,6 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 		{ keyword="model_data", type=MMGenShader },
 		{ keyword="widgets", type=MMGenRemote }
 	]
-	var types = {
-		material_export = MMGenMaterial,
-		autoexport = MMGenAutoExport,
-		buffer = MMGenBuffer,
-		image = MMGenImage,
-		text = MMGenText,
-		iterate_buffer = MMGenIterateBuffer,
-		meshmap = MMGenMeshMap,
-		sdf = MMGenSDF,
-		ios = MMGenIOs,
-		switch = MMGenSwitch,
-		export = MMGenExport,
-		comment = MMGenComment,
-		webcam = MMGenWebcam,
-		debug = MMGenDebug,
-		reroute = MMGenReroute,
-		comment_line = MMGenCommentLine,
-		portal = MMGenPortal,
-	}
 	var generator = null
 	for g in guess:
 		var guessed = true
@@ -293,8 +320,10 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 			generator = g.type.new()
 			break
 	if generator == null and data.has("type"):
-		if types.has(data.type):
-			generator = types[data.type].new()
+		if node_types.has(data.type):
+			generator = node_types[data.type].new()
+		elif MMPlugins.node_types.has(data.type):
+			generator = MMPlugins.node_types[data.type].script.new()
 		else:
 			if !predefined_generators.has(data.type) and data.type.left(8) == "website:":
 				var status = await get_node_from_website(data.type)
@@ -304,6 +333,12 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 					print("Cannot find description for "+data.type)
 				else:
 					generator.model = data.type
+		if generator == null and data.type is String and data.type != "":
+			# Nodes of unknown types are kept as placeholders
+			if not data.type in missing_node_types:
+				missing_node_types.append(data.type)
+				push_warning("Unknown node type %s, loaded as a placeholder" % data.type)
+			generator = MMGenMissing.new()
 		if generator != null:
 			generator.name = data.type
 	if generator == null:
@@ -360,8 +395,30 @@ func load_external_export_targets():
 					external_export_targets[material].files.append(file_name)
 		file_name = dir.get_next()
 
+## Export targets of plugins (material name -> export name -> export target),
+## overridden by the user's external export targets
+var plugin_export_targets : Dictionary = {}
+
+func add_plugin_export_target(export_target : Dictionary) -> void:
+	if not plugin_export_targets.has(export_target.material):
+		plugin_export_targets[export_target.material] = {}
+	plugin_export_targets[export_target.material][export_target.name] = export_target
+
 func get_external_export_targets(material_name : String) -> Dictionary:
-	return external_export_targets[material_name].exports if external_export_targets.has(material_name) else {}
+	var export_targets : Dictionary = plugin_export_targets.get(material_name, {}).duplicate()
+	if external_export_targets.has(material_name):
+		export_targets.merge(external_export_targets[material_name].exports, true)
+	return export_targets
+
+## Whether an export target is a plugin's, unchanged
+func is_plugin_export_target(material_name : String, export_target_name : String, export_target : Dictionary) -> bool:
+	var plugin_target : Dictionary = plugin_export_targets.get(material_name, {}).get(export_target_name, {})
+	if plugin_target.is_empty():
+		return false
+	for k in plugin_target.keys()+export_target.keys():
+		if not k in [ "name", "material", "external" ] and plugin_target.get(k) != export_target.get(k):
+			return false
+	return true
 
 func save_export_target(material_name : String, export_target_name : String, export_target : Dictionary) -> String:
 	var file_name : String = get_export_file_name(material_name, export_target_name)
@@ -375,6 +432,10 @@ func update_external_export_targets(material_name : String, export_targets : Dic
 	var dir : DirAccess = DirAccess.open("")
 	DirAccess.make_dir_absolute(USER_EXPORT_DIR)
 	var files = []
+	# Unchanged export targets of plugins are not saved
+	for k in export_targets.keys():
+		if is_plugin_export_target(material_name, k, export_targets[k]):
+			export_targets.erase(k)
 	for k in export_targets.keys():
 		files.append(save_export_target(material_name, k, export_targets[k]))
 	if ! external_export_targets.has(material_name):
