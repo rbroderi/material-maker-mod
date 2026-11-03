@@ -27,6 +27,8 @@ The **Godot/Godot 4 Shader**, **Unity/Built-in Shader** and **Unreal/Unreal Engi
 targets export the material as a shader that computes the graph, instead of textures: the
 material can be tiled at any resolution without a texture budget. Buffers of the graph (for
 example the ones of normal map nodes) are exported as textures that the shader samples.
+They are imported without mipmaps and read at full resolution, as Material Maker does (the
+LOD output of buffers does not blur them).
 
 * **Godot 4**: a .gdshader and a .tres ShaderMaterial. The parameters of the graph are shader
   uniforms (with their current values), so they can be changed in Godot's inspector. Verified on
