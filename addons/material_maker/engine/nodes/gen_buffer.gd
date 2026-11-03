@@ -57,7 +57,11 @@ func set_paused(v : bool) -> void:
 	if v == is_paused:
 		return
 	is_paused = v
-	if ! v:
+	if v:
+		# A paused buffer keeps its texture: if it was released, it is
+		# rendered again (see on_dep_update_buffer())
+		texture.restore()
+	else:
 		# Render the buffer if it was invalidated while paused
 		mm_deps.buffer_retry("o%d_tex" % get_instance_id())
 		mm_deps.update()
@@ -450,7 +454,10 @@ func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
 	return false
 
 func on_dep_update_buffer(buffer_name : String) -> bool:
-	if is_paused:
+	# Paused buffers are only rendered to restore their released texture
+	# (their input did not change since it was rendered)
+	var restoring : bool = mm_deps.is_restoring(buffer_name)
+	if is_paused and not restoring:
 		return false
 	var dimensions : Vector2i = get_buffer_dimensions()
 	if version == VERSION_COMPLEX and int(get_parameter("size_mode")) != SIZE_MODE_ABSOLUTE:
@@ -463,7 +470,8 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		self.rendering_time_updated.emit(rendering_time)
 		mm_deps.dependency_update(buffer_name, texture, true)
 		mm_deps.update()
-		on_buffer_updated()
+		if not restoring:
+			on_buffer_updated()
 	else:
 		print("Failed to update buffer")
 	return status

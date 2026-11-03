@@ -30,7 +30,8 @@ rendered (`release_mode`: never, during exports, always; the *Release buffers* p
 ## Order
 
 With releasing, `do_update` renders buffers depth first (`get_render_order`): a post-order
-walk from the buffers no buffer reads, visiting the inputs read by more buffers first. Inputs are
+walk from the buffers no buffer reads, visiting first the inputs that read more buffers (usually
+the larger subgraphs, so fewer textures wait for the other inputs to be rendered). Inputs are
 then rendered just before their readers and released soon after. The order is recalculated when
 dependencies change. The same simulation gives a peak of 1.2 GiB depth first, and 2.3 GiB in the
 previous order (the dictionary's order).

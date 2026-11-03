@@ -205,13 +205,16 @@ func dependency_update(dependency_name : String, value = null, internal : bool =
 		dependencies_values[dependency_name] = value
 	#print("%s = %s" % [ dependency_name, str(value) ])
 	if buffers.has(dependency_name) and buffers[dependency_name].restoring:
-		# A released buffer was rendered again: its readers are up to date
 		var b : Buffer = buffers[dependency_name]
 		b.restoring = false
 		b.released = false
-		b.renders += 1
 		buffer_restored.emit(dependency_name)
-		return
+		if b.status == Buffer.Updated:
+			# A released buffer was rendered again: its readers are up to date
+			b.renders += 1
+			return
+		# The buffer was invalidated while it was restored: handle the render
+		# as a normal update
 	if buffers.has(dependency_name):
 		var b : Buffer = buffers[dependency_name]
 		match b.status:
@@ -328,7 +331,7 @@ func set_exporting(exporting : bool) -> void:
 ## material and widgets keep their inputs)
 func can_release(buffer_name : String) -> bool:
 	var buffer : Buffer = buffers[buffer_name]
-	if buffer.released or buffer.status != Buffer.Updated or buffer.object == null or not buffer.object.has_method("release_buffer"):
+	if buffer.released or buffer.restoring or buffer.status != Buffer.Updated or buffer.object == null or not buffer.object.has_method("release_buffer"):
 		return false
 	if not dependencies.has(buffer_name) or dependencies[buffer_name].is_empty():
 		return false
@@ -376,7 +379,10 @@ func restore_buffer(buffer_name : String) -> void:
 	for d in buffer.dependencies:
 		if buffers.has(d) and buffers[d].released:
 			await restore_buffer(d)
-	if not buffers.has(buffer_name) or not is_instance_valid(buffer.object):
+	if not buffers.has(buffer_name) or buffers[buffer_name] != buffer or not is_instance_valid(buffer.object):
+		# The buffer was deleted meanwhile: don't leave callers waiting for it
+		buffer.restoring = false
+		buffer_restored.emit(buffer_name)
 		return
 	var status = await buffer.object.on_dep_update_buffer(buffer_name)
 	if buffer.restoring:
@@ -386,9 +392,15 @@ func restore_buffer(buffer_name : String) -> void:
 			buffer.status = Buffer.Error
 		buffer_restored.emit(buffer_name)
 
-## Buffers in depth first order from the buffers no buffer reads, inputs read
-## by more buffers first: inputs are rendered just before their readers so
-## they can be released early
+## Whether a released buffer is being rendered again (generators render it
+## even when they are paused, see MMGenBuffer.on_dep_update_buffer())
+func is_restoring(buffer_name : String) -> bool:
+	return buffers.has(buffer_name) and buffers[buffer_name].restoring
+
+## Buffers in depth first order from the buffers no buffer reads: inputs are
+## rendered just before their readers, so they can be released early. The
+## inputs that read more buffers (usually the larger subgraphs) are visited
+## first, so fewer textures wait for the other inputs to be rendered.
 func get_render_order() -> Array[String]:
 	if not render_order_dirty:
 		return render_order

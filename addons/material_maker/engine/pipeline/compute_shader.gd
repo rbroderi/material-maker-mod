@@ -199,9 +199,7 @@ func in_thread_render_ext(textures : Array[MMTexture], size : Vector2i, output_p
 
 func render_ext(textures : Array[MMTexture], size : Vector2i, output_parameters_values = null) -> bool:
 	# Input textures whose buffers were released are rendered again
-	for t in input_textures:
-		if t.texture != null and t.texture.released_buffer != "":
-			await t.texture.restore()
+	await restore_input_textures()
 	# thread_run() returns null when the rendering thread stops (at exit)
 	var status = await mm_renderer.thread_run(self.in_thread_render_ext, [textures, size, output_parameters_values])
 	return status == true
