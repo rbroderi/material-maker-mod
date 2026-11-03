@@ -166,7 +166,10 @@ static func get_store_rounding_code(rounding : int, storage : int) -> String:
 	match storage:
 		STORAGE_8, STORAGE_16:
 			var k : String = "%d.0" % (255 if storage == STORAGE_8 else 65535)
-			return "outColor = %s/%s;" % [ round_function % ("clamp(outColor, 0.0, 1.0)*"+k), k ]
+			# precise: the product is a 32 bits float before it is rounded (GPUs
+			# that fuse it with the rounding into a multiply-add would round
+			# some values to the wrong step)
+			return "{ precise vec4 mm_value = clamp(outColor, 0.0, 1.0)*%s; outColor = %s/%s; }" % [ k, round_function % "mm_value", k ]
 		STORAGE_16F:
 			# 11 significant bits (normal half floats), steps of 2^-24 for subnormals
 			return "{ ivec4 mm_exponent; frexp(abs(outColor), mm_exponent); vec4 mm_step = exp2(vec4(max(mm_exponent-11, ivec4(-24)))); outColor = sign(outColor)*%s*mm_step; }" % (round_function % "(abs(outColor)/mm_step)")

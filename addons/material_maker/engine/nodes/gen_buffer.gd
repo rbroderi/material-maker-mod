@@ -265,7 +265,8 @@ func is_parameter_used(n : String) -> bool:
 			# Grayscale buffers have a single channel
 			return not is_greyscale
 		"rounding":
-			return get_storage() == MMPipeline.STORAGE_8 or get_storage() == MMPipeline.STORAGE_16
+			# 32 bits floats are not rounded
+			return get_storage() != MMPipeline.STORAGE_32F
 	return true
 
 const STORAGE_NAMES : Array[String] = [ "16F", "32F", "8 bits", "16 bits" ]

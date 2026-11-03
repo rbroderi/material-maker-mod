@@ -110,8 +110,9 @@ func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits :
 	return await set_shader_from_shadercode_storage(shader_code, storage, false, ROUNDING_GPU, extra_parameters)
 
 ## Sets the shader of a buffer, that stores the shader's output with a storage
-## format (STORAGE_*), as RG (2 channels) if rg is true, and rounds integer
-## stores (ROUNDING_*)
+## format (STORAGE_*), as RG (2 channels) if rg is true, and rounds stores
+## (ROUNDING_*) for the format that is really used (formats the GPU does not
+## support fall back to supported ones, see get_texture_type())
 func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, rounding : int = ROUNDING_GPU, extra_parameters : Array[Dictionary] = []) -> bool:
 	var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
 
@@ -119,7 +120,7 @@ func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, stor
 
 	var channels : int = 1 if (shader_code.output_type == "f") else (2 if rg else 4)
 	var output_texture_type : int = get_texture_type(channels, storage)
-	store_rounding = get_store_rounding_code(rounding, storage)
+	store_rounding = get_store_rounding_code(rounding, get_texture_type_storage(output_texture_type))
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 
 	return await set_shader_from_shadercode_ext(shader_template, shader_code, output_textures, extra_parameters)
