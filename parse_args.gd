@@ -3,6 +3,14 @@ extends Node
 func show_error(message : String):
 	print(message)
 
+## Shows an error about a file that cannot be loaded or rendered: the other
+## files are still processed, but the exit code is 1 (unless another error
+## already set it, e.g. 2 for missing requirements)
+func show_file_error(message : String) -> void:
+	show_error(message)
+	if exit_code == 0:
+		exit_code = 1
+
 static func name_to_lower(s : String) -> String:
 	s = s.strip_edges()
 	s = s.to_lower()
@@ -63,16 +71,18 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 					break
 			error = http_request.request(MMPaths.WEBSITE_ADDRESS+"/api/getMaterial?id="+str(asset_index))
 			if error != OK:
+				show_file_error("ERROR: cannot download asset %d" % asset_index)
 				continue
 			data = ( await http_request.request_completed )[3].get_string_from_utf8()
 			json = JSON.new()
 			if json.parse(data) != OK or ! json.data is Dictionary:
+				show_file_error("ERROR: cannot download asset %d" % asset_index)
 				continue
 			var parse_result : Dictionary = json.data
 			if json.parse(parse_result.json) == OK and json.data is Dictionary:
 				gen = await mm_loader.create_gen(json.data)
 			else:
-				print("Failed to download asset ", asset_index)
+				show_file_error("ERROR: cannot download asset %d" % asset_index)
 				continue
 			from_website = true
 		if gen != null and not check_requirements(gen, f, options):
@@ -83,7 +93,8 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			add_child(gen)
 			if not check_export_targets(gen, f, target):
 				# Nothing is exported for this graph
-				exit_code = 1
+				if exit_code == 0:
+					exit_code = 1
 				gen.queue_free()
 				continue
 			if not await apply_graph_options(gen, f, options):
@@ -92,6 +103,8 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
 			print("Done")
 			gen.queue_free()
+		else:
+			show_file_error("ERROR: cannot load %s" % f)
 	if not export_list.is_empty():
 		print(",\n".join(PackedStringArray(export_list)))
 	print("Peak GPU texture memory: %d MB" % (mm_renderer.peak_texture_memory >> 20))
@@ -652,9 +665,7 @@ func expand_files(files : Array[String]) -> Array:
 func load_graph(f : String, options : Dictionary) -> MMGenBase:
 	var gen = await mm_loader.load_gen(f)
 	if gen == null:
-		show_error("ERROR: cannot load %s" % f)
-		if exit_code == 0:
-			exit_code = 1
+		show_file_error("ERROR: cannot load %s" % f)
 		return null
 	if not check_requirements(gen, f, options):
 		gen.free()
@@ -716,12 +727,10 @@ func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> b
 			await MMCliTools.set_graph_mesh(gen, mesh)
 	if options.has("preset") and not MMCliTools.apply_preset(gen, options.preset):
 		var presets : PackedStringArray = MMCliTools.get_preset_names(gen)
-		show_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(presets) if not presets.is_empty() else "none" ])
-		if exit_code == 0:
-			exit_code = 1
+		show_file_error("ERROR: %s: no preset '%s' (presets: %s)" % [ f.get_file(), options.preset, ", ".join(presets) if not presets.is_empty() else "none" ])
 		return false
 	for e in MMCliTools.apply_overrides(gen, options.get("set", [])):
-		show_error("ERROR: %s: %s" % [ f.get_file(), e ])
+		show_file_error("ERROR: %s: %s" % [ f.get_file(), e ])
 	return true
 
 ## Loads each graph and calls variation (suffix, gen, f, options) for each of
@@ -762,9 +771,7 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 	else:
 		error = await MMCliTools.render_node(gen, options.node, options.size, file_name, output_height)
 	if error != "":
-		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
-		if exit_code == 0:
-			exit_code = 1
+		show_file_error("ERROR: %s: %s" % [ f.get_file(), error ])
 	elif not options.get("separate_frames", false):
 		print("Rendered %s" % file_name)
 
@@ -834,4 +841,4 @@ func list_parameters(files : Array) -> void:
 		for l in MMCliTools.list_parameters(gen):
 			print("  "+l)
 		gen.queue_free()
-	get_tree().quit()
+	get_tree().quit(exit_code)

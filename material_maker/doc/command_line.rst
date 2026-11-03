@@ -132,6 +132,15 @@ and plugin modes. They are applied in this order: the preset first, then the **-
 they override the preset's values), then the seeds of each variation (presets only hold the values
 of remote parameters, not seeds).
 
+Exit code
+---------
+
+Material Maker exits with code 0 when all files were processed, and 1 when the options are not
+valid. Files that cannot be loaded, downloaded, rendered or baked (and graphs whose **--preset**
+or **--set** values cannot be applied) are reported with an error, the other files are still
+processed, and the exit code is 1. Graphs whose requirements are not met give exit code 2 (see
+**--strict**), even if other files fail too.
+
 Examples
 --------
 
