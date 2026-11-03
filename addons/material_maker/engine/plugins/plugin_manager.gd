@@ -46,7 +46,7 @@ const MM_MOD_VERSION : String = "1.17"
 const MM_MOD_FEATURES : PackedStringArray = [
 	"buffer_release", "buffer_size_relative_to_input", "buffer_size_expressions",
 	"pass_size", "iterate_buffer_v2", "iteration_variable", "unorm16", "rg_formats",
-	"store_rounding", "node_types", "missing_node_placeholders", "sbs_fxmap" ]
+	"store_rounding", "node_types", "missing_node_placeholders" ]
 ## A line of a graph's long description that holds its requirements as JSON
 ## (for files that are also loaded by versions that do not save "requires")
 const REQUIRES_LINE_PATTERN : String = "(?m)^\\s*[A-Za-z0-9_.-]*requires:\\s*(\\{.*\\})\\s*$"
@@ -568,7 +568,7 @@ static func add_required_plugin(required_plugins : Dictionary, plugin_id : Strin
 
 ## What a graph needs that is missing (empty if nothing): requires is
 ##	{ "material_maker_mod": ">=1.17", "plugins": { "sbs": ">=1.0" },
-##	  "node_types": { "sbs_fxmap": "", "example_maze": "example" },
+##	  "node_types": { "sbs_fxmap": "sbs", "example_maze": "example" },
 ##	  "features": [ "iterate_buffer_v2" ] }
 ## (dashes in keys are accepted, e.g. "material-maker-mod"; "node_types" can
 ## also be a list of types). placeholder_types are the types of the graph's
