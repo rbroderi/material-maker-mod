@@ -356,6 +356,13 @@ static func get_parameter_declarations(defs : Dictionary, values = null) -> Stri
 		values.resize(size)
 	return uniform_declarations
 
+## Renders the input textures whose buffers were released again (see
+## MMTexture.release())
+func restore_input_textures() -> void:
+	for t in input_textures:
+		if t.texture != null and t.texture.released_buffer != "":
+			await t.texture.restore()
+
 func get_uniform_declarations() -> String:
 	var uniform_declarations : String = get_parameter_declarations(parameters, parameter_values)
 	if uniform_declarations != "":

@@ -443,6 +443,58 @@ max_value = 20.0
 step = 1.0
 float_only = true
 
+[node name="GpuMemoryBudget" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer" unique_id=1816139529]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/GpuMemoryBudget" unique_id=1547860938]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Memory that textures rendered by Material Maker may use on the GPU, in MB (0 = unlimited).
+The least recently used ones are moved to RAM when they use more, and uploaded again when needed."
+mouse_filter = 1
+text = "GPU memory budget (MB, 0 = unlimited)"
+
+[node name="GpuMemoryBudget" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/GpuMemoryBudget" unique_id=1588193207 instance=ExtResource("3")]
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Memory that textures rendered by Material Maker may use on the GPU, in MB (0 = unlimited).
+The least recently used ones are moved to RAM when they use more, and uploaded again when needed."
+config_variable = "gpu_memory_budget"
+value = 0.0
+min_value = 0.0
+max_value = 65536.0
+step = 64.0
+float_only = true
+
+[node name="ReleaseBuffers" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer" unique_id=1739204551]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/ReleaseBuffers" unique_id=1739204552]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Frees the texture of a buffer when all the buffers that read it are rendered, so large graphs need less GPU memory.
+Released buffers are rendered again when they are needed (which makes editing slower)."
+mouse_filter = 1
+text = "Release buffers"
+
+[node name="EnumOption" type="OptionButton" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/ReleaseBuffers" unique_id=1739204553]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Frees the texture of a buffer when all the buffers that read it are rendered, so large graphs need less GPU memory.
+Released buffers are rendered again when they are needed (which makes editing slower)."
+selected = 0
+item_count = 3
+popup/item_0/text = "Never"
+popup/item_0/id = 0
+popup/item_1/text = "During exports"
+popup/item_1/id = 1
+popup/item_2/text = "Always"
+popup/item_2/id = 2
+script = ExtResource("5_vp06c")
+config_variable = "release_buffers"
+
 [node name="Spacer4" type="Control" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer" unique_id=1280062657]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2

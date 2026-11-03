@@ -648,6 +648,13 @@ func get_connections_and_parameters_context() -> Dictionary:
 	return context
 
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
+	mm_deps.set_exporting(true)
+	await export_material_with_profile(prefix, profile, size, command_line)
+	mm_deps.set_exporting(false)
+
+func export_material_with_profile(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
+	# Buffers that are rendered can be released before the export renders more
+	mm_deps.release_unused_buffers()
 	reset_uids()
 	if size == 0:
 		size = get_image_size()

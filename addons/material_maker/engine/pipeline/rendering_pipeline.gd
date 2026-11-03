@@ -106,4 +106,5 @@ func in_thread_render(size : Vector2i, texture_type : int, target_texture : MMTe
 	rids.free_rids(rd)
 
 func render(size : Vector2i, texture_type : int, target_texture : MMTexture, with_depth : bool = false):
+	await restore_input_textures()
 	return await mm_renderer.thread_run(self.in_thread_render, [size, texture_type, target_texture, with_depth])
