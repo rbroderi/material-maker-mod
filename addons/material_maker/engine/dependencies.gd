@@ -60,9 +60,16 @@ func delete_buffer(buffer_name : String):
 	buffer_clear_dependencies(buffer_name)
 	buffers.erase(buffer_name)
 	if dependencies.has(buffer_name):
+		# The buffer has just been invalidated, so the buffers that depend on
+		# it count it as a pending dependency: release them so they can be
+		# rendered again
 		for b in dependencies[buffer_name]:
 			if buffers.has(b):
 				buffers[b].dependencies.erase(buffer_name)
+				if buffers[b].pending_dependencies > 0:
+					buffers[b].pending_dependencies -= 1
+		dependencies.erase(buffer_name)
+		update()
 	dependencies_values.erase(buffer_name)
 	if was_updating and updating:
 		updating = false
