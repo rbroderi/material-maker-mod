@@ -99,6 +99,18 @@ Selected items can also be duplicated using the **Edit -> Duplicate**
 menu or the **Control+D** keyboard shortcut. This operation does not affect
 the clipboard.
 
+Nodes of unknown types
+~~~~~~~~~~~~~~~~~~~~~~
+
+When a material contains nodes whose type is unknown (for example nodes created with
+a newer version of Material Maker, or nodes from a library that is not installed), those
+nodes are loaded as placeholders, with a magenta title bar and a **Missing:** title.
+
+Placeholders keep the node's parameters and connections, and are saved unchanged with
+the material, so it can still be opened where the node type is available. Their outputs
+are magenta (also in exports, including command line exports, where a warning lists the
+unknown types). They can be moved, copied, deleted and grouped like other nodes, but not edited.
+
 Background 2D preview
 ~~~~~~~~~~~~~~~~~~~~~
 
