@@ -371,6 +371,11 @@ func api_create_node(params : Dictionary):
 		if nodes.generators.is_empty():
 			return fail("cannot create node of type '%s'" % data.get("type", ""))
 		var generator : MMGenBase = nodes.generators[0]
+		if data.has("type") and generator is MMGenMissing:
+			# Placeholders keep the nodes of unknown types of loaded graphs,
+			# new nodes must have a known type
+			graph.remove_generator(generator)
+			return fail("cannot create node of type '%s'" % data.get("type", ""))
 		for p in params.get("parameters", {}).keys():
 			generator.set_parameter(p, MMType.deserialize_value(params.parameters[p]))
 		return generator.name)
