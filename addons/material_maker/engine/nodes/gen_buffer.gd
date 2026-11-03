@@ -24,6 +24,12 @@ var is_paused : bool = false
 ## Dimensions of the buffer in the size uniforms of the shaders that read it
 var published_dimensions : Vector2i = Vector2i(-1, -1)
 
+## Named parameters used by the size offset expression (changing them resizes
+## the buffer)
+var size_named_parameters : Array = []
+## Why the size offset expression is invalid ("" if it is valid)
+var size_offset_error : String = ""
+
 const SIZE_MODE_ABSOLUTE : int = 0
 const SIZE_MODE_RELATIVE_TO_OUTPUT : int = 1
 const SIZE_MODE_RELATIVE_TO_INPUT : int = 2
@@ -78,7 +84,7 @@ func get_parameter_defs() -> Array:
 				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" }, { name="Relative to input", value="input" } ],
 				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset, relative to input uses the size of the texture the input reads (the nearest buffer or image upstream) multiplied by 2^offset" })
 			parameter_defs.push_back({ name="size_offset", label="Size offset", type="float", min=-6.0, max=4.0, step=1.0, default=0.0,
-				longdesc="Size relative to the material's or the input's size, as a power of 2 (only used in relative size modes)" })
+				longdesc="Size relative to the material's or the input's size, as a power of 2 (only used in relative size modes). It can be an expression of the graph's named parameters (for example $detail-2)" })
 			parameter_defs.push_back({ name="aspect", label="Aspect ratio", type="enum", default=0, values=ASPECT_RATIOS,
 				longdesc="Width:height of the buffer (the size is its width). Non-square buffers have a different resolution horizontally and vertically, the image is still mapped to the whole UV square. Relative to input, the ratio is applied to the input's (1:1 keeps the input's ratio)" })
 	return parameter_defs
@@ -177,7 +183,7 @@ func get_buffer_size() -> int:
 			SIZE_MODE_RELATIVE_TO_OUTPUT:
 				var output_size : int = get_output_size()
 				if output_size >= 0:
-					return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
+					return clampi(output_size+get_size_offset(), size_def.first, size_def.last)
 			SIZE_MODE_RELATIVE_TO_INPUT:
 				return get_size_relative_to_input(get_input_dimensions().x)
 	return int(get_parameter("size"))
@@ -186,7 +192,34 @@ func get_buffer_size() -> int:
 func get_size_relative_to_input(input_width : int) -> int:
 	var size_def : Dictionary = get_parameter_def("size")
 	var input_size : int = roundi(log(float(input_width))/log(2.0))
-	return clampi(input_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
+	return clampi(input_size+get_size_offset(), size_def.first, size_def.last)
+
+## Returns the size offset (rounded to an integer). It can be an expression
+## of the graph's named parameters, that are then kept in size_named_parameters.
+## Invalid expressions give 0 and set size_offset_error.
+func get_size_offset() -> int:
+	if version != VERSION_COMPLEX:
+		return 0
+	var offset : Dictionary = calculate_float_parameter("size_offset")
+	size_named_parameters = offset.get("used_named_parameters", [])
+	var error : String = ""
+	var value : float = 0.0
+	if offset.has("value") and is_finite(offset.value):
+		value = offset.value
+	else:
+		error = offset.get("error", "not a number")
+	if error != size_offset_error:
+		size_offset_error = error
+		if error != "":
+			push_warning("Buffer %s: invalid size offset \"%s\" (%s), 0 is used instead" % [ name, str(get_parameter("size_offset")), error ])
+	return roundi(value)
+
+## A warning shown under the node when the size offset is invalid
+func get_size_warning() -> String:
+	if version != VERSION_COMPLEX or int(get_parameter("size_mode")) == SIZE_MODE_ABSOLUTE:
+		return ""
+	get_size_offset()
+	return "Invalid size offset" if size_offset_error != "" else ""
 
 ## Returns true if the buffer is stored as 8 bits (if the GPU does not
 ## support 8 bits storage, 16 bits floats are used instead)
@@ -358,11 +391,19 @@ func do_update_shader() -> void:
 			if version == VERSION_OLD:
 				notify_output_change(1)
 		await mm_deps.buffer_create_compute_material("o%d_tex" % get_instance_id(), shader_compute)
+		# The buffer is resized when the named parameters of its size offset change
+		get_size_offset()
+		for p in size_named_parameters:
+			mm_deps.buffer_add_dependency("o%d_tex" % get_instance_id(), p)
 		mm_deps.update()
 	else:
 		print("buffer is invalid")
 
 func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
+	if parameter_name in size_named_parameters and not shader_compute.get_parameters().has(parameter_name):
+		# Only the size offset uses this named parameter: the buffer is resized
+		# and rendered again, unless the size offset is not used
+		return version != VERSION_COMPLEX or int(get_parameter("size_mode")) == SIZE_MODE_ABSOLUTE
 	if value != null:
 		shader_compute.set_parameter(parameter_name, value)
 	return false
@@ -371,8 +412,9 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	if is_paused:
 		return false
 	var dimensions : Vector2i = get_buffer_dimensions()
-	if version == VERSION_COMPLEX and int(get_parameter("size_mode")) == SIZE_MODE_RELATIVE_TO_INPUT:
-		# The input's size may have changed (inputs are rendered first)
+	if version == VERSION_COMPLEX and int(get_parameter("size_mode")) != SIZE_MODE_ABSOLUTE:
+		# The input's size or the named parameters of the size offset may
+		# have changed (inputs are rendered first)
 		publish_dimensions(dimensions)
 	var status = await shader_compute.render(texture, dimensions.x, dimensions.y)
 	if status:

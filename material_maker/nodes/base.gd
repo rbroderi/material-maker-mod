@@ -265,15 +265,15 @@ func _draw() -> void:
 		if control.get("modulate"):
 			control.modulate.a = opacity
 
-## Draws the size and format of buffers, and precision warnings, under the node
-## (below the rendering time)
+## Draws the size and format of buffers, and size and precision warnings, under
+## the node (below the rendering time)
 func draw_badge() -> void:
 	var badge_font : Font = preload("res://material_maker/theme/font_rubik/Rubik-416.ttf")
 	var y : int = int(size.y)+(26 if generator.rendering_time > 0 else 12)
 	var lines : Array = [ [ generator.get_badge(), Color(0.75, 0.75, 0.75) ] ]
-	var warning : String = generator.get_precision_warning()
-	if warning != "":
-		lines.append([ tr(warning), Color(1.0, 0.65, 0.2) ])
+	for warning in [ generator.get_size_warning(), generator.get_precision_warning() ]:
+		if warning != "":
+			lines.append([ tr(warning), Color(1.0, 0.65, 0.2) ])
 	for l in lines:
 		draw_string_outline(badge_font, Vector2i(0, y), l[0], HORIZONTAL_ALIGNMENT_CENTER, int(size.x), 12, 4, Color.BLACK)
 		draw_string(badge_font, Vector2i(0, y), l[0], HORIZONTAL_ALIGNMENT_CENTER, int(size.x), 12, l[1])

@@ -53,6 +53,10 @@ The **Advanced Buffer** node has the following parameters:
   and *Relative to input* uses the size of the texture its input reads multiplied by 2 to the
   power of *size offset* (0 for the same size as the input, -1 for half, 1 for double)
 
+* the *size offset* used by the relative modes can also be an expression of the graph's named
+  parameters (for example *$detail-2*, rounded to the nearest integer), so a parameter of a
+  Remote node or of a graph's parameters controls the resolution
+
 * the *aspect ratio* (1:1, 2:1, 1:2, 4:1, 1:4, 8:1 or 1:8): the buffer's height is its
   resolution divided by the ratio, for example 1024x512 for a 1024 buffer with a 2:1 ratio.
   The buffer still covers the whole UV square, so its pixels are not square.
@@ -64,6 +68,12 @@ image upstream: through nodes that have inputs, the first input is followed (als
 groups). If the input reads no texture (for example a noise), the material's size is used.
 The buffer is resized and rendered again when the size of its input changes, and buffers
 that are relative to other relative buffers follow in turn.
+
+When the *size offset* is an expression, changing one of the named parameters it uses resizes
+the buffer and renders it again, with the nodes that read it. If the expression is invalid (a
+syntax error, an unknown named parameter or a result that is not a number), a size offset of 0
+is used, a warning is printed and *Invalid size offset* is shown under the node. In *Absolute*
+mode, the *texture resolution* can be controlled by a Remote node's linked control instead.
 
 Buffer nodes show their resolution (for example 512x256 px for non-square buffers) and format (16F, 32F or 8 bits, grayscale or RGBA) under
 the node. The *texture resolution* is greyed out in the relative modes, and the
