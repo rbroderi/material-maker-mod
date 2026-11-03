@@ -96,7 +96,7 @@ func set_shader_from_shadercode_ext(shader_template : String, shader_code : MMGe
 
 	return await set_shader_ext(shader_template, output_textures_desc, replaces)
 
-func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits : bool = false, extra_parameters : Array[Dictionary] = []) -> bool:
+func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits : bool = false, extra_parameters : Array[Dictionary] = [], is_8_bits : bool = false) -> bool:
 	var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
 	
 	extra_parameters.append({ name="elapsed_time", type="float", value=0.0 })
@@ -104,6 +104,11 @@ func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits :
 	var output_texture_type : int = 0 if (shader_code.output_type == "f") else 1
 	if is_32_bits:
 		output_texture_type |= 2
+	elif is_8_bits:
+		var texture_type_8_bits : int = TEXTURE_TYPE_R8 if (shader_code.output_type == "f") else TEXTURE_TYPE_RGBA8
+		# Fall back to 16 bits floats if the GPU does not support 8 bits storage
+		if is_output_texture_type_supported(texture_type_8_bits):
+			output_texture_type = texture_type_8_bits
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 	
 	return await set_shader_from_shadercode_ext(shader_template, shader_code, output_textures, extra_parameters)

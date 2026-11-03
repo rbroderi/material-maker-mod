@@ -42,7 +42,9 @@ Options
 * **--output-file <pattern>** is the file name of exported materials (%f is the input file name,
   %n and %N the material name, %a and %A its author)
 * **--size <size>** is the size of generated images (2048 by default). With **--export-material**,
-  0 uses the size of the Material node
+  0 uses the size of the Material node, and **--size <width>x<height>** (for example 2048x1024)
+  exports non-square textures: the graph is stretched to the textures' shape. Without a height,
+  the height of exported textures depends on the material's aspect ratio
 * **--set <name>=<value>** sets a parameter before rendering, and can be repeated. The name is
   either the name or label of a parameter of the graph's remote node (for example
   --set Hue=0.5), or a node name and a parameter name (for example --set Perlin:scale_x=8).

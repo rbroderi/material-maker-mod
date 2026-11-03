@@ -16,7 +16,9 @@ Parameters
 ++++++++++
 
 The **Static PBR Material** has parameters for all PBR channels as well as
-a size parameter that defines the size of all generated textures.
+a size parameter that defines the size of all generated textures. The aspect ratio
+parameter makes non-square textures (for example 2048x1024 with a size of 2048 and a 2:1
+ratio): the graph is stretched to the textures' shape.
 
 Exports
 +++++++

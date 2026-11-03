@@ -10,7 +10,10 @@ static func name_to_lower(s : String) -> String:
 	s = s.remove_chars("()/\"")
 	return s
 
+## Exports materials with image_size x options.height textures (if the height
+## is 0 or not set, it depends on the material's aspect ratio)
 func export_files(files, output_dir, target, target_file, image_size, options : Dictionary = {}) -> void:
+	var image_height : int = options.get("height", 0)
 	var website_materials : Array = []
 	# An Array (and not a PackedStringArray) so export_variation can append to it
 	var export_list : Array = []
@@ -57,7 +60,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 		if gen != null:
 			add_child(gen)
 			apply_graph_options(gen, f, options)
-			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, from_website, export_list))
+			await for_each_variation(gen, options, export_variation.bind(gen, f, basename, mat_name, mat_author, output_dir, target, target_file, image_size, image_height, from_website, export_list))
 			print("Done")
 			gen.queue_free()
 	if not export_list.is_empty():
@@ -66,7 +69,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 
 ## Exports the materials of a graph (called for each variation, with the
 ## suffix of its files)
-func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, from_website : bool, export_list : Array) -> void:
+func export_variation(suffix : String, gen : MMGenBase, f : String, basename : String, mat_name : String, mat_author : String, output_dir : String, target : String, target_file : String, image_size : int, image_height : int, from_website : bool, export_list : Array) -> void:
 	var mat_name_lower = name_to_lower(mat_name)
 	var mat_author_lower = name_to_lower(mat_author)
 	var gen_stack : Array[MMGenBase] = [gen]
@@ -101,7 +104,7 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 			else:
 				var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
 				print("Saving additional export %s" % file_name)
-			await c.export_material(prefix, best_target, image_size, true)
+			await c.export_material(prefix, best_target, image_size, true, image_height)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
@@ -137,7 +140,8 @@ Options (they can also be given after "--"):
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
   --size <size>              image size in pixels (default: 2048; with --export-material, 0 uses
-                             the Material node's size)
+                             the Material node's size, and <width>x<height> exports non-square
+                             textures)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
@@ -240,8 +244,12 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 					return {}
 				match arg:
 					"--size":
-						options.size = int(value)
-						if not value.is_valid_int() or options.size < 0:
+						# A size, or <width>x<height> (e.g. 2048x1024) for
+						# non-square textures
+						var dimensions : PackedStringArray = value.to_lower().split("x")
+						options.size = int(dimensions[0])
+						options.height = int(dimensions[1]) if dimensions.size() == 2 else 0
+						if not dimensions[0].is_valid_int() or options.size < 0 or dimensions.size() > 2 or (dimensions.size() == 2 and (options.size == 0 or not dimensions[1].is_valid_int() or options.height <= 0)):
 							show_error("ERROR: incorrect size "+value)
 							return {}
 					"--set":
@@ -361,11 +369,19 @@ func render_files(files : Array, options : Dictionary) -> void:
 		show_error("ERROR: incorrect size 0")
 		get_tree().quit(1)
 		return
+	if options.get("height", 0) > 0:
+		show_error("ERROR: --size <width>x<height> only works with --export-material")
+		get_tree().quit(1)
+		return
 	await process_graph_files(files, options, render_variation, "--render")
 
 func bake_files(files : Array[String], options : Dictionary) -> void:
 	if options.size == 0:
 		show_error("ERROR: incorrect size 0")
+		get_tree().quit(1)
+		return
+	if options.get("height", 0) > 0:
+		show_error("ERROR: --size <width>x<height> only works with --export-material")
 		get_tree().quit(1)
 		return
 	for f in files:
