@@ -21,6 +21,9 @@ func get_type_name() -> String:
 	return "Missing: %s" % get_type()
 
 func get_description() -> String:
+	var plugin : String = MMPlugins.get_missing_node_type_plugin(get_type())
+	if plugin != "":
+		return "This node's type (%s) is unknown: it comes from %s. It is kept as is when the graph is saved." % [ get_type(), plugin ]
 	return "This node's type (%s) is unknown: a plugin may be missing or disabled. It is kept as is when the graph is saved." % get_type()
 
 ## Sets the port counts from the connections of the graph that contains the

@@ -201,18 +201,17 @@ func load_gen(filename: String) -> MMGenBase:
 			current_project_path = filename.get_base_dir()
 			missing_node_types = PackedStringArray()
 			var nodes_dir : String = get_local_nodes_dir(filename, data)
-			var generator = await create_gen(data, true, load_local_node_definitions(nodes_dir))
+			var local_definitions : Dictionary = load_local_node_definitions(nodes_dir)
+			var generator = await create_gen(data, true, local_definitions)
 			if generator:
 				generator.set_meta("file_path", filename)
 				if generator is MMGenGraph:
 					generator.local_nodes_dir = nodes_dir
 				# What the graph needs that is missing (see MMPlugins.check_requirements)
-				var missing : PackedStringArray = MMPlugins.check_requirements(MMPlugins.get_graph_requirements(data))
-				for t in missing_node_types:
-					var description : String = "nodes of type %s (unknown)" % t
-					if not description in missing:
-						missing.append(description)
+				var missing : PackedStringArray = MMPlugins.check_requirements(MMPlugins.get_graph_requirements(data), missing_node_types, local_definitions)
 				generator.set_meta("missing_requirements", missing)
+				if not missing_node_types.is_empty():
+					generator.set_meta("placeholder_types", missing_node_types)
 				for m in missing:
 					push_warning("%s needs %s" % [ filename.get_file(), m ])
 			current_project_path = ""

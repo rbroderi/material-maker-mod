@@ -626,7 +626,7 @@ func crash_recovery_save() -> void:
 			if not FileAccess.file_exists(save_crash_recovery_path):
 				break
 			i += 1
-	var data = top_generator.serialize()
+	var data = serialize_graph()
 	var file : FileAccess = FileAccess.open(save_crash_recovery_path, FileAccess.WRITE)
 	if file != null:
 		file.store_string(JSON.stringify(data))
@@ -808,7 +808,7 @@ func load_file(filename) -> bool:
 			set_save_path("")
 			set_need_save(true)
 		#print("Material has %d buffers" % find_buffers(new_generator))
-		show_missing_requirements(filename, new_generator.get_meta("missing_requirements", PackedStringArray()))
+		show_missing_requirements(filename, new_generator)
 		return true
 	else:
 		var dialog : AcceptDialog = AcceptDialog.new()
@@ -824,15 +824,19 @@ func load_file(filename) -> bool:
 
 ## Tells what a loaded graph needs that is missing (plugins, node types...,
 ## see MMPlugins.check_requirements)
-func show_missing_requirements(filename : String, missing : PackedStringArray) -> void:
+func show_missing_requirements(filename : String, graph : MMGenBase) -> void:
+	var missing : PackedStringArray = graph.get_meta("missing_requirements", PackedStringArray())
 	if missing.is_empty():
 		return
+	var text : String = "%s needs:\n\n- %s" % [ filename.get_file(), "\n- ".join(missing) ]
+	if graph.has_meta("placeholder_types"):
+		text += "\n\nNodes of unknown types are shown as magenta placeholders, and are saved unchanged."
 	var dialog : AcceptDialog = AcceptDialog.new()
 	add_child(dialog)
 	var content_scale_factor : float = mm_globals.ui_scale_factor()
 	dialog.content_scale_factor = content_scale_factor
 	dialog.title = "Missing requirements"
-	dialog.dialog_text = "%s needs:\n\n- %s\n\nNodes of unknown types are shown as magenta placeholders, and are saved unchanged." % [ filename.get_file(), "\n- ".join(missing) ]
+	dialog.dialog_text = text
 	dialog.min_size = dialog.get_contents_minimum_size() * content_scale_factor
 	dialog.connect("popup_hide", Callable(dialog, "queue_free"))
 	dialog.popup_centered()
@@ -855,10 +859,21 @@ func load_from_recovery(filename) -> bool:
 	if new_generator != null:
 		set_new_generator(new_generator)
 		set_need_save(true)
+		show_missing_requirements(filename, new_generator)
 		return true
 	return false
 
 # Save
+
+## The graph's data as saved in files, with what it needs (its declared
+## requirements and the plugins of its nodes, see MMPlugins.get_used_requirements)
+func serialize_graph() -> Dictionary:
+	var data : Dictionary = top_generator.serialize()
+	var declared : Dictionary = top_generator.requires if top_generator is MMGenGraph else {}
+	var requires : Dictionary = MMPlugins.get_used_requirements(data, declared)
+	if not requires.is_empty():
+		data.requires = requires
+	return data
 
 func generate_project_thumbnail() -> String:
 	var preview_vp : SubViewport
@@ -911,7 +926,7 @@ func save_file(filename : String) -> bool:
 	generator.set_meta("file_path", filename)
 	top_generator.set_meta("file_path", filename)
 	mm_loader.current_project_path = filename.get_base_dir()
-	var data = top_generator.serialize()
+	var data = serialize_graph()
 	data["project_thumbnail"] = await generate_project_thumbnail()
 	mm_loader.current_project_path = ""
 	var e: Error

@@ -214,14 +214,22 @@ also loaded by versions that do not save it, in a line of the graph's long descr
 
 * **material_maker_mod**: the minimum version of this fork's features (1.17)
 * **plugins**: plugin ids with an optional minimum version (**">=1.0"**)
-* **node_types**: node types that must be available
+* **node_types**: node types that must be available, as a list, or as a dictionary of node types
+  and the plugins they come from (**{ "example_stripes": "example" }**, **""** for other types)
 * **features**: features of this fork: buffer_release, buffer_size_relative_to_input,
   buffer_size_expressions, pass_size, iterate_buffer_v2, iteration_variable, unorm16, rg_formats,
   store_rounding, node_types, missing_node_placeholders, sbs_fxmap
 
+When a graph is saved, the plugins of its nodes (node types added by plugin scripts and node
+definitions of plugins, also in subgraphs) are added to its **requires**, with the installed version
+as minimum version, and with their node types in **node_types**. Declared requirements are kept
+(with the highest minimum version of each plugin), so are the plugins of placeholder nodes, and
+graphs without plugin nodes or requirements are saved as before.
+
 When a graph is loaded, what it needs and is missing (and the types of its placeholders) is shown
 in a dialog, returned by the **load** JSON-RPC method (**{ loaded, missing }**), and makes the
-command line fail with exit code 2 (placeholders only fail with **--strict**).
+command line fail with exit code 2 (placeholders only fail with **--strict**). Placeholders of
+node types whose plugin is known are listed with that plugin, and their tooltip names it.
 
 Graph-local node definitions
 ++++++++++++++++++++++++++++
