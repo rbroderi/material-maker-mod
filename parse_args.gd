@@ -86,9 +86,9 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 				continue
 			from_website = true
 		if gen != null and not check_requirements(gen, f, options):
+			# The graph is skipped (exit code 2), other graphs are exported
 			gen.free()
-			get_tree().quit(2)
-			return
+			continue
 		if gen != null:
 			add_child(gen)
 			if not check_export_targets(gen, f, target):

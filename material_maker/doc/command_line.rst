@@ -80,7 +80,8 @@ Options
   texture memory is printed after exports.
 * **--strict** fails when a graph has nodes of unknown types (by default, they are kept as magenta
   placeholders with a warning). Graphs that declare requirements (plugins, version, features) that are
-  not met always fail, with exit code 2.
+  not met always fail: they are skipped with an error, the other files are still processed, and
+  the exit code is 2.
 * **--preset <name>** applies a preset of the graph's remote nodes (before **--set** values). A
   graph that has no such preset is skipped with an error that lists its presets, and Material
   Maker exits with code 1
