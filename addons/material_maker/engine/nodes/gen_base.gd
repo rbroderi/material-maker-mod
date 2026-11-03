@@ -348,11 +348,15 @@ func find_material() -> Node:
 	return null
 
 ## Default size of rendered textures ($pass_size in shaders, compute renders
-## set the actual size): the material's size
+## set the actual size): the material's size (or its export size while it is
+## exported), or 1024x1024 if the graph has no material
 func get_pass_size() -> Vector2i:
 	var material : Node = find_material()
 	if material != null:
-		return Vector2i(material.get_image_size(), material.get_image_height())
+		var width : int = material.get_image_size()
+		if material.get_output_size() >= 0:
+			width = 1 << material.get_output_size()
+		return Vector2i(width, material.get_image_height(width))
 	return Vector2i(1024, 1024)
 
 func get_type() -> String:

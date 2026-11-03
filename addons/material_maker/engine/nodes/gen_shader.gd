@@ -11,6 +11,10 @@ var generic_size : int = 1
 
 var editable : bool = false
 
+## Uniforms that hold the size of the rendered texture ($pass_size). Compute
+## shaders set them when rendering.
+const PASS_SIZE_UNIFORMS : Array[String] = [ "mm_pass_size_x", "mm_pass_size_y" ]
+
 
 func toggle_editable() -> bool:
 	editable = !editable
@@ -706,11 +710,9 @@ func get_common_replace_variables(uv : String, rv : ShaderCode) -> Dictionary:
 	variables.uv = uv
 	variables.time = "elapsed_time"
 	# Size of the rendered texture in pixels (set by compute renders, the
-	# material's size elsewhere)
-	variables.pass_size = "vec2(mm_pass_size_x, mm_pass_size_y)"
-	var pass_size : Vector2i = get_pass_size()
-	rv.add_uniform("mm_pass_size_x", "float", float(pass_size.x))
-	rv.add_uniform("mm_pass_size_y", "float", float(pass_size.y))
+	# material's size elsewhere). Its uniforms are only declared in shaders
+	# that use it (see add_pass_size_uniforms())
+	variables.pass_size = "vec2(%s, %s)" % PASS_SIZE_UNIFORMS
 	if ! mm_renderer.get_global_parameters().is_empty():
 		for gp in mm_renderer.get_global_parameters():
 			variables[gp] = "mm_global_"+gp
@@ -730,6 +732,20 @@ func get_common_replace_variables(uv : String, rv : ShaderCode) -> Dictionary:
 	variables["?4"] = "_controlled_variation_.w"
 	variables["node_id"] = str(get_instance_id())
 	return variables
+
+## Declares the $pass_size uniforms, with the material's size as default
+## value. They are only declared in shaders that use $pass_size, so other
+## shaders are not modified.
+func add_pass_size_uniforms(rv : ShaderCode) -> void:
+	var pass_size : Vector2i = get_pass_size()
+	rv.add_uniform(PASS_SIZE_UNIFORMS[0], "float", float(pass_size.x))
+	rv.add_uniform(PASS_SIZE_UNIFORMS[1], "float", float(pass_size.y))
+
+## Called when the material's size or aspect ratio changes: previews of
+## shaders that use $pass_size are generated again
+func on_pass_size_changed() -> void:
+	if str(shader_model_preprocessed).contains("pass_size") or str(parameters).contains("pass_size"):
+		all_sources_changed()
 
 func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -> ShaderCode:
 	var genname = "o"+str(get_instance_id())
@@ -802,6 +818,9 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 		rv.output_type   = rv.alias.output_type
 	else:
 		rv.output_type = output.type
+
+	if rv.code.contains(PASS_SIZE_UNIFORMS[0]) or rv.defs.contains(PASS_SIZE_UNIFORMS[0]):
+		add_pass_size_uniforms(rv)
 
 	# Declare the iteration only if it is used, so it does not invalidate
 	# shaders that do not depend on it
