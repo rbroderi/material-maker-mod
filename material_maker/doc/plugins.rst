@@ -96,8 +96,8 @@ plugin nodes have no **requires** dictionary.
 When a material is loaded, Material Maker checks that those plugins are installed, enabled
 and recent enough, and that they have those node types. If not, a *Missing requirements*
 dialog names the missing plugins (installed but disabled, not installed, too old or that could
-not be loaded) and their nodes (on the command line, a warning is printed instead, and the
-export goes on). Those nodes are loaded as magenta placeholders: their tooltip names the
+not be loaded) and their nodes (on the command line, an error is printed instead, the material
+is skipped, and the exit code is 2, see :doc:`command_line`). Those nodes are loaded as magenta placeholders: their tooltip names the
 plugin, and they are saved unchanged with the material, with the plugins they need, so the
 material is complete again once the plugin is enabled.
 

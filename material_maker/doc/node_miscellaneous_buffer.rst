@@ -51,4 +51,4 @@ it), so very large graphs only keep a few textures at a time. *Never* keeps all 
 is fastest), *During exports* releases them while exporting, and *Always* also releases them while
 editing (changing a node renders the released buffers it needs again). Buffers read by the 2D
 and 3D preview panels, the Material node, histograms and iterate buffers are never released, nor
-are paused buffers.
+are paused buffers. On the command line, buffers are released with the **--low-memory** option.

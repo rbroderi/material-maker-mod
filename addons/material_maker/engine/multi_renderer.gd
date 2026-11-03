@@ -172,6 +172,9 @@ var texture_budget_check_scheduled : bool = false
 var texture_budget_check_running : bool = false
 var texture_budget_check_again : bool = false
 var texture_budget_retry_scheduled : bool = false
+## GPU memory budget in MB set on the command line (--gpu-budget), used
+## instead of the preference when not negative
+var gpu_memory_budget_override : float = -1.0
 
 func request_texture_budget_check() -> void:
 	if not texture_budget_check_scheduled:
@@ -179,15 +182,17 @@ func request_texture_budget_check() -> void:
 		check_texture_budget.call_deferred()
 
 ## Spills the least recently used textures of the rendering device to RAM
-## when they use more than the gpu_memory_budget preference (in MB, 0 means
-## no limit)
+## when they use more than the budget (--gpu-budget or the gpu_memory_budget
+## preference, in MB, 0 means no limit)
 func check_texture_budget() -> void:
 	texture_budget_check_scheduled = false
 	if texture_budget_check_running:
 		# Check again when the current check is done
 		texture_budget_check_again = true
 		return
-	var budget_mb : float = float(mm_globals.get_config("gpu_memory_budget"))
+	var budget_mb : float = gpu_memory_budget_override
+	if budget_mb < 0.0:
+		budget_mb = float(mm_globals.get_config("gpu_memory_budget"))
 	if budget_mb <= 0.0:
 		return
 	var budget : int = int(budget_mb*1048576.0)

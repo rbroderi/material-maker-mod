@@ -10,6 +10,10 @@ static func name_to_lower(s : String) -> String:
 	s = s.remove_chars("()/\"")
 	return s
 
+## Exit code of the modes that process graph files: 2 when a graph's
+## requirements are not met (it is skipped, see check_requirements)
+var exit_code : int = 0
+
 func export_files(files, output_dir, target, target_file, image_size, options : Dictionary = {}) -> void:
 	var website_materials : Array = []
 	# An Array (and not a PackedStringArray) so export_variation can append to it
@@ -54,6 +58,10 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 				print("Failed to download asset ", asset_index)
 				continue
 			from_website = true
+		if gen != null and not check_requirements(gen, f, options):
+			# Nothing is exported for this graph
+			gen.free()
+			continue
 		if gen != null:
 			add_child(gen)
 			apply_graph_options(gen, f, options)
@@ -62,7 +70,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 			gen.queue_free()
 	if not export_list.is_empty():
 		print(",\n".join(PackedStringArray(export_list)))
-	get_tree().quit()
+	get_tree().quit(exit_code)
 
 ## Exports the materials of a graph (called for each variation, with the
 ## suffix of its files)
@@ -119,6 +127,9 @@ const VALUE_OPTIONS : Dictionary = {
 	"--format": { key="format", type=TYPE_STRING },
 	"--node": { key="node", type=TYPE_STRING },
 	"--show-window": { key="show_window", type=TYPE_BOOL },
+	"--gpu-budget": { key="gpu_budget", type=TYPE_FLOAT, minimum=0.0 },
+	"--low-memory": { key="low_memory", type=TYPE_BOOL },
+	"--strict": { key="strict", type=TYPE_BOOL },
 }
 
 ## Image formats of --render
@@ -130,6 +141,7 @@ const HELP : String = """Material Maker command line
   material_maker --render --node <node[:output]> [options] <files>   render a node output
   material_maker --bake [--maps <map,...>] [options] <meshes>   bake mesh maps
   material_maker --list-parameters <files>   list the parameters that can be set
+  material_maker --plugin <command> [arguments]   run a command of a plugin
   material_maker -- --help   show this help
 
 Options (they can also be given after "--"):
@@ -146,6 +158,15 @@ Options (they can also be given after "--"):
   --format <format>          image format of --render (png, exr, jpg or webp)
   --maps <map,...>           maps of --bake (default: ambient_occlusion,curvature,thickness,normal,position)
   --show-window              do not minimize the window
+  --gpu-budget <MB>          GPU memory budget: the least recently used textures are moved to RAM
+                             above it (overrides the preference, 0: no limit)
+  --low-memory               free the texture of each buffer when all the buffers that read it are
+                             rendered (slower, uses less GPU memory)
+  --strict                   fail when a graph has nodes of unknown types (by default they are
+                             kept as magenta placeholders)
+
+Graphs whose requirements (plugins, Material Maker version) are not met, and with --strict graphs
+with nodes of unknown types, are skipped and the exit code is 2.
 """
 
 func _ready():
@@ -197,6 +218,10 @@ func _ready():
 		get_window().mode = Window.MODE_MINIMIZED
 	var dir : DirAccess = DirAccess.open(".")
 	print("Current dir: ", dir.get_current_dir())
+	if options.has("gpu_budget"):
+		mm_renderer.gpu_memory_budget_override = options.gpu_budget
+	if options.get("low_memory", false):
+		mm_deps.release_mode = mm_deps.RELEASE_ALWAYS
 	if options.output_dir == "":
 		options.output_dir = dir.get_current_dir()
 	if ! dir.dir_exists(options.output_dir):
@@ -320,9 +345,29 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 	if gen == null:
 		show_error("ERROR: cannot load %s" % f)
 		return null
+	if not check_requirements(gen, f, options):
+		gen.free()
+		return null
 	add_child(gen)
 	apply_graph_options(gen, f, options)
 	return gen
+
+## Whether a loaded graph has what it needs (see MMPlugins.check_requirements):
+## missing plugins or a too old Material Maker are errors, and nodes of
+## unknown types (kept as placeholders) are errors only with --strict. Sets
+## the exit code to 2 when it does not.
+func check_requirements(gen : MMGenBase, f : String, options : Dictionary) -> bool:
+	var missing : PackedStringArray = gen.get_meta("missing_requirements", PackedStringArray())
+	var ok : bool = true
+	for m in missing:
+		if m.begins_with("nodes of unknown types") and not options.get("strict", false):
+			print("WARNING: %s needs %s (kept as magenta placeholders)" % [ f.get_file(), m ])
+		else:
+			show_error("ERROR: %s needs %s" % [ f.get_file(), m ])
+			ok = false
+	if not ok:
+		exit_code = 2
+	return ok
 
 ## Applies --set values
 func apply_graph_options(gen : MMGenBase, f : String, options : Dictionary) -> void:
@@ -344,7 +389,7 @@ func process_graph_files(files : Array, options : Dictionary, variation : Callab
 		await for_each_variation(gen, options, variation.bind(gen, f, options))
 		gen.queue_free()
 	print("Done")
-	get_tree().quit()
+	get_tree().quit(exit_code)
 
 ## Calls callable once per variation, after changing the seeds, with the
 ## suffix of the variation's files
@@ -399,4 +444,4 @@ func list_parameters(files : Array) -> void:
 		for l in MMCliTools.list_parameters(gen):
 			print("  "+l)
 		gen.queue_free()
-	get_tree().quit()
+	get_tree().quit(exit_code)
