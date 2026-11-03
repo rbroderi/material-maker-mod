@@ -21,6 +21,10 @@ Exports
 
 The **Dynamic Sky Material** has exports for the Godot game engine.
 
+Buffers used by the shader are exported as EXR textures, with the precision
+Material Maker computes them with, and an .import file that makes Godot import
+them as uncompressed textures without mipmaps.
+
 Example images
 ++++++++++++++
 
