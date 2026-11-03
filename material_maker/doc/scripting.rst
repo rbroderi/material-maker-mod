@@ -226,9 +226,17 @@ Graph-local node definitions
 
 The .mmg files of a folder named **<graph>_nodes** next to a graph file (or of the folder given by
 the graph's **nodes_dir**, relative to the graph file) are loaded before the graph, and their names
-are node types, that take precedence over the nodes of Material Maker and of plugins. Converters
+are node types, that take precedence over the node files of Material Maker and of plugins. Converters
 use them to write each repeated subgraph once (for example sbsar2ptex's
 **sbs_<material>_<node>** types).
+
+These definitions belong to the graph that loaded them: other graphs open at the same time, and
+library nodes (also inside that graph), keep using the library's definitions, and they are freed
+when the graph is closed. To update a graph-local node, edit its .mmg file and reload the graph.
+A graph saved in another folder or under another name gets a **nodes_dir** that points to the
+folder it was loaded from, and rescue files use the folder of their graph. Nodes copied into
+another graph, or added to a library, are copied with their definitions when the other graph
+doesn't define the same node type in the same way.
 
 The **list_plugins** JSON-RPC method lists the plugins, and the RPC methods and commands they add.
 The **material_maker/plugins/example** folder contains an example plugin (disabled by default)
