@@ -26,6 +26,22 @@ func set_theme_overrides(node, generator : MMGenBase = null) -> void:
 		return
 	if generator == null:
 		generator = node.generator
+	if generator is MMGenMissing:
+		# Placeholders of nodes whose type is unknown have a magenta frame
+		for s in [ "titlebar", "titlebar_selected", "panel", "panel_selected" ]:
+			var frame : StyleBoxFlat = theme.get_stylebox(s, "GraphNode").duplicate(true) as StyleBoxFlat
+			if frame == null:
+				continue
+			if s.begins_with("titlebar"):
+				frame.bg_color = Color(0.5, 0.0, 0.5, frame.bg_color.a)
+				frame.border_width_top = 2
+			else:
+				frame.border_width_bottom = 2
+			frame.border_width_left = 2
+			frame.border_width_right = 2
+			frame.border_color = Color.MAGENTA
+			node.add_theme_stylebox_override(s, frame)
+		return
 	if library_manager == null:
 		library_manager = get_node("/root/MainWindow/NodeLibraryManager")
 		if library_manager == null:

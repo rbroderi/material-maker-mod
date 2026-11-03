@@ -373,9 +373,9 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 					generator.model = data.type
 		if generator == null and data.type is String and data.type != "":
 			# Unknown types (e.g. of a plugin that is not installed) are kept
-			push_warning("Unknown node type %s (a plugin may be missing)" % data.type)
 			if not data.type in missing_node_types:
 				missing_node_types.append(data.type)
+				push_warning("Unknown node type %s (a plugin may be missing)" % data.type)
 			generator = MMGenMissing.new()
 		if generator != null:
 			generator.name = data.type

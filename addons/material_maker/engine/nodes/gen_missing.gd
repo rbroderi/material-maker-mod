@@ -54,6 +54,17 @@ func serialize() -> Dictionary:
 	var rv : Dictionary = data.duplicate(true)
 	rv.name = name
 	rv.node_position = { x=position.x, y=position.y }
+	# Only the states that can be changed in the graph view
+	if minimized != (data.get("minimized", false) == true):
+		if minimized:
+			rv.minimized = true
+		else:
+			rv.erase("minimized")
+	if preview != int(data.get("preview", -1)):
+		if preview >= 0:
+			rv.preview = preview
+		else:
+			rv.erase("preview")
 	return rv
 
 func deserialize(new_data : Dictionary) -> void:
@@ -62,3 +73,5 @@ func deserialize(new_data : Dictionary) -> void:
 		name = data.name
 	if data.has("node_position"):
 		position = Vector2(data.node_position.x, data.node_position.y)
+	preview = int(data.get("preview", -1))
+	minimized = data.get("minimized", false) == true
