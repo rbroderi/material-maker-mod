@@ -73,6 +73,9 @@ graph (and in **list_nodes**).
 * **quit()** (without user interface only)
 
 Enabled plugins can add other methods (see :ref:`plugins-section`), that are called in the same
-way (for example **mm.call("example_node_count")** with the example plugin).
+way (for example **mm.call("example_node_count")** with the example plugin). The Runtime
+export plugin adds **export_mmr(path, size)**, that exports a runtime package of the material
+(see :ref:`export-section`; size 0, the default, uses the Material node's size), for example
+**mm.call("export_mmr", path="bricks.mmr")**.
 
 Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).

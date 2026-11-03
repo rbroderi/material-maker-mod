@@ -93,3 +93,32 @@ so you just have to paste it into Unreal's 5 Python prompt and execute it to cre
 
 When exporting, the target path is not that important (all necessary files will be imported into
 the Unreal project), but the file name will be used as material name.
+
+Runtime packages
+----------------
+
+Runtime packages (.mmr files) contain the compute shaders that render a material's textures,
+so that an engine or a tool can render them again with different parameter values, at runtime
+or when importing the material, without Material Maker. They are exported by the **Runtime
+export** plugin (enabled by default), with the **File/Export runtime package (.mmr)...** menu
+item, the **--export-mmr** command line mode or the **export_mmr** scripting method:
+
+ material_maker --export-mmr --size 1024 -o packages bricks.ptex
+
+(as with **--export-material**, **--size 0** uses the size of the Material node, and
+**--set**, **--seed** and **--variations** can be used).
+
+A package is a zip file that contains a **manifest.json** file, the GLSL source
+(**shaders/<pass>.glsl**) and SPIR-V code (**shaders/<pass>.spv**) of each compute shader pass
+(buffers are separate passes), and the textures that are not rendered by a pass (for example
+images, and the results of iterate buffers) as EXR or PNG files. The manifest describes
+each pass (size, output format, parameter buffer layout and initial content, inputs), the pass
+of each material channel (albedo, orm, emission, normal, height), the Material node's
+parameters, and the runtime parameters:
+
+* the parameters of the graph's remote node that only change shader uniforms (float and
+  color parameters), with the uniforms they drive. Other parameters are baked, and listed in
+  **baked_parameters**
+* **time**, for animated materials (that use $time), in seconds
+* **seed**, for materials with random nodes, that changes their seeds as the **--seed**
+  command line option does
