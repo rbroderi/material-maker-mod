@@ -178,6 +178,7 @@ func in_thread_render_ext(textures : Array[MMTexture], size : Vector2i, output_p
 	return status
 
 func render_ext(textures : Array[MMTexture], size : Vector2i, output_parameters_values = null) -> bool:
+	await restore_input_textures()
 	return await mm_renderer.thread_run(self.in_thread_render_ext, [textures, size, output_parameters_values])
 
 func render_2(rd : RenderingDevice, textures : Array[MMTexture], output_parameters_values, size : Vector2i, rids : RIDs) -> bool:

@@ -42,7 +42,11 @@ func set_paused(v : bool) -> void:
 	if v == is_paused:
 		return
 	is_paused = v
-	if ! v:
+	if v:
+		# A paused buffer keeps its texture: if it was released, it is
+		# rendered again (see on_dep_update_buffer())
+		texture.restore()
+	else:
 		mm_deps.update()
 
 func get_buffers(flags : int = BUFFERS_ALL) -> Array:
@@ -131,7 +135,10 @@ func on_dep_update_value(buffer_name, parameter_name, value) -> bool:
 	return false
 
 func on_dep_update_buffer(buffer_name : String) -> bool:
-	if is_paused:
+	# Paused buffers are only rendered to restore their released texture
+	# (their input did not change since it was rendered)
+	var restoring : bool = mm_deps.is_restoring(buffer_name)
+	if is_paused and not restoring:
 		return false
 	var status = await shader_compute.render(texture, pow(2, get_parameter("size")))
 	if status:
@@ -139,13 +146,21 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		self.rendering_time_updated.emit(rendering_time)
 		mm_deps.dependency_update(buffer_name, texture, true)
 		mm_deps.update()
-		on_buffer_updated()
+		if not restoring:
+			on_buffer_updated()
 	else:
 		print("Failed to update buffer")
 	return status
 
 func on_buffer_updated():
 	pass
+
+## Frees the buffer's texture (it is rendered again when needed, see mm_deps)
+func release_buffer(buffer_name : String) -> bool:
+	if is_paused or buffer_name != "o%d_tex" % get_instance_id():
+		return false
+	texture.release(buffer_name)
+	return true
 
 func get_adjusted_uv(uv : String) -> String:
 	if version == VERSION_COMPLEX and not get_parameter("filter"):

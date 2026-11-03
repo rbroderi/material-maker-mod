@@ -40,3 +40,15 @@ The **Advanced Buffer** node has 3 parameters:
 * the *filter* property; if set, the buffer output will be filtered
 
 * the *mipmap* property; if set, mipmaps will be generated for this buffer
+
+Releasing buffers
++++++++++++++++++
+
+The *Release buffers* preference (General tab) frees the texture of a buffer (in the GPU and in
+the main memory) as soon as all the buffers that read it are rendered, and renders it again when
+it is needed. Buffers are then rendered depth first (each input just before the buffers that read
+it), so very large graphs only keep a few textures at a time. *Never* keeps all buffers (editing
+is fastest), *During exports* releases them while exporting, and *Always* also releases them while
+editing (changing a node renders the released buffers it needs again). Buffers read by the 2D
+and 3D preview panels, the Material node, histograms and iterate buffers are never released, nor
+are paused buffers.

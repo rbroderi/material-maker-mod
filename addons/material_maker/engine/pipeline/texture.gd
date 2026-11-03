@@ -154,6 +154,36 @@ static func in_thread_free_rid(texture_rid, rendering_device):
 	if texture_rid.is_valid():
 		rendering_device.free_rid(texture_rid)
 
+## Name of the buffer (in mm_deps) of a released texture, that must be
+## rendered again before the texture can be used (see release())
+var released_buffer : String = ""
+
+## Frees the texture in the rendering device and its image in RAM (unlike
+## spilling, the texture is lost and its buffer must render it again)
+func release(buffer_name : String) -> void:
+	released_buffer = buffer_name
+	texture_needs_update = false
+	# Other objects may still use the old image texture
+	texture = ImageTexture.new()
+	# The rendering device texture is freed in the rendering thread, where it
+	# may be used, spilled or rendered again
+	await mm_renderer.thread_run(in_thread_release, [self, buffer_name])
+
+static func in_thread_release(t : MMTexture, buffer_name : String) -> void:
+	if t.released_buffer != buffer_name:
+		# The texture was rendered again meanwhile
+		return
+	if t.rid.is_valid():
+		t.rd.free_rid(t.rid)
+	t.rid = RID()
+	t.rendered = false
+	t.spilled_image = null
+
+## Renders a released texture again (does nothing for other textures)
+func restore() -> void:
+	if released_buffer != "":
+		await mm_deps.restore_buffer(released_buffer)
+
 func get_texture_rid(target_rd : RenderingDevice) -> RID:
 	if ! rid.is_valid():
 		var image : Image = spilled_image if spilled_image != null else texture.get_image()
@@ -182,6 +212,7 @@ func get_texture_rid(target_rd : RenderingDevice) -> RID:
 func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.DataFormat, new_rd : RenderingDevice) -> void:
 	if new_rid == rid:
 		texture_needs_update = true
+		released_buffer = ""
 		touch()
 		return
 	if rid.is_valid():
@@ -193,6 +224,7 @@ func set_texture_rid(new_rid : RID, size : Vector2i, format : RenderingDevice.Da
 	texture_needs_update = true
 	rendered = true
 	spilled_image = null
+	released_buffer = ""
 	touch()
 
 func in_thread_get_texture() -> Texture2D:
@@ -220,6 +252,7 @@ func in_thread_read_image() -> Image:
 	return Image.create_from_data(texture_size.x, texture_size.y, false, image_format, rd.texture_get_data(rid, 0))
 
 func get_texture() -> Texture2D:
+	await restore()
 	if texture_needs_update:
 		if rd and (rid.is_valid() or spilled_image != null):
 			await mm_renderer.thread_run(in_thread_get_texture)
@@ -258,6 +291,7 @@ func set_texture(new_texture : ImageTexture) -> void:
 	rid = RID()
 	rendered = false
 	spilled_image = null
+	released_buffer = ""
 
 func get_width() -> int:
 	return texture_size.x
