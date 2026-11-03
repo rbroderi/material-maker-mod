@@ -128,7 +128,13 @@ class API:
 	## generator script (that extends MMGenBase), for nodes that shader
 	## definitions (.mmg files) cannot describe. Graphs with nodes of a type
 	## that is not available load them as placeholders (MMGenMissing).
+	## Types of Material Maker's nodes, of node definitions and of other
+	## plugins cannot be replaced.
 	func add_node_type(type : String, script : Script) -> void:
+		var error : String = MMPlugins.check_node_type(type, script)
+		if error != "":
+			push_error("Plugin %s: cannot add node type %s (%s)" % [ plugin_id, type, error ])
+			return
 		MMPlugins.node_types[type] = { plugin=plugin_id, script=script }
 
 	## Adds an operation to function graphs (Pixel and Value Processors):
@@ -388,9 +394,26 @@ static func call_rpc_method(method_name : String, params : Dictionary, server : 
 static func get_libraries() -> PackedStringArray:
 	var rv : PackedStringArray = PackedStringArray()
 	for p in plugins:
-		if p.enabled and p.get("library", "") != "":
+		if p.enabled and p.get("error", "") == "" and p.get("library", "") != "":
 			rv.append(p.library)
 	return rv
+
+## Why a plugin cannot add a node type (empty if it can)
+static func check_node_type(type : String, script : Script) -> String:
+	if type == "":
+		return "empty name"
+	if mm_loader.node_types.has(type) or mm_loader.predefined_generators.has(type):
+		return "a node of Material Maker or a node definition has this name"
+	if node_types.has(type):
+		return "already added by the %s plugin" % node_types[type].plugin
+	if script == null or not script.can_instantiate():
+		return "invalid script"
+	var base : Script = script
+	while base != null and base != MMGenBase:
+		base = base.get_base_script()
+	if base == null:
+		return "the script does not extend MMGenBase"
+	return ""
 
 static func call_export_hooks(material : MMGenBase, prefix : String, target : String) -> void:
 	for h in export_hooks:

@@ -168,7 +168,9 @@ Maker starts, and **_disable()** when it quits. The API object adds:
 * node types implemented by scripts: **api.add_node_type(type, script)**, for nodes that shader
   definitions (.mmg files) cannot describe. **script** extends **MMGenBase** (see the engine's
   generators, such as **MMGenSbsFxMap**), and nodes whose **"type"** is **type** in graph files
-  are created from it
+  are created from it. The types of Material Maker's nodes and node definitions cannot be
+  replaced, and a type that another plugin already added is not replaced either (the plugin gets
+  an error)
 * function graph operations (Pixel and Value Processors): **api.add_function_graph_op(name,
   operands, compile_callable, globals)**. **operands** are the keys of the node that reference
   other nodes. **compile_callable** receives the compiler (**MMFunctionGraph.Compiler**), the
