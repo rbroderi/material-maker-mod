@@ -649,6 +649,8 @@ func load_graph(f : String, options : Dictionary) -> MMGenBase:
 	var gen = await mm_loader.load_gen(f)
 	if gen == null:
 		show_error("ERROR: cannot load %s" % f)
+		if exit_code == 0:
+			exit_code = 1
 		return null
 	if not check_requirements(gen, f, options):
 		gen.free()
@@ -757,6 +759,8 @@ func render_variation(suffix : String, gen : MMGenBase, f : String, options : Di
 		error = await MMCliTools.render_node(gen, options.node, options.size, file_name, output_height)
 	if error != "":
 		show_error("ERROR: %s: %s" % [ f.get_file(), error ])
+		if exit_code == 0:
+			exit_code = 1
 	elif not options.get("separate_frames", false):
 		print("Rendered %s" % file_name)
 
