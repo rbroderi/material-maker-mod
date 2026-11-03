@@ -406,12 +406,10 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	mm_deps.dependency_update(rendered_buffer, null, true)
 	if buffer_name != rendered_buffer:
 		mm_deps.dependency_update(buffer_name, null, true)
-	var loop_reads_states : bool = false
-	for k in get_state_count():
-		if mm_deps.dependencies.get(get_loop_texture_name(k), []).has(buffer_name_loop):
-			loop_reads_states = true
+	var loop_reads_states : bool = loop_pass_changes()
 	if current_iteration > iterations or (not first_iteration and not loop_reads_states):
-		# Done (a loop that does not read the states would give the same result)
+		# Done (a loop that does not read the states or the iteration would
+		# give the same result)
 		set_current_iteration(iterations+1)
 		for k in get_state_count():
 			mm_deps.dependency_update(get_output_buffer_name(k), states[k], true)
@@ -421,6 +419,25 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		if not loop_reads_states:
 			mm_deps.buffer_invalidate(buffer_name_loop)
 	return status
+
+## Whether the loop pass reads the states (directly or through other buffers,
+## such as Buffer nodes in the loop) or the current iteration, so that each
+## loop pass can give a different result
+func loop_pass_changes() -> bool:
+	var visited : Dictionary = {}
+	var to_visit : Array = [ iteration_param_name ]
+	for k in get_state_count():
+		to_visit.push_back(get_loop_texture_name(k))
+	while not to_visit.is_empty():
+		var dependency : String = to_visit.pop_back()
+		if visited.has(dependency):
+			continue
+		visited[dependency] = true
+		for b in mm_deps.dependencies.get(dependency, []):
+			if b == buffer_name_loop:
+				return true
+			to_visit.push_back(b)
+	return false
 
 ## Publishes the final states that were requested, if the iterations are done
 func publish_final_states() -> void:

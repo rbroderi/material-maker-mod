@@ -282,7 +282,7 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 		mm_deps.dependency_update(buffer_name, null, true)
 	if current_iteration > iterations:
 		mm_deps.dependency_update(buffer_name_output, texture, true)
-	elif mm_deps.dependencies.get(buffer_name_loop_output, []).has(buffer_name_loop_input):
+	elif loop_input_changes():
 		# The loop input uses the loop output, so it is invalidated by this update
 		mm_deps.dependency_update(buffer_name_loop_output, texture, true)
 	elif not first_iteration:
@@ -297,6 +297,23 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	#print("done ", status)
 	
 	return status
+
+## Whether the loop input reads the loop output (directly or through other
+## buffers, such as Buffer nodes in the loop) or the current iteration, so
+## that each loop pass can give a different result
+func loop_input_changes() -> bool:
+	var visited : Dictionary = {}
+	var to_visit : Array = [ buffer_name_loop_output, iteration_param_name ]
+	while not to_visit.is_empty():
+		var dependency : String = to_visit.pop_back()
+		if visited.has(dependency):
+			continue
+		visited[dependency] = true
+		for b in mm_deps.dependencies.get(dependency, []):
+			if b == buffer_name_loop_input:
+				return true
+			to_visit.push_back(b)
+	return false
 
 func set_current_iteration(i : int) -> void:
 	if i == current_iteration:
