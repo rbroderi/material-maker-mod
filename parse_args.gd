@@ -169,7 +169,10 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 					material_size = image_size
 				await c.export_material(prefix, best_target, material_size, true, output_height, tiles)
 			else:
-				await c.export_material(prefix, best_target, image_size, true, output_height)
+				# Without --size, Export nodes use their own size (as exports
+				# from the user interface)
+				var export_size : int = image_size if export_options.get("size_given", false) else 0
+				await c.export_material(prefix, best_target, export_size, true, output_height)
 			if from_website:
 				export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 
@@ -232,7 +235,8 @@ Options (they can also be given after "--"):
   --size <size>              image size in pixels, or <width>x<height> for non-square outputs of --render,
                              --export-material and plugin modes (buffers stay square). --export-material
                              uses the Material node's size by default (or with --size 0), and buffers
-                             sized relative to the output follow --size (rounded to a power of 2)
+                             sized relative to the output follow --size (rounded to a power of 2).
+                             Without --size, Export nodes use their own size
   --preset <name>            apply a preset of the graph's parameters (before --set)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
