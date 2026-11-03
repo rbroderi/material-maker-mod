@@ -50,7 +50,10 @@ Paths must be absolute (the Python client converts them). Node names are those s
 graph (and in **list_nodes**).
 
 * **ping()** returns the version and whether the user interface is running
-* **new_graph()**, **load(path)**, **save(path)** create, load and save .ptex files
+* **new_graph()**, **load(path)**, **save(path)** create, load and save .ptex files.
+  **load** returns true, or, when the graph needs plugins, node types or a version of
+  Material Maker that are missing (see :ref:`plugins-section`), it still loads it (nodes of
+  unknown types are placeholders) and returns **{"loaded": true, "missing": [descriptions]}**
 * **list_nodes()** returns the nodes with their type, inputs, outputs and parameters
 * **get_node(node)**, **list_connections()**, **list_parameters()**
 * **set_parameter(node, parameter, value)** and **set_parameters(values)**, where values is a

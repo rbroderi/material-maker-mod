@@ -140,7 +140,21 @@ class MaterialMaker:
         return self.call("new_graph")
 
     def load(self, path):
-        """Loads a .ptex file"""
+        """Loads a .ptex file.
+
+        Returns True when the graph is complete. When something it needs is
+        missing (a plugin that is not installed, disabled or too old, nodes
+        of unknown types, which are loaded as placeholders, or a newer
+        Material Maker), the graph is still loaded and the result is a
+        dictionary such as::
+
+            {"loaded": True,
+             "missing": ['the plugin "Example" (disabled), for nodes of type example_maze']}
+
+        Both results are true in a boolean test (``if mm.load(path):``);
+        use ``mm.load(path) is True`` to also require a complete graph.
+        Files that cannot be loaded raise MaterialMakerError.
+        """
         return self.call("load", path=_path(path))
 
     def save(self, path):

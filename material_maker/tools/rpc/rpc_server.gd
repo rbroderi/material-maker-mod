@@ -232,6 +232,13 @@ func api_load(params : Dictionary):
 		if not graph is MMGenGraph:
 			return fail("cannot load '%s'" % params.path)
 		set_headless_graph(graph)
+	# What the graph needs that is missing (plugins, node types loaded as
+	# placeholders, a newer Material Maker, see MMPlugins.check_requirements).
+	# Complete graphs still return true, so existing clients are unaffected.
+	var loaded_graph : MMGenGraph = await get_graph()
+	var missing : PackedStringArray = loaded_graph.get_meta("missing_requirements", PackedStringArray()) if loaded_graph != null else PackedStringArray()
+	if not missing.is_empty():
+		return { loaded=true, missing=Array(missing) }
 	return true
 
 func api_save(params : Dictionary):
@@ -242,12 +249,23 @@ func api_save(params : Dictionary):
 		if not await graph_edit.save_file(params.path):
 			return fail("cannot save '%s'" % params.path)
 	else:
-		# (save_gen does not report errors)
+		var graph : MMGenGraph = await get_graph()
 		var file : FileAccess = FileAccess.open(params.path, FileAccess.WRITE)
 		if file == null:
 			return fail("cannot save '%s': %s" % [ params.path, error_string(FileAccess.get_open_error()) ])
+		# As mm_loader.save_gen, plus what the graph needs, as when it is
+		# saved in the user interface (see MMPlugins.get_graph_requirements)
+		graph.set_meta("file_path", params.path)
+		var data : Dictionary = graph.serialize()
+		data.name = params.path.get_file().get_basename()
+		data.node_position = { x=0, y=0 }
+		for k in [ "uids", "export_paths" ]:
+			data.erase(k)
+		var requires : Dictionary = MMPlugins.get_graph_requirements(data, graph.get_meta("requires", {}))
+		if not requires.is_empty():
+			data.requires = requires
+		file.store_string(mm_loader.dict_tree_to_string(data))
 		file.close()
-		mm_loader.save_gen(params.path, await get_graph())
 	return true
 
 func api_list_nodes(_params : Dictionary):
