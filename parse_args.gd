@@ -139,9 +139,10 @@ Options (they can also be given after "--"):
   --target <target>          export target (e.g. "Godot/Godot 4 Standard", "Unity/HDRP")
   -o, --output-dir <dir>     output directory (created if needed)
   --output-file <pattern>    output file name pattern (%f: file name, %n/%N: material name, %a/%A: author)
-  --size <size>              image size in pixels (default: 2048; with --export-material, 0 uses
-                             the Material node's size, and <width>x<height> exports non-square
-                             textures)
+  --size <size>              image size in pixels (default: 2048; --export-material uses the
+                             Material node's size and aspect ratio by default or with 0, and
+                             <width>x<height> exports non-square textures); buffers sized
+                             relatively to the Material follow it (rounded to a power of 2)
   --set <name>=<value>       set a parameter before rendering (repeatable); name is a remote parameter's
                              name or label, or node/path:parameter
   --seed <n>                 change the seeds of all nodes that are not locked
@@ -195,7 +196,10 @@ func _ready():
 	match mode:
 		"--export", "--export-material":
 			print("Exporting...")
-			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, options.size, options)
+			# Without --size, the Material node (and Export nodes) are exported
+			# at their own size, as from the user interface (0 is their size)
+			var image_size : int = options.size if options.get("size_given", false) else 0
+			await export_files(expand_files(files), options.output_dir, options.target, options.output_file, image_size, options)
 		"--render":
 			await render_files(expand_files(files), options)
 		"--bake":
@@ -248,6 +252,7 @@ func parse_options(args : PackedStringArray) -> Dictionary:
 						# non-square textures
 						var dimensions : PackedStringArray = value.to_lower().split("x")
 						options.size = int(dimensions[0])
+						options.size_given = true
 						options.height = int(dimensions[1]) if dimensions.size() == 2 else 0
 						if not dimensions[0].is_valid_int() or options.size < 0 or dimensions.size() > 2 or (dimensions.size() == 2 and (options.size == 0 or not dimensions[1].is_valid_int() or options.height <= 0)):
 							show_error("ERROR: incorrect size "+value)
