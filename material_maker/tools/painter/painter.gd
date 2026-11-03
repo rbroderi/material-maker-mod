@@ -591,7 +591,9 @@ func in_thread_paint(shader_params : Dictionary, end_of_stroke : bool = false, e
 		if false and OS.is_debug_build():
 			paint_textures[i*3+1].in_thread_get_texture()	# Update stroke texture
 		paint_textures[i*3+2].in_thread_get_texture() 	# Update painted texture
-	emit_signal("painted")
+	# This runs in the rendering thread: emit signals deferred so their handlers
+	# (UI, undo/redo) run in the main thread, after the deferred texture updates
+	emit_signal.call_deferred("painted")
 	if end_of_stroke and emit_end_of_stroke:
 		for i in range(paint_textures.size()/3):
 			init_shader.set_parameter("modulate", Color(1.0, 1.0, 1.0, 1.0))
@@ -608,7 +610,7 @@ func in_thread_paint(shader_params : Dictionary, end_of_stroke : bool = false, e
 			var channel_name : String = channels_infos[c].name
 			if has_channel[channel_name]:
 				stroke_state[channel_name] = get_paint_channel(c).next_texture
-		emit_signal("end_of_stroke", stroke_state)
+		emit_signal.call_deferred("end_of_stroke", stroke_state)
 
 func fill(erase : bool, reset : bool = false, emit_end_of_stroke : bool = true) -> void:
 	await paint({ brush_pos=Vector2(0, 0), brush_ppos=Vector2(0, 0), erase=erase, pressure=1.0, fill=true, reset=reset }, true, emit_end_of_stroke)
