@@ -50,14 +50,6 @@ const BYTES_PER_PIXEL : Dictionary = {
 }
 # Textures larger than this (in bytes) are read back in strips
 const MAX_READBACK_SIZE : int = 1 << 29
-
-## 16 bits integer formats, read back as 32 bits float images (by a compute
-## shader, Godot images have no 16 bits integer formats)
-const UNORM16_FORMATS : Dictionary = {
-	RenderingDevice.DATA_FORMAT_R16_UNORM: 1,
-	RenderingDevice.DATA_FORMAT_R16G16_UNORM: 2,
-	RenderingDevice.DATA_FORMAT_R16G16B16A16_UNORM: 4
-}
 ## Textures used more recently than this (in ms) are probably needed by the
 ## current renders and are not spilled
 const SPILL_MIN_IDLE_MS : int = 200
@@ -244,8 +236,7 @@ func get_texture_rid(target_rd : RenderingDevice) -> RID:
 			#print("No image for texture %s" % str(texture))
 			image = Image.create(1, 1, false, Image.FORMAT_RH)
 			format = RenderingDevice.DATA_FORMAT_R16_SFLOAT
-		elif UNORM16_FORMATS.has(format) or image_data_format(image.get_format()) != format:
-			# 16 bits integer textures are read back as float images
+		elif image_data_format(image.get_format()) != format:
 			var data_format : int = image_data_format(image.get_format())
 			if data_format >= 0:
 				format = data_format
@@ -302,9 +293,10 @@ func in_thread_get_texture() -> Texture2D:
 		texture_needs_update = false
 	return texture
 
-## Reads the texture back from the rendering device. Large textures are read
-## in strips, since drivers may fail to allocate a staging buffer for the whole
-## texture (e.g. 2 GB for 16384x16384 RGBA16F)
+## Reads the texture back from the rendering device (16 bits integer textures
+## as 16 bits integer images). Large textures are read in strips, since drivers
+## may fail to allocate a staging buffer for the whole texture (e.g. 2 GB for
+## 16384x16384 RGBA16F)
 func in_thread_read_image() -> Image:
 	var image_format : Image.Format
 	match texture_format:
@@ -326,8 +318,12 @@ func in_thread_read_image() -> Image:
 			image_format = Image.FORMAT_RGH
 		RenderingDevice.DATA_FORMAT_R32G32_SFLOAT:
 			image_format = Image.FORMAT_RGF
-	if UNORM16_FORMATS.has(texture_format):
-		return in_thread_read_unorm16_image(rd, rid, texture_size, UNORM16_FORMATS[texture_format])
+		RenderingDevice.DATA_FORMAT_R16_UNORM:
+			image_format = Image.FORMAT_R16
+		RenderingDevice.DATA_FORMAT_R16G16_UNORM:
+			image_format = Image.FORMAT_RG16
+		RenderingDevice.DATA_FORMAT_R16G16B16A16_UNORM:
+			image_format = Image.FORMAT_RGBA16
 	var row_size : int = texture_size.x*BYTES_PER_PIXEL.get(texture_format, 0)
 	if row_size == 0 or row_size*texture_size.y <= MAX_READBACK_SIZE:
 		return Image.create_from_data(texture_size.x, texture_size.y, false, image_format, rd.texture_get_data(rid, 0))
@@ -391,108 +387,13 @@ static func image_data_format(image_format : int) -> int:
 			return RenderingDevice.DATA_FORMAT_R8G8_UNORM
 		Image.FORMAT_RGBA8:
 			return RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
+		Image.FORMAT_R16:
+			return RenderingDevice.DATA_FORMAT_R16_UNORM
+		Image.FORMAT_RG16:
+			return RenderingDevice.DATA_FORMAT_R16G16_UNORM
+		Image.FORMAT_RGBA16:
+			return RenderingDevice.DATA_FORMAT_R16G16B16A16_UNORM
 	return -1
-
-## Compute shaders that copy 16 bits integer textures to float textures, by
-## channel count
-static var unorm16_shaders : Dictionary = {}
-
-## Copies a strip of the source texture (from row offset.y, size rows) to the
-## output texture
-const UNORM16_TO_FLOAT_SHADER : String = """#version 450
-layout(local_size_x = 8, local_size_y = 8, local_size_z = 1) in;
-layout(set = 0, binding = 0) uniform sampler2D source_texture;
-layout(set = 0, binding = 1, @FORMAT) restrict uniform writeonly image2D output_texture;
-layout(push_constant, std430) uniform Strip {
-	ivec2 offset;
-	ivec2 size;
-} strip;
-void main() {
-	ivec2 p = ivec2(gl_GlobalInvocationID.xy);
-	if (any(greaterThanEqual(p, strip.size))) {
-		return;
-	}
-	imageStore(output_texture, p, texelFetch(source_texture, p+strip.offset, 0));
-}
-"""
-
-## Reads a 16 bits integer texture back as a 32 bits float image (in the
-## rendering thread). The texture is converted by a compute shader and read
-## back in strips of at most MAX_READBACK_SIZE bytes (as floats), so large
-## textures need neither a float copy nor a staging buffer of their whole
-## size (e.g. 4 GB for 16384x16384 RGBA). Returns null if it fails.
-static func in_thread_read_unorm16_image(rendering_device : RenderingDevice, source : RID, size : Vector2i, channels : int) -> Image:
-	var formats : Dictionary = {
-		1: [ "r32f", RenderingDevice.DATA_FORMAT_R32_SFLOAT, Image.FORMAT_RF ],
-		2: [ "rg32f", RenderingDevice.DATA_FORMAT_R32G32_SFLOAT, Image.FORMAT_RGF ],
-		4: [ "rgba32f", RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, Image.FORMAT_RGBAF ] }
-	var format : Array = formats[channels]
-	var key : String = "%d:%d" % [ rendering_device.get_instance_id(), channels ]
-	if not unorm16_shaders.has(key):
-		var src : RDShaderSource = RDShaderSource.new()
-		src.source_compute = UNORM16_TO_FLOAT_SHADER.replace("@FORMAT", format[0])
-		var spirv : RDShaderSPIRV = rendering_device.shader_compile_spirv_from_source(src)
-		if spirv.compile_error_compute != "":
-			push_error(spirv.compile_error_compute)
-			return null
-		var new_shader : RID = rendering_device.shader_create_from_spirv(spirv)
-		if not new_shader.is_valid():
-			push_error("Failed to create the 16 bits texture readback shader")
-			return null
-		unorm16_shaders[key] = new_shader
-	var shader : RID = unorm16_shaders[key]
-	var row_size : int = size.x*4*channels
-	var strip_height : int = clampi(MAX_READBACK_SIZE/row_size, 1, size.y)
-	var fmt : RDTextureFormat = RDTextureFormat.new()
-	fmt.width = size.x
-	fmt.height = strip_height
-	fmt.format = format[1]
-	fmt.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
-	var output : RID = rendering_device.texture_create(fmt, RDTextureView.new(), [])
-	var sampler : RID = rendering_device.sampler_create(RDSamplerState.new())
-	var uniform_set : RID = RID()
-	var pipeline : RID = RID()
-	if output.is_valid() and sampler.is_valid():
-		var source_uniform : RDUniform = RDUniform.new()
-		source_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_SAMPLER_WITH_TEXTURE
-		source_uniform.binding = 0
-		source_uniform.add_id(sampler)
-		source_uniform.add_id(source)
-		var output_uniform : RDUniform = RDUniform.new()
-		output_uniform.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
-		output_uniform.binding = 1
-		output_uniform.add_id(output)
-		uniform_set = rendering_device.uniform_set_create([ source_uniform, output_uniform ], shader, 0)
-		pipeline = rendering_device.compute_pipeline_create(shader)
-	var data : PackedByteArray = PackedByteArray()
-	if uniform_set.is_valid() and pipeline.is_valid():
-		var strip_parameters : PackedByteArray = PackedInt32Array([ 0, 0, size.x, 0 ]).to_byte_array()
-		var y : int = 0
-		while y < size.y:
-			var height : int = min(strip_height, size.y-y)
-			strip_parameters.encode_s32(4, y)
-			strip_parameters.encode_s32(12, height)
-			var compute_list : int = rendering_device.compute_list_begin()
-			rendering_device.compute_list_bind_compute_pipeline(compute_list, pipeline)
-			rendering_device.compute_list_bind_uniform_set(compute_list, uniform_set, 0)
-			rendering_device.compute_list_set_push_constant(compute_list, strip_parameters, strip_parameters.size())
-			rendering_device.compute_list_dispatch(compute_list, (size.x+7)/8, (height+7)/8, 1)
-			rendering_device.compute_list_end()
-			rendering_device.submit()
-			rendering_device.sync()
-			var strip_data : PackedByteArray = rendering_device.texture_get_data(output, 0)
-			if strip_height == size.y:
-				# A single strip (no copy)
-				data = strip_data
-			elif not append_strip(data, strip_data, row_size, strip_height, height):
-				data = PackedByteArray()
-				break
-			y += height
-	# Freeing the output texture also frees the uniform set that uses it
-	for r in [ pipeline, sampler, output ]:
-		if r.is_valid():
-			rendering_device.free_rid(r)
-	return image_from_strips(size, format[2], data, row_size)
 
 func get_texture() -> Texture2D:
 	await restore()
@@ -521,6 +422,12 @@ func set_texture(new_texture : ImageTexture) -> void:
 				format = RenderingDevice.DATA_FORMAT_R16G16_SFLOAT
 			Image.FORMAT_RG8:
 				format = RenderingDevice.DATA_FORMAT_R8G8_UNORM
+			Image.FORMAT_R16:
+				format = RenderingDevice.DATA_FORMAT_R16_UNORM
+			Image.FORMAT_RG16:
+				format = RenderingDevice.DATA_FORMAT_R16G16_UNORM
+			Image.FORMAT_RGBA16:
+				format = RenderingDevice.DATA_FORMAT_R16G16B16A16_UNORM
 			Image.FORMAT_DXT1:
 				format = RenderingDevice.DATA_FORMAT_BC1_RGBA_SRGB_BLOCK
 			Image.FORMAT_DXT3:
@@ -588,9 +495,12 @@ func save_to_file(file_name : String, options : Dictionary = {}) -> Error:
 	return await save_image_rounded(image, file_name, options)
 
 ## Whether an image is saved with 8 bits per channel (PNG, JPEG and WebP
-## files, and formats of plugins with bits=8)
+## files, and formats of plugins with bits=8). 16 bits integer images are
+## saved as 16 bits PNG files.
 static func is_saved_as_8_bits(image : Image, file_name : String, options : Dictionary = {}) -> bool:
 	if image == null or image_bits(image.get_format()) == 8:
+		return false
+	if is_16_bits_integer(image.get_format()) and file_name.get_extension().to_lower() == "png":
 		return false
 	if file_name.get_extension().to_lower() in [ "png", "jpg", "jpeg", "webp" ]:
 		return true
@@ -624,9 +534,9 @@ static func save_image_rounded(image : Image, file_name : String, options : Dict
 ## Channel count of a Godot image format
 static func image_channels(format : int) -> int:
 	match format:
-		Image.FORMAT_L8, Image.FORMAT_R8, Image.FORMAT_RH, Image.FORMAT_RF:
+		Image.FORMAT_L8, Image.FORMAT_R8, Image.FORMAT_RH, Image.FORMAT_RF, Image.FORMAT_R16:
 			return 1
-		Image.FORMAT_LA8, Image.FORMAT_RG8, Image.FORMAT_RGH, Image.FORMAT_RGF:
+		Image.FORMAT_LA8, Image.FORMAT_RG8, Image.FORMAT_RGH, Image.FORMAT_RGF, Image.FORMAT_RG16:
 			return 2
 		Image.FORMAT_RGB8, Image.FORMAT_RGBH, Image.FORMAT_RGBF:
 			return 3
@@ -635,15 +545,26 @@ static func image_channels(format : int) -> int:
 ## Component size of a Godot image format, in bits
 static func image_bits(format : int) -> int:
 	match format:
-		Image.FORMAT_RH, Image.FORMAT_RGH, Image.FORMAT_RGBH, Image.FORMAT_RGBAH:
+		Image.FORMAT_RH, Image.FORMAT_RGH, Image.FORMAT_RGBH, Image.FORMAT_RGBAH, Image.FORMAT_R16, Image.FORMAT_RG16, Image.FORMAT_RGBA16:
 			return 16
 		Image.FORMAT_RF, Image.FORMAT_RGF, Image.FORMAT_RGBF, Image.FORMAT_RGBAF:
 			return 32
 	return 8
 
+## Whether an image format holds 16 bits integers (16 bits integer buffers)
+static func is_16_bits_integer(format : int) -> bool:
+	return format in [ Image.FORMAT_R16, Image.FORMAT_RG16, Image.FORMAT_RGBA16 ]
+
 ## Saves an image in the format given by the file extension (formats added
 ## by plugins get the options)
 static func save_image(image : Image, file_name : String, options : Dictionary = {}) -> Error:
+	if image != null and is_16_bits_integer(image.get_format()):
+		# 16 bits integer images are saved as 16 bits PNG files, and as 32 bits
+		# floats in other formats (e.g. EXR)
+		if file_name.get_extension() == "png":
+			return save_png_16(image, file_name)
+		image = image.duplicate() as Image
+		image.convert({ Image.FORMAT_R16: Image.FORMAT_RF, Image.FORMAT_RG16: Image.FORMAT_RGF }.get(image.get_format(), Image.FORMAT_RGBAF))
 	if image != null:
 		var export_image : Image = image
 		match file_name.get_extension():
@@ -663,3 +584,75 @@ static func save_image(image : Image, file_name : String, options : Dictionary =
 			_:
 				return MMPlugins.save_image(export_image, file_name, options)
 	return ERR_DOES_NOT_EXIST
+
+## Saves a 16 bits integer image (R16, RG16 or RGBA16) as a 16 bits grayscale
+## or RGBA PNG file (Godot only writes 8 bits PNG files)
+static func save_png_16(image : Image, file_name : String) -> Error:
+	if image.get_format() == Image.FORMAT_RG16:
+		image = rg16_to_rgba16(image)
+	var grayscale : bool = image.get_format() == Image.FORMAT_R16
+	var width : int = image.get_width()
+	var height : int = image.get_height()
+	var row_size : int = width*(2 if grayscale else 8)
+	var data : PackedByteArray = get_big_endian_data(image)
+	# Each row starts with its filter type (0, none)
+	var rows : PackedByteArray = PackedByteArray()
+	for y in height:
+		rows.append(0)
+		rows.append_array(data.slice(y*row_size, (y+1)*row_size))
+	data.clear()
+	var png : PackedByteArray = PackedByteArray([ 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A ])
+	# Width, height, bit depth, color type (0: grayscale, 6: RGBA), compression, filter, interlace
+	var header : PackedByteArray = png_u32(width)
+	header.append_array(png_u32(height))
+	header.append_array(PackedByteArray([ 16, 0 if grayscale else 6, 0, 0, 0 ]))
+	png.append_array(png_chunk("IHDR", header))
+	var compressed : PackedByteArray = rows.compress(FileAccess.COMPRESSION_DEFLATE)
+	rows.clear()
+	const MAX_CHUNK_SIZE : int = 1 << 24
+	for offset in range(0, compressed.size(), MAX_CHUNK_SIZE):
+		png.append_array(png_chunk("IDAT", compressed.slice(offset, offset+MAX_CHUNK_SIZE)))
+	png.append_array(png_chunk("IEND", PackedByteArray()))
+	var file : FileAccess = FileAccess.open(file_name, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_buffer(png)
+	return file.get_error()
+
+## The data of a 16 bits integer image with big endian values (for PNG
+## files). PackedByteArray.reverse() swaps the bytes of each value but also
+## reverses their order, which flipping an image of one value per pixel
+## restores (faster than swapping the values one by one in a script).
+static func get_big_endian_data(image : Image) -> PackedByteArray:
+	var data : PackedByteArray = image.get_data()
+	var values_per_row : int = data.size()/(2*image.get_height())
+	data.reverse()
+	var values : Image = Image.create_from_data(values_per_row, image.get_height(), false, Image.FORMAT_R16, data)
+	values.flip_x()
+	values.flip_y()
+	return values.get_data()
+
+## An RGBA16 copy of an RG16 image (blue 0, alpha 1). Image.convert() is
+## not used since it loses one level for some values.
+static func rg16_to_rgba16(image : Image) -> Image:
+	var rg : PackedInt32Array = image.get_data().to_int32_array()
+	var rgba : PackedInt64Array = PackedInt64Array()
+	rgba.resize(rg.size())
+	const ALPHA : int = 0xFFFF << 48
+	for i in rg.size():
+		rgba[i] = (rg[i] & 0xFFFFFFFF) | ALPHA
+	return Image.create_from_data(image.get_width(), image.get_height(), false, Image.FORMAT_RGBA16, rgba.to_byte_array())
+
+## A big endian 32 bits integer (for PNG files)
+static func png_u32(value : int) -> PackedByteArray:
+	return PackedByteArray([ (value >> 24) & 255, (value >> 16) & 255, (value >> 8) & 255, value & 255 ])
+
+## A PNG chunk: size, type, data and CRC (the CRC-32 that ends gzip data)
+static func png_chunk(type : String, data : PackedByteArray) -> PackedByteArray:
+	var body : PackedByteArray = type.to_ascii_buffer()
+	body.append_array(data)
+	var gzip : PackedByteArray = body.compress(FileAccess.COMPRESSION_GZIP)
+	var rv : PackedByteArray = png_u32(data.size())
+	rv.append_array(body)
+	rv.append_array(png_u32(gzip.decode_u32(gzip.size()-8)))
+	return rv

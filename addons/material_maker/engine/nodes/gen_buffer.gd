@@ -237,10 +237,15 @@ func get_channel_count() -> int:
 		return 1
 	return 2 if version == VERSION_COMPLEX and get_parameter("rg") else 4
 
+## The texture type (MMPipeline.TEXTURE_TYPE_*) that is really used (formats
+## the GPU does not support fall back to supported ones)
+func get_effective_texture_type() -> int:
+	return MMPipeline.get_texture_type(get_channel_count(), get_storage())
+
 ## The storage format that is really used (8 and 16 bits integer formats
 ## fall back to 16 bits floats if the GPU does not support them)
 func get_effective_storage() -> int:
-	return MMPipeline.get_effective_storage(get_channel_count(), get_storage())
+	return MMPipeline.get_texture_type_storage(get_effective_texture_type())
 
 ## Returns false for parameters that are ignored with the current settings
 ## (so the node can grey them out)
@@ -256,22 +261,33 @@ func is_parameter_used(n : String) -> bool:
 			return not get_parameter("f32") and not get_parameter("f16i")
 		"f16i":
 			return not get_parameter("f32")
+		"rg":
+			# Grayscale buffers have a single channel
+			return not is_greyscale
 		"rounding":
 			return get_storage() == MMPipeline.STORAGE_8 or get_storage() == MMPipeline.STORAGE_16
 	return true
 
-## The size and format of the buffer, shown under the node
+const STORAGE_NAMES : Array[String] = [ "16F", "32F", "8 bits", "16 bits" ]
+const CHANNELS_NAMES : Array[String] = [ "", "gray", "RG", "", "RGBA" ]
+
+## The size and format of the buffer, shown under the node (with the
+## requested format if the GPU does not support it)
 func get_badge() -> String:
 	var storage : int = get_storage()
-	var effective_storage : int = get_effective_storage()
-	var format : String = [ "16F", "32F", "8 bits", "16 bits" ][effective_storage]
-	var note : String = ""
+	var channels : int = get_channel_count()
+	var texture_type : int = get_effective_texture_type()
+	var effective_storage : int = MMPipeline.get_texture_type_storage(texture_type)
+	var effective_channels : int = MMPipeline.TEXTURE_TYPE[texture_type].channels
+	var unsupported : PackedStringArray = PackedStringArray()
 	if effective_storage != storage:
-		note = " (%s unsupported)" % [ "16F", "32F", "8 bits", "16 bits" ][storage]
+		unsupported.append(STORAGE_NAMES[storage])
+	if effective_channels != channels:
+		unsupported.append(CHANNELS_NAMES[channels])
+	var note : String = "" if unsupported.is_empty() else " (%s unsupported)" % " ".join(unsupported)
 	var dimensions : Vector2i = get_buffer_dimensions()
 	var size_text : String = "%d px" % dimensions.x if dimensions.x == dimensions.y else "%dx%d px" % [ dimensions.x, dimensions.y ]
-	var channels : String = [ "", "gray", "RG", "", "RGBA" ][get_channel_count()]
-	return "%s  %s %s%s" % [ size_text, format, channels, note ]
+	return "%s  %s %s%s" % [ size_text, STORAGE_NAMES[effective_storage], CHANNELS_NAMES[effective_channels], note ]
 
 ## Keywords of node types and input names that need more than 8 bits of precision
 const NORMAL_KEYWORDS : Array[String] = [ "normal" ]
