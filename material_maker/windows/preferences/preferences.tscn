@@ -443,6 +443,30 @@ max_value = 20.0
 step = 1.0
 float_only = true
 
+[node name="GpuMemoryBudget" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer" unique_id=1816139529]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/GpuMemoryBudget" unique_id=1547860938]
+layout_mode = 2
+size_flags_horizontal = 0
+tooltip_text = "Memory that textures rendered by Material Maker may use on the GPU, in MB (0 = unlimited).
+The least recently used ones are moved to RAM when they use more, and uploaded again when needed."
+mouse_filter = 1
+text = "GPU memory budget (MB, 0 = unlimited)"
+
+[node name="GpuMemoryBudget" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/GpuMemoryBudget" unique_id=1588193207 instance=ExtResource("3")]
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Memory that textures rendered by Material Maker may use on the GPU, in MB (0 = unlimited).
+The least recently used ones are moved to RAM when they use more, and uploaded again when needed."
+config_variable = "gpu_memory_budget"
+value = 0.0
+min_value = 0.0
+max_value = 65536.0
+step = 64.0
+float_only = true
+
 [node name="Spacer4" type="Control" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer" unique_id=1280062657]
 custom_minimum_size = Vector2(0, 10)
 layout_mode = 2

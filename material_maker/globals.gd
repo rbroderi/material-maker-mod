@@ -14,6 +14,7 @@ const DEFAULT_CONFIG : Dictionary = {
 	fps_limit = 145,
 	idle_fps_limit = 20,
 	max_viewport_size = 2048,
+	gpu_memory_budget = 0,
 	ui_scale = 0,
 	ui_3d_preview_environment = 0,
 	ui_3d_preview_resolution = 2.0,
