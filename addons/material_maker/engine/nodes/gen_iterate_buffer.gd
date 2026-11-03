@@ -323,8 +323,11 @@ func set_current_iteration(i : int) -> void:
 	if current_iteration == 0:
 		mm_deps.buffer_invalidate(buffer_name_output)
 
-## Width and height of the buffer, in pixels
+## Width and height of the buffer, in pixels (with Shrink, those of the last
+## rendered iteration)
 func get_buffer_dimensions() -> Vector2i:
+	if get_parameter("shrink") and texture.texture_size.x > 0:
+		return texture.texture_size
 	var size : int = 1 << int(get_parameter("size"))
 	return Vector2i(size, size)
 
