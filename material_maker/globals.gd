@@ -71,6 +71,8 @@ const DEFAULT_CONFIG : Dictionary = {
 	ui_3d_preview_generated_mesh = true,
 	nearest_filter_reference = false,
 	sub_node_items = [],
+	shader_cache = true,
+	shader_cache_max_size = 256,
 }
 
 

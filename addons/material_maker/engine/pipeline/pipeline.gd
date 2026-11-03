@@ -105,7 +105,19 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 	var src : RDShaderSource = RDShaderSource.new()
 	for k in shader_text.keys():
 		src["source_"+k] = mm_preprocessor.preprocess(shader_text[k], replaces)
+	var stages : Array = shader_text.keys()
+	var cache_key : String = ""
+	if rd != null and MMShaderCache.is_enabled():
+		cache_key = MMShaderCache.get_key(rd, src, stages)
+		var cached_spirv : RDShaderSPIRV = MMShaderCache.load_spirv(cache_key, stages)
+		if cached_spirv != null:
+			var cached_shader : RID = rd.shader_create_from_spirv(cached_spirv)
+			if cached_shader.is_valid():
+				return cached_shader
+			# Should not happen (cache files are checked): compile the shader
+			MMShaderCache.discard(cache_key)
 	var spirv : RDShaderSPIRV = rd.shader_compile_spirv_from_source(src)
+	MMShaderCache.count_compiled()
 	var shader : RID = RID()
 	for k in shader_text.keys():
 		var error : String = spirv["compile_error_"+k]
@@ -121,6 +133,8 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 		shader = rd.shader_create_from_spirv(spirv)
 		if not shader.is_valid():
 			print("Error creating shader from spirv")
+		elif cache_key != "":
+			MMShaderCache.store_spirv(cache_key, stages, spirv)
 	return shader
 
 func add_parameter_or_texture(name : String, type : String, value, parameter_as_constant : bool = false, array_size : int = 0):

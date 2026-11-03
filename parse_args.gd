@@ -93,6 +93,7 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 			gen.queue_free()
 	if not export_list.is_empty():
 		print(",\n".join(export_list))
+	print(MMShaderCache.get_statistics_string())
 	get_tree().quit()
 
 func _ready():
