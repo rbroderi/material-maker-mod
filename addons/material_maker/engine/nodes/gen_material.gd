@@ -388,6 +388,16 @@ func process_option_rename_buffers(s : String, is_declaration : bool = false) ->
 		index += 1
 	return s
 
+## Textures are sampled at mipmap level 0, as in Material Maker (whose buffer
+## textures have no mipmaps), even if the engine generates mipmaps: a Buffer's
+## LOD output and Unity's tex2D (that picks a level from the screen-space
+## derivatives) would blur them. Must follow the hlsl, unity and unreal5 options.
+func process_option_sample_level_0(s : String, is_declaration : bool = false) -> String:
+	if is_declaration:
+		s = s.replace("#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, lod)", "#define textureLod(t, uv, lod) t.SampleLevel(t##Sampler, uv, 0.0)")
+		s = s.replace("return tex2D(tex, uv);", "return tex2Dlod(tex, float4(uv, 0.0, 0.0));")
+	return s
+
 func process_option_unity(s : String, is_declaration : bool = false) -> String:
 	s = s.replace("elapsed_time", "_Time.y")
 	return s
@@ -647,6 +657,20 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
+## Saves a texture as an EXR file with 4 channels (as shaders sample it), and
+## the precision of float textures (8 bit textures become half floats)
+static func save_buffer_exr(image : Image, file_name : String) -> Error:
+	if image.is_compressed():
+		image.decompress()
+	match image.get_format():
+		Image.FORMAT_RGBAF, Image.FORMAT_RGBAH:
+			pass
+		Image.FORMAT_RF, Image.FORMAT_RGF, Image.FORMAT_RGBF:
+			image.convert(Image.FORMAT_RGBAF)
+		_:
+			image.convert(Image.FORMAT_RGBAH)
+	return image.save_exr(file_name)
+
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
 	reset_uids()
 	if size == 0:
@@ -787,8 +811,13 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					var texture : Texture2D = await preview_texture_dependencies[t].get_texture()
 					var image : Image = texture.get_image()
 					if image:
-						image.convert(Image.FORMAT_RGBA8)
-						e = image.save_png(file_name)
+						if file_name.get_extension().to_lower() == "exr":
+							# EXR files keep the precision of float textures
+							# (e.g. iterate buffers)
+							e = save_buffer_exr(image, file_name)
+						else:
+							image.convert(Image.FORMAT_RGBA8)
+							e = image.save_png(file_name)
 						if e != OK:
 							error_files += 1
 					else:

@@ -23,7 +23,7 @@
 							"[gd_resource type=\"Sky\" format=3]",
 							"[ext_resource path=\"$(file_prefix).gdshader\" type=\"Shader\" id=1]",
 							"$begin_buffers",
-							"[ext_resource path=\"$(file_prefix)_texture_$(buffer_index).png\" type=\"Texture\" id=$(expr:$(buffer_index)+1)]",
+							"[ext_resource path=\"$(file_prefix)_texture_$(buffer_index).exr\" type=\"Texture\" id=$(expr:$(buffer_index)+1)]",
 							"$end_buffers",
 							"[sub_resource type=\"ShaderMaterial\" id=2]",
 							"shader = ExtResource( 1 )",
@@ -62,8 +62,26 @@
 						"type": "template"
 					},
 					{
-						"file_name": "$(path_prefix)_texture_$(buffer_index).png",
+						"file_name": "$(path_prefix)_texture_$(buffer_index).exr",
 						"type": "buffers"
+					},
+					{
+						"file_name": "$(path_prefix)_texture_$(buffer_index).exr.import",
+						"template": [
+							"[remap]",
+							"",
+							"importer=\"texture\"",
+							"type=\"CompressedTexture2D\"",
+							"",
+							"[params]",
+							"",
+							"compress/mode=3",
+							"mipmaps/generate=false",
+							"process/fix_alpha_border=false",
+							"detect_3d/compress_to=0",
+							""
+						],
+						"type": "buffer_templates"
 					}
 				],
 				"name": "Godot 4/Dynamic Sky"
