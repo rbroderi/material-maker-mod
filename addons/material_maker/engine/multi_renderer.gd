@@ -172,6 +172,14 @@ var texture_budget_check_scheduled : bool = false
 var texture_budget_check_running : bool = false
 var texture_budget_check_again : bool = false
 var texture_budget_retry_scheduled : bool = false
+## Highest memory used by Material Maker's textures in the rendering device
+## (buffers, images...), in bytes
+var peak_texture_memory : int = 0
+
+## Updates peak_texture_memory (called when a texture gets a new rendering
+## device texture)
+func update_peak_texture_memory() -> void:
+	peak_texture_memory = max(peak_texture_memory, MMTexture.get_gpu_memory_usage().bytes)
 
 func request_texture_budget_check() -> void:
 	if not texture_budget_check_scheduled:

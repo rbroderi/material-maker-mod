@@ -93,6 +93,7 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 			gen.queue_free()
 	if not export_list.is_empty():
 		print(",\n".join(export_list))
+	print("Peak GPU texture memory: %d MB" % (mm_renderer.peak_texture_memory >> 20))
 	get_tree().quit()
 
 func _ready():
