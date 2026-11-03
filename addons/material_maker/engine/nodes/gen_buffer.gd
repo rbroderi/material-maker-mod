@@ -66,7 +66,11 @@ func get_parameter_defs() -> Array:
 			parameter_defs.push_back({ name="mipmap", label="Mipmap", type="boolean", default=true })
 			parameter_defs.push_back({ name="f32", label="32 bits", type="boolean", default=false })
 			parameter_defs.push_back({ name="f8", label="8 bits", type="boolean", default=false,
-				longdesc="Use an 8 bits buffer to save memory (ignored if 32 bits is set)" })
+				longdesc="Use an 8 bits buffer to save memory (ignored if 32 bits or 16 bits integer is set)" })
+			parameter_defs.push_back({ name="f16i", label="16 bits integer", type="boolean", default=false,
+				longdesc="Store 16 bits integers (65536 evenly spaced levels between 0 and 1) instead of 16 bits floats (ignored if 32 bits is set)" })
+			parameter_defs.push_back({ name="rg", label="RG", type="boolean", default=false,
+				longdesc="Store only the red and green channels of color inputs, for half the memory (blue is 0 and alpha 1 when the buffer is read)" })
 			parameter_defs.push_back({ name="size_mode", label="Size mode", type="enum", default=0,
 				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" } ],
 				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset" })
@@ -115,12 +119,33 @@ func get_buffer_size() -> int:
 			return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
 	return int(get_parameter("size"))
 
-## Returns true if the buffer is stored as 8 bits (if the GPU does not
-## support 8 bits storage, 16 bits floats are used instead)
-func is_8_bits_effective() -> bool:
-	if version != VERSION_COMPLEX or not get_parameter("f8") or get_parameter("f32"):
-		return false
-	return MMPipeline.is_output_texture_type_supported(MMPipeline.TEXTURE_TYPE_R8 if is_greyscale else MMPipeline.TEXTURE_TYPE_RGBA8)
+## The storage format of the buffer (MMPipeline.STORAGE_*)
+func get_storage() -> int:
+	if version != VERSION_COMPLEX:
+		return MMPipeline.STORAGE_16F
+	if get_parameter("f32"):
+		return MMPipeline.STORAGE_32F
+	if get_parameter("f16i"):
+		return MMPipeline.STORAGE_16
+	if get_parameter("f8"):
+		return MMPipeline.STORAGE_8
+	return MMPipeline.STORAGE_16F
+
+## The number of channels the buffer stores: 1 (grayscale), 2 (RG) or 4
+func get_channel_count() -> int:
+	if is_greyscale:
+		return 1
+	return 2 if version == VERSION_COMPLEX and get_parameter("rg") else 4
+
+## The texture type (MMPipeline.TEXTURE_TYPE_*) that is really used (formats
+## the GPU does not support fall back to supported ones)
+func get_effective_texture_type() -> int:
+	return MMPipeline.get_texture_type(get_channel_count(), get_storage())
+
+## The storage format that is really used (8 and 16 bits integer formats
+## fall back to 16 bits floats if the GPU does not support them)
+func get_effective_storage() -> int:
+	return MMPipeline.get_texture_type_storage(get_effective_texture_type())
 
 ## Returns false for parameters that are ignored with the current settings
 ## (so the node can grey them out)
@@ -133,24 +158,32 @@ func is_parameter_used(n : String) -> bool:
 		"size_offset":
 			return get_parameter("size_mode") == 1
 		"f8":
+			return not get_parameter("f32") and not get_parameter("f16i")
+		"f16i":
 			return not get_parameter("f32")
+		"rg":
+			return not is_greyscale
 	return true
+
+const STORAGE_NAMES : Array[String] = [ "16F", "32F", "8 bits", "16 bits" ]
+const CHANNELS_NAMES : Array[String] = [ "", "gray", "RG", "", "RGBA" ]
 
 ## The size and format of the buffer, shown under the node
 func get_badge() -> String:
-	var format : String = "16F"
-	var note : String = ""
-	if version == VERSION_COMPLEX:
-		if get_parameter("f32"):
-			format = "32F"
-		elif get_parameter("f8"):
-			if is_8_bits_effective():
-				format = "8 bits"
-			else:
-				note = " (8 bits unsupported)"
+	var storage : int = get_storage()
+	var channels : int = get_channel_count()
+	var texture_type : int = get_effective_texture_type()
+	var effective_storage : int = MMPipeline.get_texture_type_storage(texture_type)
+	var effective_channels : int = MMPipeline.TEXTURE_TYPE[texture_type].channels
+	var unsupported : PackedStringArray = PackedStringArray()
+	if effective_storage != storage:
+		unsupported.append(STORAGE_NAMES[storage])
+	if effective_channels != channels:
+		unsupported.append(CHANNELS_NAMES[channels])
+	var note : String = "" if unsupported.is_empty() else " (%s unsupported)" % " ".join(unsupported)
 	var dimensions : Vector2i = get_buffer_dimensions()
 	var size_text : String = "%d px" % dimensions.x if dimensions.x == dimensions.y else "%dx%d px" % [ dimensions.x, dimensions.y ]
-	return "%s  %s %s%s" % [ size_text, format, "gray" if is_greyscale else "RGBA", note ]
+	return "%s  %s %s%s" % [ size_text, STORAGE_NAMES[effective_storage], CHANNELS_NAMES[effective_channels], note ]
 
 ## Keywords of node types and input names that need more than 8 bits of precision
 const NORMAL_KEYWORDS : Array[String] = [ "normal" ]
@@ -159,7 +192,7 @@ const HEIGHT_KEYWORDS : Array[String] = [ "height", "depth", "occlusion", "curva
 ## A warning when an 8 bits buffer feeds a node that computes normals or uses
 ## heights, since 256 levels show as steps there. Colors and masks are fine.
 func get_precision_warning() -> String:
-	if not is_8_bits_effective():
+	if get_effective_storage() != MMPipeline.STORAGE_8:
 		return ""
 	var parent : Node = get_parent()
 	if not parent is MMGenGraph:
@@ -263,12 +296,8 @@ func do_update_shader() -> void:
 		source = source_output.generator.get_shader_code("uv", source_output.output_index, context)
 	else:
 		source = get_default_generated_shader()
-	var f32 = false
-	var f8 = false
-	if version == VERSION_COMPLEX:
-		f32 = get_parameter("f32")
-		f8 = get_parameter("f8")
-	var shader_status : bool = await shader_compute.set_shader_from_shadercode(source, f32, f8)
+	var rg : bool = version == VERSION_COMPLEX and get_parameter("rg")
+	var shader_status : bool = await shader_compute.set_shader_from_shadercode_storage(source, get_storage(), rg)
 	if shader_status:
 		var new_is_greyscale = shader_compute.is_greyscale()
 		if new_is_greyscale != is_greyscale:
@@ -319,6 +348,21 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 	shader_code.add_uniform("%s_tex_size" % genname, "float", float(dimensions.x))
 	shader_code.add_uniform("%s_tex_size_y" % genname, "float", float(dimensions.y))
 	return shader_code
+
+## Images of 16 bits integer buffers (2D preview and Export node exports)
+## are rendered as 16 bits integers, so they keep the buffer's precision
+## (and are saved as 16 bits PNG files)
+func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
+	if output_index != 0 or get_effective_storage() != MMPipeline.STORAGE_16:
+		return await super.render_output_to_texture(output_index, size)
+	var source : ShaderCode = get_shader_code("uv", output_index, MMGenContext.new())
+	# RGBA, as other exports
+	source.output_type = "rgba"
+	var compute_shader : MMComputeShader = MMComputeShader.new()
+	var texture : MMTexture = MMTexture.new()
+	if await compute_shader.set_shader_from_shadercode_storage(source, MMPipeline.STORAGE_16):
+		await compute_shader.render_ext([texture], size)
+	return texture
 
 func get_output_attributes(output_index : int) -> Dictionary:
 	var attributes : Dictionary = {}

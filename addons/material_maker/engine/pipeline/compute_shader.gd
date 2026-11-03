@@ -97,18 +97,20 @@ func set_shader_from_shadercode_ext(shader_template : String, shader_code : MMGe
 	return await set_shader_ext(shader_template, output_textures_desc, replaces)
 
 func set_shader_from_shadercode(shader_code : MMGenBase.ShaderCode, is_32_bits : bool = false, extra_parameters : Array[Dictionary] = [], is_8_bits : bool = false) -> bool:
+	var storage : int = STORAGE_32F if is_32_bits else (STORAGE_8 if is_8_bits else STORAGE_16F)
+	return await set_shader_from_shadercode_storage(shader_code, storage, false, extra_parameters)
+
+## Sets the shader of a buffer, that stores the shader's output with a storage
+## format (STORAGE_*), with only the red and green channels if rg is true.
+## Formats the GPU does not support fall back to supported ones (see
+## get_texture_type()).
+func set_shader_from_shadercode_storage(shader_code : MMGenBase.ShaderCode, storage : int, rg : bool = false, extra_parameters : Array[Dictionary] = []) -> bool:
 	var shader_template : String = load("res://addons/material_maker/engine/nodes/buffer_compute.tres").text
 	
 	extra_parameters.append({ name="elapsed_time", type="float", value=0.0 })
 	
-	var output_texture_type : int = 0 if (shader_code.output_type == "f") else 1
-	if is_32_bits:
-		output_texture_type |= 2
-	elif is_8_bits:
-		var texture_type_8_bits : int = TEXTURE_TYPE_R8 if (shader_code.output_type == "f") else TEXTURE_TYPE_RGBA8
-		# Fall back to 16 bits floats if the GPU does not support 8 bits storage
-		if is_output_texture_type_supported(texture_type_8_bits):
-			output_texture_type = texture_type_8_bits
+	var channels : int = 1 if (shader_code.output_type == "f") else (2 if rg else 4)
+	var output_texture_type : int = get_texture_type(channels, storage)
 	var output_textures : Array[Dictionary] = [{name="OUTPUT_TEXTURE", type=output_texture_type}]
 	
 	return await set_shader_from_shadercode_ext(shader_template, shader_code, output_textures, extra_parameters)
