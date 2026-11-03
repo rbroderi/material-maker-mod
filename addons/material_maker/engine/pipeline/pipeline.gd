@@ -194,74 +194,6 @@ func clear():
 	input_textures = []
 	output_parameters = {}
 
-# Shader compile cache: shaders that only differ by the names of their nodes'
-# variables (o<instance id>...) are compiled once, in memory and on disk
-# (SPIR-V does not depend on these names: parameters and textures are bound
-# by position)
-
-## Compiled shaders by key (see get_shader_cache_key)
-static var spirv_cache : Dictionary = {}
-static var shader_cache_hits : int = 0
-static var shader_cache_misses : int = 0
-## Whether compiled shaders are also saved in (and loaded from) user://shader_cache
-static var disk_shader_cache : bool = true
-const SHADER_CACHE_DIR : String = "user://shader_cache"
-const SHADER_CACHE_MAX_SIZE : int = 8192
-static var instance_id_regex : RegEx = null
-
-static var comment_regex : RegEx = null
-
-## The source of a shader without comments (they hold node names), with its
-## instance ids (o1234567...) renamed in order of appearance
-static func canonicalize_shader_source(source : String) -> String:
-	if instance_id_regex == null:
-		instance_id_regex = RegEx.create_from_string("o(\\d{6,})")
-		comment_regex = RegEx.create_from_string("//[^\\n]*")
-	source = comment_regex.sub(source, "", true)
-	var names : Dictionary = {}
-	var parts : PackedStringArray = PackedStringArray()
-	var position : int = 0
-	for m in instance_id_regex.search_all(source):
-		var id : String = m.get_string(1)
-		if not names.has(id):
-			names[id] = "oc%d" % names.size()
-		parts.append(source.substr(position, m.get_start()-position))
-		parts.append(names[id])
-		position = m.get_end()
-	parts.append(source.substr(position))
-	return "".join(parts)
-
-static func get_shader_cache_key(src : RDShaderSource, stages : Array) -> String:
-	var text : String = Engine.get_version_info().string
-	for k in stages:
-		text += "\n// stage "+k+"\n"+canonicalize_shader_source(src["source_"+k])
-	return text.sha256_text()
-
-static func load_cached_spirv(key : String, stages : Array) -> RDShaderSPIRV:
-	if spirv_cache.has(key):
-		return spirv_cache[key]
-	if not disk_shader_cache:
-		return null
-	var spirv : RDShaderSPIRV = RDShaderSPIRV.new()
-	for k in stages:
-		var bytes : PackedByteArray = FileAccess.get_file_as_bytes(SHADER_CACHE_DIR.path_join("%s_%s.spv" % [ key, k ]))
-		if bytes.is_empty():
-			return null
-		spirv["bytecode_"+k] = bytes
-	return spirv
-
-static func store_cached_spirv(key : String, stages : Array, spirv : RDShaderSPIRV) -> void:
-	if spirv_cache.size() >= SHADER_CACHE_MAX_SIZE:
-		spirv_cache.clear()
-	spirv_cache[key] = spirv
-	if not disk_shader_cache:
-		return
-	DirAccess.make_dir_recursive_absolute(SHADER_CACHE_DIR)
-	for k in stages:
-		var file : FileAccess = FileAccess.open(SHADER_CACHE_DIR.path_join("%s_%s.spv" % [ key, k ]), FileAccess.WRITE)
-		if file != null:
-			file.store_buffer(spirv["bytecode_"+k])
-
 func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces : Dictionary) -> RID:
 	var errors : bool = false
 	var src : RDShaderSource = RDShaderSource.new()
@@ -269,20 +201,20 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 		src["source_"+k] = mm_preprocessor.preprocess(shader_text[k], replaces)
 		compiled_sources[k] = src["source_"+k]
 	var stages : Array = shader_text.keys()
-	var cache_key : String = get_shader_cache_key(src, stages)
-	var spirv : RDShaderSPIRV = load_cached_spirv(cache_key, stages)
-	if spirv != null:
-		shader_cache_hits += 1
-		spirv_cache[cache_key] = spirv
-	else:
-		shader_cache_misses += 1
-		spirv = rd.shader_compile_spirv_from_source(src)
-		var compiled : bool = true
-		for k in stages:
-			if spirv["compile_error_"+k] != "":
-				compiled = false
-		if compiled:
-			store_cached_spirv(cache_key, stages, spirv)
+	var cache_key : String = ""
+	if rd != null and MMShaderCache.is_enabled():
+		cache_key = MMShaderCache.get_key(rd, src, stages)
+		var cached_spirv : RDShaderSPIRV = MMShaderCache.load_spirv(cache_key, stages)
+		if cached_spirv != null:
+			var cached_shader : RID = rd.shader_create_from_spirv(cached_spirv)
+			if cached_shader.is_valid():
+				for k in stages:
+					compiled_spirv[k] = cached_spirv["bytecode_"+k]
+				return cached_shader
+			# Should not happen (cache files are checked): compile the shader
+			MMShaderCache.discard(cache_key)
+	var spirv : RDShaderSPIRV = rd.shader_compile_spirv_from_source(src)
+	MMShaderCache.count_compiled()
 	for k in shader_text.keys():
 		compiled_spirv[k] = spirv["bytecode_"+k]
 	var shader : RID = RID()
@@ -300,6 +232,8 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 		shader = rd.shader_create_from_spirv(spirv)
 		if not shader.is_valid():
 			print("Error creating shader from spirv")
+		elif cache_key != "":
+			MMShaderCache.store_spirv(cache_key, stages, spirv)
 	return shader
 
 func add_parameter_or_texture(name : String, type : String, value, parameter_as_constant : bool = false, array_size : int = 0):

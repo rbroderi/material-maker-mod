@@ -104,3 +104,12 @@ func _on_DownloadLanguage_closed():
 func _on_ready() -> void:
 	%WinTabletDriver.visible = OS.get_name() == "Windows"
 	%WinTabletDriverSpacer.visible = OS.get_name() == "Windows"
+	update_shader_cache_usage()
+
+func update_shader_cache_usage() -> void:
+	var usage : Dictionary = MMShaderCache.get_disk_usage()
+	%ShaderCacheUsage.text = tr("%d shaders on disk (%s)") % [ usage.count, String.humanize_size(usage.size) ]
+
+func _on_ClearShaderCache_pressed() -> void:
+	MMShaderCache.clear()
+	update_shader_cache_usage()

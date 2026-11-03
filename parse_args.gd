@@ -95,7 +95,7 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 	if not export_list.is_empty():
 		print(",\n".join(PackedStringArray(export_list)))
 	print("Peak GPU texture memory: %d MB" % (mm_renderer.peak_texture_memory >> 20))
-	print("Shaders: %d compiled, %d from the cache" % [ MMPipeline.shader_cache_misses, MMPipeline.shader_cache_hits ])
+	print(MMShaderCache.get_statistics_string())
 	get_tree().quit(exit_code)
 
 ## Returns the export target of a material that matches target: target itself,

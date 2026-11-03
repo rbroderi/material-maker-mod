@@ -731,6 +731,68 @@ text = "On"
 flat = false
 config_variable = "remember_anim_export"
 
+[node name="Cache" type="ScrollContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer" unique_id=1708342241]
+visible = false
+layout_mode = 2
+theme_type_variation = &"MM_PreferenceTab"
+metadata/_tab_index = 4
+
+[node name="VBoxContainer" type="VBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache" unique_id=1517745830]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ShaderCache" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer" unique_id=1046633805]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCache" unique_id=1950271637]
+layout_mode = 2
+text = "Shader cache"
+
+[node name="ShaderCache" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCache" unique_id=1288453374 instance=ExtResource("1")]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Keep compiled shaders in memory and on disk, so graphs open and render faster.
+Shaders that only differ by node names are compiled once."
+text = "On"
+flat = false
+config_variable = "shader_cache"
+
+[node name="ShaderCacheMaxSize" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer" unique_id=1185307126]
+layout_mode = 2
+
+[node name="Label" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCacheMaxSize" unique_id=1735040528]
+layout_mode = 2
+text = "Shader cache size limit (MB)"
+
+[node name="ShaderCacheMaxSize" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCacheMaxSize" unique_id=1400417212 instance=ExtResource("3")]
+custom_minimum_size = Vector2(200, 24)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "When the shader cache gets larger than this on disk, the oldest shaders are removed."
+config_variable = "shader_cache_max_size"
+value = 256.0
+min_value = 16.0
+max_value = 4096.0
+step = 16.0
+float_only = true
+
+[node name="ShaderCacheUsage" type="HBoxContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer" unique_id=1659381903]
+layout_mode = 2
+
+[node name="ShaderCacheUsage" type="Label" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCacheUsage" unique_id=1309920915]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "Empty"
+
+[node name="ClearShaderCache" type="Button" parent="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCacheUsage" unique_id=1872651120]
+custom_minimum_size = Vector2(200, 0)
+layout_mode = 2
+size_flags_horizontal = 10
+tooltip_text = "Remove all compiled shaders from the cache (in memory and on disk)"
+text = "Clear shader cache"
+
 [node name="MarginContainer" type="MarginContainer" parent="HSplitContainer/PreferencesPanel/VBoxContainer" unique_id=245791047]
 layout_mode = 2
 theme_override_constants/margin_top = 4
@@ -763,6 +825,7 @@ text = "Cancel"
 [connection signal="minimum_size_changed" from="HSplitContainer/PreferencesPanel/VBoxContainer" to="." method="_on_VBoxContainer_minimum_size_changed"]
 [connection signal="pressed" from="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/Language/HBoxContainer/InstallLanguage" to="." method="_on_InstallLanguage_pressed"]
 [connection signal="pressed" from="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/General/VBoxContainer/Language/HBoxContainer/DownloadLanguage" to="." method="_on_DownloadLanguage_pressed"]
+[connection signal="pressed" from="HSplitContainer/PreferencesPanel/VBoxContainer/TabContainer/Cache/VBoxContainer/ShaderCacheUsage/ClearShaderCache" to="." method="_on_ClearShaderCache_pressed"]
 [connection signal="pressed" from="HSplitContainer/PreferencesPanel/VBoxContainer/MarginContainer/HBoxContainer/Apply" to="." method="_on_Apply_pressed"]
 [connection signal="pressed" from="HSplitContainer/PreferencesPanel/VBoxContainer/MarginContainer/HBoxContainer/OK" to="." method="_on_OK_pressed"]
 [connection signal="pressed" from="HSplitContainer/PreferencesPanel/VBoxContainer/MarginContainer/HBoxContainer/Cancel" to="." method="_on_Cancel_pressed"]
