@@ -120,6 +120,9 @@ var rendering_thread_running : bool
 var rendering_thread_working : bool = false
 var rendering_device : RenderingDevice
 var rendering_device_user = null
+# Tickets that keep wait_for_rendering_device() callers in call order
+var rendering_device_tickets : int = 0
+var rendering_device_served : int = 0
 
 func thread_loop():
 	while true:
@@ -168,10 +171,16 @@ func create_rendering_device():
 
 # The rendering device is created asynchronously in the rendering thread, so
 # shaders compiled at startup (e.g. when loading a graph from the command line)
-# must wait for it
+# must wait for it.
+# Callers are served in call order: a shader generated later (e.g. after
+# its input's type changed) must not be compiled before (and then replaced
+# by) an older one that was still waiting for the device.
 func wait_for_rendering_device() -> RenderingDevice:
-	while rendering_device == null:
+	var ticket : int = rendering_device_tickets
+	rendering_device_tickets += 1
+	while rendering_device == null or ticket != rendering_device_served:
 		await get_tree().process_frame
+	rendering_device_served += 1
 	return rendering_device
 
 func destroy_rendering_device():
