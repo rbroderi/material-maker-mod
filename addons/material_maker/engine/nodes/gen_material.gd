@@ -105,12 +105,21 @@ func set_parameter(p, v) -> void:
 	# Buffers can be sized relatively to the material's size
 	if p == "size" and get_parent() != null:
 		notify_output_size_changed(get_parent())
+	# Previews of shaders that use $pass_size show the material's size
+	if (p == "size" or p == "aspect") and get_parent() != null:
+		notify_pass_size_changed(get_parent())
 
 static func notify_output_size_changed(node : Node) -> void:
 	for c in node.get_children():
 		if c.has_method("on_output_size_changed"):
 			c.on_output_size_changed()
 		notify_output_size_changed(c)
+
+static func notify_pass_size_changed(node : Node) -> void:
+	for c in node.get_children():
+		if c.has_method("on_pass_size_changed"):
+			c.on_pass_size_changed()
+		notify_pass_size_changed(c)
 
 func source_changed(input_index : int) -> void:
 	update()
@@ -300,6 +309,8 @@ func process_shader(shader_text : String, custom_script : String = "", force_uni
 				# Add generated code
 				var new_code : String = rv.code+"\n"
 				new_code += subst_code+"\n"
+				if subst_code.contains(PASS_SIZE_UNIFORMS[0]):
+					add_pass_size_uniforms(rv)
 				var definitions : String = ""
 				if force_uniforms_init:
 					definitions += rv.uniforms_as_strings("uniform", true)
