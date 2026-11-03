@@ -34,6 +34,10 @@ The **Image** node has the following parameters:
 * **Color space** defines how colors are read. Material Maker works with sRGB encoded colors,
   so **As is** (the default) should be used for most images and for data such as normal maps.
   **Linear** converts linear colors (such as most EXR and HDR images) to sRGB, and **Auto**
-  converts EXR and HDR images only. Alpha is never converted.
+  converts EXR and HDR images only. Alpha is never converted. When OpenColorIO support is
+  built (see the **native/ocio** directory of the source repository), **OCIO** converts the
+  image from the **OCIO color space** parameter (a color space of the OpenColorIO config, such
+  as *ACEScg* or *Linear Rec.709 (sRGB)*) to Material Maker's working space. Without it,
+  **OCIO** uses the image's values as they are.
 
 The supported formats are BMP, EXR, HDR, JPEG, PNG, SVG, TGA, WebP and DDS.

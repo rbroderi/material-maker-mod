@@ -36,6 +36,15 @@ var view_filter : int = 0:
 		set_generator(generator, output, true)
 		mm_globals.set_config("preview"+config_var_suffix+"_view_postprocess", view_filter)
 
+## OpenColorIO display/view transform ("display / view", "" for none)
+var view_transform : String = "":
+	set(v):
+		if v == view_transform:
+			return
+		view_transform = v
+		set_generator(generator, output, true)
+		mm_globals.set_config("preview"+config_var_suffix+"_ocio_view", view_transform)
+
 var checker_size : int = 1:
 	set(v):
 		if v == checker_size:
@@ -89,6 +98,11 @@ func _ready():
 		view_filter = mm_globals.get_config("preview"+config_var_suffix+"_view_postprocess")
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_size"):
 		checker_size = mm_globals.get_config("preview"+config_var_suffix+"_checker_size")
+	if mm_globals.has_config("preview"+config_var_suffix+"_ocio_view") and MMColorManagement.is_available():
+		# Views of another OpenColorIO config are not restored
+		var view : String = mm_globals.get_config("preview"+config_var_suffix+"_ocio_view")
+		if view in MMColorManagement.get_views():
+			view_transform = view
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_brightness"):
 		checker_brightness = mm_globals.get_config("preview"+config_var_suffix+"_checker_brightness")
 
@@ -106,6 +120,11 @@ func clear() -> void:
 
 
 func get_shader_custom_functions():
+	if view_transform != "" and MMColorManagement.get_view_lut(view_transform) != null:
+		# The view transform is applied after post-processing
+		var code : String = MMColorManagement.get_view_shader_code()
+		code += "vec4 preview_2d_postprocessed(vec2 uv) { vec4 c = %s; return vec4(mm_ocio_view(c.rgb), c.a); }\n" % POSTPROCESS_OPTIONS[view_filter].function
+		return code
 	return "vec4 preview_2d_postprocessed(vec2 uv) { return %s; }\n" % POSTPROCESS_OPTIONS[view_filter].function
 
 
@@ -124,6 +143,8 @@ func set_generator(g : MMGenBase, o : int = 0, force : bool = false) -> void:
 func update_material(source):
 	super.update_material(source)
 	material.set_shader_parameter("mode", view_mode)
+	if view_transform != "":
+		material.set_shader_parameter("mm_ocio_lut", MMColorManagement.get_view_lut(view_transform))
 	material.set_shader_parameter("background_color", get_theme_stylebox("panel", "MM_PanelBackground").bg_color)
 	
 	var color = func(v) : return Color(v,v,v,1.0)

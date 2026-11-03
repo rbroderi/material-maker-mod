@@ -30,9 +30,33 @@ func get_parameter_defs() -> Array:
 		{ name="clamp", type="boolean", label="Clamp", default=false },
 		{ name="filter", type="boolean", label="Filter", default=true },
 		{ name="color_space", type="enum", label="Color space", default=0,
-			values=[ { name="As is", value="as_is" }, { name="Linear", value="linear" }, { name="Auto", value="auto" } ],
-			longdesc="Material Maker works with sRGB encoded colors. As is uses the image's values (sRGB images and data such as normal maps), Linear converts linear colors to sRGB, and Auto does it for EXR and HDR images only" }
+			values=[ { name="As is", value="as_is" }, { name="Linear", value="linear" }, { name="Auto", value="auto" }, { name="OCIO", value="ocio" } ],
+			longdesc="Material Maker works with sRGB encoded colors. As is uses the image's values (sRGB images and data such as normal maps), Linear converts linear colors to sRGB, Auto does it for EXR and HDR images only, and OCIO converts from the OCIO color space below (when OpenColorIO support is built)" },
+		{ name="ocio_space", type="string", label="OCIO color space", default="ACEScg",
+			longdesc="The color space of the image in the OpenColorIO config (e.g. ACEScg, Linear Rec.709 (sRGB), sRGB Encoded Rec.709 (sRGB)), used by the OCIO color space mode" }
 	]
+
+const COLOR_SPACE_OCIO : int = 3
+
+## The OCIO color space the loaded image was converted from ("" if none)
+var loaded_ocio_space : String = ""
+
+## The OCIO color space the image must be converted from ("" if none)
+func get_ocio_space() -> String:
+	if int(get_parameter("color_space")) != COLOR_SPACE_OCIO:
+		return ""
+	return get_parameter("ocio_space")
+
+## Converts a loaded image to the working space in OCIO mode (when
+## OpenColorIO support is built, the image is unchanged otherwise)
+func convert_color_space(image : Image) -> Image:
+	loaded_ocio_space = get_ocio_space()
+	if loaded_ocio_space == "" or image.is_empty():
+		return image
+	if not MMColorManagement.is_available():
+		push_warning("The OCIO color space mode needs OpenColorIO support (native/ocio)")
+		return image
+	return MMColorManagement.convert_image(image, loaded_ocio_space)
 
 ## Whether the image holds linear colors that must be converted to sRGB
 func is_linear() -> bool:
@@ -91,9 +115,12 @@ func set_parameter(n : String, v) -> void:
 		else:
 			image = Image.load_from_file(v)
 		if image != null:
-			var image_texture : ImageTexture = ImageTexture.create_from_image(image)
+			var image_texture : ImageTexture = ImageTexture.create_from_image(convert_color_space(image))
 			texture.set_texture(image_texture)
 		mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
+	elif n in [ "color_space", "ocio_space" ] and get_ocio_space() != loaded_ocio_space and parameters.has("image"):
+		# Load the image again with the new conversion
+		set_parameter("image", get_parameter("image"))
 
 func _on_timeout() -> void:
 	var file_path : String = get_parameter("image")
@@ -105,7 +132,7 @@ func _on_timeout() -> void:
 			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(file_path))
 		else:
 			image.load(file_path)
-		var image_texture : ImageTexture = ImageTexture.create_from_image(image)
+		var image_texture : ImageTexture = ImageTexture.create_from_image(convert_color_space(image))
 		if image_texture:
 			texture.set_texture(image_texture)
 		super.set_parameter("image", file_path)
@@ -123,6 +150,12 @@ func _serialize_data(data: Dictionary) -> Dictionary:
 	return data
 
 func _deserialize(data : Dictionary) -> void:
+	# When loading, the color space is set before the image so the image is
+	# loaded (and converted) once
+	if data.has("parameters") and not is_inside_tree():
+		for p in [ "color_space", "ocio_space" ]:
+			if data.parameters.has(p):
+				parameters[p] = MMType.deserialize_value(data.parameters[p])
 	if data.has("parameters") and data.parameters.has("image"):
 		data.parameters.image = data.parameters.image.replace("%PROJECT_PATH%", mm_loader.current_project_path)
 		data.parameters.image = data.parameters.image.replace("%USER_DATA_PATH%", OS.get_user_data_dir())

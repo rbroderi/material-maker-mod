@@ -43,6 +43,12 @@ The 2D preview panel has a context menu that can be used to:
 * select a post process filter (available filters are useful to create
   pixel art textures in different resolutions)
 
+* when OpenColorIO support is built (see the **native/ocio** directory of the
+  source repository), select a view transform (the display/view transforms of
+  the OpenColorIO config, such as *sRGB - Display / ACES 2.0 - SDR 100 nits (Rec.709)*).
+  It is applied to the preview only, from Material Maker's working space, to values
+  clamped to [0, 1]
+
 Exporting animations
 ~~~~~~~~~~~~~~~~~~~~
 
