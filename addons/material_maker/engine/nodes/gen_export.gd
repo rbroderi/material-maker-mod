@@ -86,6 +86,17 @@ func export_material(prefix : String, _profile : String, size : int = 0, command
 	if size == 0:
 		size = get_image_size()
 	var source = get_source(0)
+	# Buffers used by the source may not be rendered yet (e.g. when exporting
+	# from the command line right after loading the graph), wait until the
+	# render queue is empty
+	if source != null and mm_deps.get_render_queue_size() > 0:
+		var render_queue_size : int = mm_deps.get_render_queue_size()
+		while true:
+			mm_deps.update()
+			await mm_deps.updated
+			if render_queue_size == mm_deps.get_render_queue_size():
+				break
+			render_queue_size = mm_deps.get_render_queue_size()
 	if source != null:
 		var texture : MMTexture = await source.generator.render_output_to_texture(source.output_index, Vector2i(size, size))
 		if parameters.suffix != "":
