@@ -65,6 +65,8 @@ func update_predefined_generators()-> void:
 	predefined_functions = {}
 	for path in MMPaths.get_nodes_paths():
 		get_predefined_generators_from_dir(path)
+	# Node definitions of plugins (once they are loaded)
+	MMPlugins.load_node_definitions()
 	if false:
 		var file : FileAccess = FileAccess.open("predefined_nodes.json", FileAccess.WRITE)
 		if file != null:

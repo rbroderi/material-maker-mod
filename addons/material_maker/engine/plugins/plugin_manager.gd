@@ -316,7 +316,8 @@ static func load_plugin(plugin : Dictionary, config : ConfigFile) -> String:
 	var path : String = plugin.path
 	var nodes : String = config.get_value("plugin", "nodes", "")
 	if nodes != "":
-		mm_loader.get_predefined_generators_from_dir(path.path_join(nodes))
+		plugin.nodes = path.path_join(nodes)
+		mm_loader.get_predefined_generators_from_dir(plugin.nodes)
 	var export_targets : String = config.get_value("plugin", "export_targets", "")
 	if export_targets != "":
 		load_export_targets(path.path_join(export_targets))
@@ -335,6 +336,13 @@ static func load_plugin(plugin : Dictionary, config : ConfigFile) -> String:
 		instance._enable(api)
 		plugin.instance = instance
 	return ""
+
+## Reads the node definitions (.mmg files) of the loaded plugins again, when
+## the loader rebuilds its list (e.g. after a node definition is saved)
+static func load_node_definitions() -> void:
+	for p in plugins:
+		if p.has("nodes"):
+			mm_loader.get_predefined_generators_from_dir(p.nodes)
 
 ## Export targets (.mme files) of a plugin, for Material nodes
 static func load_export_targets(path : String) -> void:
