@@ -21,6 +21,13 @@ var is_greyscale : bool = false
 
 var is_paused : bool = false
 
+## Dimensions of the buffer in the size uniforms of the shaders that read it
+var published_dimensions : Vector2i = Vector2i(-1, -1)
+
+const SIZE_MODE_ABSOLUTE : int = 0
+const SIZE_MODE_RELATIVE_TO_OUTPUT : int = 1
+const SIZE_MODE_RELATIVE_TO_INPUT : int = 2
+
 
 func _ready() -> void:
 	shader_compute = MMShaderCompute.new()
@@ -75,12 +82,12 @@ func get_parameter_defs() -> Array:
 				values=[ { name="GPU", value="gpu" }, { name="Half down", value="half_down" }, { name="Half up", value="half_up" } ],
 				longdesc="How values are rounded when they are stored as 8 bits, 16 bits integers or 16 bits floats: as the GPU does (it varies between GPUs: values halfway between two steps are rounded down or up, and some GPUs truncate 16 bits floats), or to the nearest step with ties rounded down or up (the same on all GPUs)" })
 			parameter_defs.push_back({ name="size_mode", label="Size mode", type="enum", default=0,
-				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" } ],
-				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset" })
+				values=[ { name="Absolute", value="absolute" }, { name="Relative to output", value="relative" }, { name="Relative to input", value="input" } ],
+				longdesc="Absolute uses the size parameter, relative to output uses the material's size multiplied by 2^offset, relative to input uses the size of the texture the input reads (the nearest buffer or image upstream) multiplied by 2^offset" })
 			parameter_defs.push_back({ name="size_offset", label="Size offset", type="float", min=-6.0, max=4.0, step=1.0, default=0.0,
-				longdesc="Size relative to the material's size, as a power of 2 (only used in relative size mode)" })
+				longdesc="Size relative to the material's or the input's size, as a power of 2 (only used in relative size modes)" })
 			parameter_defs.push_back({ name="aspect", label="Aspect ratio", type="enum", default=0, values=ASPECT_RATIOS,
-				longdesc="Width:height of the buffer (the size is its width). Non-square buffers have a different resolution horizontally and vertically, the image is still mapped to the whole UV square" })
+				longdesc="Width:height of the buffer (the size is its width). Non-square buffers have a different resolution horizontally and vertically, the image is still mapped to the whole UV square. Relative to input, the ratio is applied to the input's (1:1 keeps the input's ratio)" })
 	return parameter_defs
 
 ## Aspect ratios of non-square buffers and materials (width:height), the
@@ -98,29 +105,95 @@ static func aspect_height(width : int, aspect : int) -> int:
 
 ## Width and height of the buffer, in pixels
 func get_buffer_dimensions() -> Vector2i:
-	var width : int = 1 << get_buffer_size()
 	if version != VERSION_COMPLEX:
-		return Vector2i(width, width)
+		var size : int = 1 << get_buffer_size()
+		return Vector2i(size, size)
+	if int(get_parameter("size_mode")) == SIZE_MODE_RELATIVE_TO_INPUT:
+		var input_dimensions : Vector2i = get_input_dimensions()
+		var input_width : int = 1 << get_size_relative_to_input(input_dimensions.x)
+		# The aspect ratio is applied to the input's
+		var input_height : int = aspect_height(input_width, int(get_parameter("aspect")))
+		return Vector2i(input_width, clampi(roundi(input_height*float(input_dimensions.y)/float(input_dimensions.x)), 1, 16384))
+	var width : int = 1 << get_buffer_size()
 	return Vector2i(width, aspect_height(width, int(get_parameter("aspect"))))
 
-## Returns the material's output size (as log2), or -1 if there is none
-func get_output_size() -> int:
+## Returns the graph's material, or null if there is none
+func get_output_material() -> MMGenMaterial:
 	var root : Node = self
 	while root.get_parent() is MMGenBase:
 		root = root.get_parent()
 	for c in root.get_children():
 		if c is MMGenMaterial:
-			return c.get_output_size()
+			return c
+	return null
+
+## Returns the material's output size (as log2), or -1 if there is none
+func get_output_size() -> int:
+	var material : MMGenMaterial = get_output_material()
+	if material != null:
+		return material.get_output_size()
 	return -1
+
+## Returns the width and height of the texture an output reads: that of the
+## nearest buffer or texture (image...) upstream, following the first input
+## of other nodes, through groups. Returns (-1, -1) if there is none.
+static func find_texture_dimensions(port : OutputPort, depth : int = 0) -> Vector2i:
+	if port == null or depth > 256:
+		return Vector2i(-1, -1)
+	var generator : MMGenBase = port.generator
+	if generator.has_method("get_buffer_dimensions"):
+		return generator.get_buffer_dimensions()
+	if generator is MMGenTexture:
+		if generator.texture != null and generator.texture.texture_size.x > 0 and generator.texture.texture_size.y > 0:
+			return generator.texture.texture_size
+		return Vector2i(-1, -1)
+	if generator is MMGenGraph:
+		var outputs : Node = generator.get_node_or_null("gen_outputs")
+		return find_texture_dimensions(outputs.get_source(port.output_index) if outputs != null else null, depth+1)
+	if generator.name == "gen_inputs" and generator.get_parent() is MMGenBase:
+		return find_texture_dimensions(generator.get_parent().get_source(port.output_index), depth+1)
+	if generator.get_input_defs().is_empty():
+		return Vector2i(-1, -1)
+	return find_texture_dimensions(generator.get_source(0), depth+1)
+
+## Number of nested get_input_dimensions calls (guards against loops)
+static var input_dimensions_depth : int = 0
+
+## Returns the dimensions of the texture the input reads or, if it reads
+## none (e.g. a noise), the material's dimensions
+func get_input_dimensions() -> Vector2i:
+	var dimensions : Vector2i = Vector2i(-1, -1)
+	if input_dimensions_depth < 64:
+		input_dimensions_depth += 1
+		dimensions = find_texture_dimensions(get_source(0))
+		input_dimensions_depth -= 1
+	if dimensions.x > 0 and dimensions.y > 0:
+		return dimensions
+	var material : MMGenMaterial = get_output_material()
+	if material != null and material.get_output_size() >= 0:
+		var width : int = 1 << material.get_output_size()
+		return Vector2i(width, material.get_image_height(width))
+	var size : int = 1 << int(get_parameter("size"))
+	return Vector2i(size, size)
 
 ## Returns the buffer's size (as log2), that depends on its size mode
 func get_buffer_size() -> int:
-	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:
-		var output_size : int = get_output_size()
-		if output_size >= 0:
-			var size_def : Dictionary = get_parameter_def("size")
-			return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
+	if version == VERSION_COMPLEX:
+		var size_def : Dictionary = get_parameter_def("size")
+		match int(get_parameter("size_mode")):
+			SIZE_MODE_RELATIVE_TO_OUTPUT:
+				var output_size : int = get_output_size()
+				if output_size >= 0:
+					return clampi(output_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
+			SIZE_MODE_RELATIVE_TO_INPUT:
+				return get_size_relative_to_input(get_input_dimensions().x)
 	return int(get_parameter("size"))
+
+## Returns the size (as log2) of the buffer relative to an input width
+func get_size_relative_to_input(input_width : int) -> int:
+	var size_def : Dictionary = get_parameter_def("size")
+	var input_size : int = roundi(log(float(input_width))/log(2.0))
+	return clampi(input_size+int(get_parameter("size_offset")), size_def.first, size_def.last)
 
 ## The storage format of the buffer (MMPipeline.STORAGE_*)
 func get_storage() -> int:
@@ -163,9 +236,9 @@ func is_parameter_used(n : String) -> bool:
 		return true
 	match n:
 		"size":
-			return get_parameter("size_mode") != 1
+			return int(get_parameter("size_mode")) == SIZE_MODE_ABSOLUTE
 		"size_offset":
-			return get_parameter("size_mode") == 1
+			return int(get_parameter("size_mode")) != SIZE_MODE_ABSOLUTE
 		"f8":
 			return not get_parameter("f32") and not get_parameter("f16i")
 		"f16i":
@@ -255,15 +328,23 @@ func find_precision_sensitive_target(graph : MMGenGraph, gen_name : String, port
 	return rv
 
 ## Called when the material's size changes
+## (buffers relative to an input that reads no texture use the material's size)
 func on_output_size_changed() -> void:
-	if version == VERSION_COMPLEX and get_parameter("size_mode") == 1:
+	if version == VERSION_COMPLEX and int(get_parameter("size_mode")) != SIZE_MODE_ABSOLUTE:
 		update_buffer_size()
+
+## Updates the size uniforms of the shaders that read the buffer
+func publish_dimensions(dimensions : Vector2i) -> void:
+	if dimensions == published_dimensions:
+		return
+	published_dimensions = dimensions
+	mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), float(dimensions.x))
+	mm_deps.dependency_update("o%d_tex_size_y" % get_instance_id(), float(dimensions.y))
 
 func update_buffer_size() -> void:
 	if is_inside_tree():
-		var dimensions : Vector2i = get_buffer_dimensions()
-		mm_deps.dependency_update("o%d_tex_size" % get_instance_id(), float(dimensions.x))
-		mm_deps.dependency_update("o%d_tex_size_y" % get_instance_id(), float(dimensions.y))
+		published_dimensions = Vector2i(-1, -1)
+		publish_dimensions(get_buffer_dimensions())
 		# Remote nodes can set the size before the buffer is created
 		var buffer_name : String = "o%d_tex" % get_instance_id()
 		if mm_deps.buffers.has(buffer_name):
@@ -331,6 +412,9 @@ func on_dep_update_buffer(buffer_name : String) -> bool:
 	if is_paused:
 		return false
 	var dimensions : Vector2i = get_buffer_dimensions()
+	if version == VERSION_COMPLEX and int(get_parameter("size_mode")) == SIZE_MODE_RELATIVE_TO_INPUT:
+		# The input's size may have changed (inputs are rendered first)
+		publish_dimensions(dimensions)
 	var status = await shader_compute.render(texture, dimensions.x, dimensions.y)
 	if status:
 		rendering_time = shader_compute.get_render_time()

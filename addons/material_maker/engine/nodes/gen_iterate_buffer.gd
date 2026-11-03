@@ -79,6 +79,14 @@ func get_parameter_defs() -> Array:
 		{ name="f32", label="32 bits", type="boolean", default=false }
 	]
 
+## Width and height of the buffer, in pixels (with Shrink, those of the last
+## rendered iteration)
+func get_buffer_dimensions() -> Vector2i:
+	if get_parameter("shrink") and texture.texture_size.x > 0:
+		return texture.texture_size
+	var size : int = 1 << int(get_parameter("size"))
+	return Vector2i(size, size)
+
 func get_input_defs() -> Array:
 	return [ { name="in", type="rgba" }, { name="loop_in", type="rgba" } ]
 
