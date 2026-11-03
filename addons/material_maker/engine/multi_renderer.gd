@@ -214,6 +214,13 @@ func create_rendering_device():
 # its input's type changed) must not be compiled before (and then replaced
 # by) an older one that was still waiting for the device.
 func wait_for_rendering_device() -> RenderingDevice:
+	# Jobs only run in the rendering thread once the device exists (creating
+	# it is the thread's first job). A job (e.g. mesh map generation) must
+	# not wait for a frame: it would return to thread_run() before rendering
+	# and resume later in the main thread. This also keeps the tickets
+	# (not thread safe) in the main thread.
+	if OS.get_thread_caller_id() != OS.get_main_thread_id():
+		return rendering_device
 	var ticket : int = rendering_device_tickets
 	rendering_device_tickets += 1
 	while rendering_device == null or ticket != rendering_device_served:
