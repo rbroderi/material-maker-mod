@@ -22,3 +22,26 @@ mm.quit()
 ```
 
 See `examples/variations.py` and `material_maker/doc/scripting.rst`.
+
+## mm-cook
+
+`mm_cook.py` (the `mm-cook` command once installed) exports the runtime
+packages (.mmr) of many graphs with Material Maker's `--export-mmr` mode, and
+only exports them again when a graph (or a file it uses), the options or
+Material Maker changed:
+
+```
+mm-cook --mm "godot --path /path/to/material-maker" --jobs 4 -o packages materials/
+mm-cook --verify runtime/cpp/build/mmr_render --report report.json -o packages materials/
+```
+
+`--verify` renders each package with `mmr_render` (the C++ runtime) and checks
+that its outputs are identical to Material Maker's renders. See
+`mm-cook --help` and the Runtime packages section of
+`material_maker/doc/export.rst`.
+
+Tests (with fake Material Maker and mmr_render commands):
+
+```
+python -m pytest python/tests
+```

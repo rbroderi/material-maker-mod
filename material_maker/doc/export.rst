@@ -122,3 +122,33 @@ parameters, and the runtime parameters:
 * **time**, for animated materials (that use $time), in seconds
 * **seed**, for materials with random nodes, that changes their seeds as the **--seed**
   command line option does
+
+Cooking packages in batches
+^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The **python/mm_cook.py** script of the source repository (also installed as the **mm-cook**
+command by *pip install ./python*) exports the packages of many graphs, for example all the
+materials of a game, and only exports them again when needed:
+
+ python python/mm_cook.py --mm "material_maker" --jobs 4 -o packages materials/
+
+Its inputs are .ptex files, directories (searched recursively) and wildcards, and packages are
+written to the output directory with the same relative paths. A package is exported again only
+when its graph, a file used by the graph (such as an image), the options or Material Maker
+changed (**--force** exports all of them). Each graph is exported by its own Material Maker
+process, so errors in a graph (or a graph that does not finish in **--timeout** seconds) do not
+stop the others. Its options are:
+
+* **--mm <command>**: the Material Maker command (by default, the MATERIAL_MAKER environment
+  variable, or material_maker in the PATH), for example *"godot --path ."* in a source checkout
+* **-o <dir>**: the output directory (default: *cooked*)
+* **--size <size>**: the size of the outputs (default: 0, the size of the Material node)
+* **--jobs <n>**: the number of graphs exported at the same time
+* **--verify <mmr_render>**: renders each package with **mmr_render** (the C++ runtime) and
+  checks that all its outputs are identical, bit for bit, to Material Maker's renders of the
+  graph (**--render --node Material:<n> --format exr**)
+* **--report <file>**: writes a JSON report (status, errors, times and verification results of
+  each package)
+
+It exits with code 0 if all packages were exported (and verified), 1 if some were not, and 2 if
+the options are incorrect or Material Maker cannot export runtime packages.
