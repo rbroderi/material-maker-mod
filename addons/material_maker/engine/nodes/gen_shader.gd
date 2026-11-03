@@ -742,13 +742,12 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 	if output.is_empty():
 		return rv
 	var variables : Dictionary = get_common_replace_variables(uv, rv)
-	# $iteration: the iteration of the iterate buffer loop the code is generated for
-	var iteration_variable : String = context.get_iteration_variable()
-	if iteration_variable != "":
-		variables.iteration = "float(%s)" % iteration_variable
-		rv.add_uniform(iteration_variable, "int", 0)
-	else:
-		variables.iteration = "0.0"
+	# $iteration: the current iteration of the iterate buffer loop the code is
+	# generated for (0 elsewhere), unless a named parameter has that name
+	var iteration_variable : String = ""
+	if not variables.has("iteration"):
+		iteration_variable = context.get_iteration_variable()
+		variables.iteration = ("float(%s)" % iteration_variable) if iteration_variable != "" else "0.0"
 	process_parameters(rv, variables, generate_declarations)
 	process_inputs(rv, variables, context, generate_declarations)
 	# Add includes, globals and instance code
@@ -803,7 +802,12 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 		rv.output_type   = rv.alias.output_type
 	else:
 		rv.output_type = output.type
-	
+
+	# Declare the iteration only if it is used, so it does not invalidate
+	# shaders that do not depend on it
+	if iteration_variable != "" and (rv.code.contains(iteration_variable) or rv.defs.contains(iteration_variable)):
+		rv.add_uniform(iteration_variable, "int", 0)
+
 	return rv
 
 func _serialize(data: Dictionary) -> Dictionary:
