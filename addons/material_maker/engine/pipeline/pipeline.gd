@@ -63,13 +63,100 @@ const TEXTURE_TYPE_RGBA16F : int = 1
 const TEXTURE_TYPE_R32F    : int = 2
 const TEXTURE_TYPE_RGBA32F : int = 3
 const TEXTURE_TYPE_DEPTH   : int = 4
+const TEXTURE_TYPE_R8      : int = 5
+const TEXTURE_TYPE_RGBA8   : int = 6
+const TEXTURE_TYPE_R16     : int = 7
+const TEXTURE_TYPE_RGBA16  : int = 8
+const TEXTURE_TYPE_RG8     : int = 9
+const TEXTURE_TYPE_RG16F   : int = 10
+const TEXTURE_TYPE_RG32F   : int = 11
+const TEXTURE_TYPE_RG16    : int = 12
 const TEXTURE_TYPE : Array[Dictionary] = [
 	{ decl="r16f", data_format=RenderingDevice.DATA_FORMAT_R16_SFLOAT, image_format=Image.FORMAT_RH, channels=1, bytes_per_channel=2 },
 	{ decl="rgba16f", data_format=RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT, image_format=Image.FORMAT_RGBAH, channels=4, bytes_per_channel=2 },
 	{ decl="r32f", data_format=RenderingDevice.DATA_FORMAT_R32_SFLOAT, image_format=Image.FORMAT_RF, channels=1, bytes_per_channel=4 },
 	{ decl="rgba32f", data_format=RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT, image_format=Image.FORMAT_RGBAF, channels=4, bytes_per_channel=4 },
-	{ decl="r32f", data_format=RenderingDevice.DATA_FORMAT_D32_SFLOAT, image_format=Image.FORMAT_RF, channels=1, bytes_per_channel=4 }
+	{ decl="r32f", data_format=RenderingDevice.DATA_FORMAT_D32_SFLOAT, image_format=Image.FORMAT_RF, channels=1, bytes_per_channel=4 },
+	{ decl="r8", data_format=RenderingDevice.DATA_FORMAT_R8_UNORM, image_format=Image.FORMAT_R8, channels=1, bytes_per_channel=1 },
+	{ decl="rgba8", data_format=RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM, image_format=Image.FORMAT_RGBA8, channels=4, bytes_per_channel=1 },
+	{ decl="r16", data_format=RenderingDevice.DATA_FORMAT_R16_UNORM, image_format=Image.FORMAT_R16, channels=1, bytes_per_channel=2 },
+	{ decl="rgba16", data_format=RenderingDevice.DATA_FORMAT_R16G16B16A16_UNORM, image_format=Image.FORMAT_RGBA16, channels=4, bytes_per_channel=2 },
+	{ decl="rg8", data_format=RenderingDevice.DATA_FORMAT_R8G8_UNORM, image_format=Image.FORMAT_RG8, channels=2, bytes_per_channel=1 },
+	{ decl="rg16f", data_format=RenderingDevice.DATA_FORMAT_R16G16_SFLOAT, image_format=Image.FORMAT_RGH, channels=2, bytes_per_channel=2 },
+	{ decl="rg32f", data_format=RenderingDevice.DATA_FORMAT_R32G32_SFLOAT, image_format=Image.FORMAT_RGF, channels=2, bytes_per_channel=4 },
+	{ decl="rg16", data_format=RenderingDevice.DATA_FORMAT_R16G16_UNORM, image_format=Image.FORMAT_RG16, channels=2, bytes_per_channel=2 }
 ]
+
+## Storage formats of buffers: 16 bits floats, 32 bits floats, 8 bits and
+## 16 bits integers (values between 0 and 1)
+const STORAGE_16F : int = 0
+const STORAGE_32F : int = 1
+const STORAGE_8   : int = 2
+const STORAGE_16  : int = 3
+
+## The texture type of a storage format, for 1 (grayscale), 2 (RG) or 4
+## (RGBA) channels. If the GPU does not support it for compute shader
+## outputs, RG falls back to RGBA and integer formats to 16 bits floats.
+static func get_texture_type(channels : int, storage : int) -> int:
+	var texture_type : int = get_texture_type_for_storage(channels, storage)
+	if is_output_texture_type_supported(texture_type):
+		return texture_type
+	if channels == 2:
+		return get_texture_type(4, storage)
+	return get_texture_type_for_storage(channels, STORAGE_16F)
+
+## The texture type of a storage format, for 1, 2 or 4 channels (without
+## checking it is supported)
+static func get_texture_type_for_storage(channels : int, storage : int) -> int:
+	match channels:
+		1:
+			return [ TEXTURE_TYPE_R16F, TEXTURE_TYPE_R32F, TEXTURE_TYPE_R8, TEXTURE_TYPE_R16 ][storage]
+		2:
+			return [ TEXTURE_TYPE_RG16F, TEXTURE_TYPE_RG32F, TEXTURE_TYPE_RG8, TEXTURE_TYPE_RG16 ][storage]
+	return [ TEXTURE_TYPE_RGBA16F, TEXTURE_TYPE_RGBA32F, TEXTURE_TYPE_RGBA8, TEXTURE_TYPE_RGBA16 ][storage]
+
+## The storage format of a texture type (STORAGE_*)
+static func get_texture_type_storage(texture_type : int) -> int:
+	match texture_type:
+		TEXTURE_TYPE_R32F, TEXTURE_TYPE_RGBA32F, TEXTURE_TYPE_RG32F:
+			return STORAGE_32F
+		TEXTURE_TYPE_R8, TEXTURE_TYPE_RGBA8, TEXTURE_TYPE_RG8:
+			return STORAGE_8
+		TEXTURE_TYPE_R16, TEXTURE_TYPE_RGBA16, TEXTURE_TYPE_RG16:
+			return STORAGE_16
+	return STORAGE_16F
+
+## Rounding of buffer stores: as the GPU does, or to the nearest step with
+## ties rounded down or up
+const ROUNDING_GPU       : int = 0
+const ROUNDING_HALF_DOWN : int = 1
+const ROUNDING_HALF_UP   : int = 2
+
+## GLSL that rounds outColor before it is stored with a storage format
+## (STORAGE_*), so the store is exact and gives the same result on all GPUs
+## (they round ties differently, and some truncate 16 bits floats). Values
+## are rounded to the nearest step: multiples of 1/255 or 1/65535 for 8 and
+## 16 bits integers (after clamping between 0 and 1), 16 bits floats for
+## STORAGE_16F (ties toward or away from 0). 32 bits floats are not rounded.
+static func get_store_rounding_code(rounding : int, storage : int) -> String:
+	if rounding == ROUNDING_GPU:
+		return ""
+	var round_function : String = "ceil(%s-0.5)" if rounding == ROUNDING_HALF_DOWN else "floor(%s+0.5)"
+	match storage:
+		STORAGE_8, STORAGE_16:
+			var k : String = "255.0" if storage == STORAGE_8 else "65535.0"
+			# precise: the product is a 32 bits float before it is rounded (GPUs
+			# that fuse it with the rounding into a multiply-add would round
+			# differently)
+			return "{ precise vec4 mm_value = clamp(outColor, 0.0, 1.0)*%s; outColor = %s/%s; }" % [ k, round_function % "mm_value", k ]
+		STORAGE_16F:
+			# 11 significant bits for normal 16 bits floats, steps of 2^-24 for subnormals
+			return "{ ivec4 mm_exponent; frexp(abs(outColor), mm_exponent); vec4 mm_step = exp2(vec4(max(mm_exponent-11, ivec4(-24)))); outColor = sign(outColor)*%s*mm_step; }" % (round_function % "(abs(outColor)/mm_step)")
+	return ""
+
+const OUTPUT_TEXTURE_USAGE_BITS : int = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+
+static var output_texture_type_supported : Dictionary[int, bool] = {}
 
 
 var parameters : Dictionary
@@ -403,9 +490,27 @@ func create_output_texture(rd : RenderingDevice, texture_size : Vector2i, textur
 	if is_framebuffer:
 		usage_bits =  RenderingDevice.TEXTURE_USAGE_COLOR_ATTACHMENT_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT
 	else:
-		usage_bits = RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+		usage_bits = OUTPUT_TEXTURE_USAGE_BITS
 	
 	return create_texture(rd, texture_size, texture_type, usage_bits)
+
+## Returns true if the GPU supports the texture type for compute shader outputs
+## (the result is cached, and a warning is shown once if it is not supported)
+static func is_output_texture_type_supported(texture_type : int) -> bool:
+	if texture_type <= TEXTURE_TYPE_RGBA32F:
+		# Grayscale and RGBA floats are always used
+		return true
+	if not output_texture_type_supported.has(texture_type):
+		var rd : RenderingDevice = mm_renderer.rendering_device
+		if rd == null:
+			# Not known yet (the rendering device is created by the rendering thread)
+			return true
+		var data_format : int = TEXTURE_TYPE[texture_type].data_format
+		var supported : bool = rd.texture_is_format_supported_for_usage(data_format, OUTPUT_TEXTURE_USAGE_BITS)
+		if not supported:
+			push_warning("%s textures are not supported by the GPU, using %s instead" % [ TEXTURE_TYPE[texture_type].decl, "RGBA" if TEXTURE_TYPE[texture_type].channels == 2 else "16 bits floats" ])
+		output_texture_type_supported[texture_type] = supported
+	return output_texture_type_supported[texture_type]
 
 func create_depth_texture(rd : RenderingDevice, texture_size : Vector2i) -> RID:
 	return create_texture(rd, texture_size, TEXTURE_TYPE_DEPTH, RenderingDevice.TEXTURE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT)

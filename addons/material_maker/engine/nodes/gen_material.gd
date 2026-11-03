@@ -20,6 +20,10 @@ var preview_texture_dependencies : Dictionary[String, MMTexture] = {}
 var external_previews : Dictionary[Node, Array] = {}
 var export_output_def : Dictionary
 
+## Size (as log2) of command line exports, followed by buffers sized
+## relatively to the material, or -1
+var export_size_override : int = -1
+
 
 # The minimum allowed texture size as a power-of-two exponent
 const TEXTURE_SIZE_MIN : int = 4  # 16x16
@@ -66,6 +70,13 @@ func get_preprocessed_output_def(output_index : int):
 	return super.get_preprocessed_output_def(output_index)
 
 
+## Height of exported images of a given width, with the material's aspect
+## ratio (for materials that have one)
+func get_image_height(width : int) -> int:
+	if parameters.has("aspect"):
+		return MMGenBuffer.aspect_height(width, int(parameters.aspect))
+	return width
+
 func get_image_size() -> int:
 	var rv : int
 	if parameters.has("size"):
@@ -81,8 +92,25 @@ func update_preview() -> void:
 	if graph_edit != null and graph_edit.has_method("send_changed_signal"):
 		graph_edit.send_changed_signal()
 
+## Returns the material's output size (as log2), or -1 if it has none
+func get_output_size() -> int:
+	if export_size_override >= 0:
+		return export_size_override
+	if parameters.has("size"):
+		return int(parameters.size)
+	return -1
+
 func set_parameter(p, v) -> void:
 	super.set_parameter(p, v)
+	# Buffers can be sized relatively to the material's size
+	if p == "size" and get_parent() != null:
+		notify_output_size_changed(get_parent())
+
+static func notify_output_size_changed(node : Node) -> void:
+	for c in node.get_children():
+		if c.has_method("on_output_size_changed"):
+			c.on_output_size_changed()
+		notify_output_size_changed(c)
 
 func source_changed(input_index : int) -> void:
 	update()
@@ -647,10 +675,22 @@ func get_connections_and_parameters_context() -> Dictionary:
 				context["$(param:"+p.name+".a)"] = str(value.a)
 	return context
 
-func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false) -> void:
+## Exports the material with a target (profile). Textures are size pixels wide
+## (the material's size if 0) and height pixels high (if 0, the size with the
+## material's aspect ratio).
+func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
 	reset_uids()
 	if size == 0:
 		size = get_image_size()
+	elif command_line:
+		# Buffers sized relatively to the material follow the export size
+		var size_log2 : int = roundi(log(size)/log(2.0))
+		if size_log2 != get_output_size():
+			export_size_override = size_log2
+			if get_parent() != null:
+				notify_output_size_changed(get_parent())
+	if height <= 0:
+		height = get_image_height(size)
 	export_last_target = profile
 	export_paths[profile] = prefix
 	var export_context : Dictionary = get_connections_and_parameters_context()
@@ -751,7 +791,7 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					if progress_dialog:
 						progress_dialog.set_progress(float(processed_files)/float(total_files))
 					continue
-				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
+				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, height))
 				e = await result.save_to_file(file_name)
 				if e != OK:
 					error_files += 1

@@ -82,12 +82,14 @@ func interpret_file_name(file_name : String, path : String = "") -> String:
 	var resolution : String = str(get_image_size())
 	return MMLoader.interpret_file_name(file_name, path, "."+get_image_format(), graph_node, additional_ids, resolution)
 
-func export_material(prefix : String, _profile : String, size : int = 0, command_line : bool = false) -> void:
+## Exports the input as a size x size image (size x height when height is
+## not 0, e.g. for command line exports with --size <width>x<height>)
+func export_material(prefix : String, _profile : String, size : int = 0, command_line : bool = false, height : int = 0) -> void:
 	if size == 0:
 		size = get_image_size()
 	var source = get_source(0)
 	if source != null:
-		var texture : MMTexture = await source.generator.render_output_to_texture(source.output_index, Vector2i(size, size))
+		var texture : MMTexture = await source.generator.render_output_to_texture(source.output_index, Vector2i(size, height if height > 0 else size))
 		if parameters.suffix != "":
 			var filename : String = interpret_file_name(parameters.suffix, prefix.get_base_dir())
 			await texture.save_to_file(prefix.get_base_dir().path_join(filename))

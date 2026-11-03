@@ -10,7 +10,9 @@ static func name_to_lower(s : String) -> String:
 	s = s.remove_chars("()/\"")
 	return s
 
-func export_files(files, output_dir, target, target_file, image_size) -> void:
+## Exports materials with image_size x image_height textures (if image_height
+## is 0, the height depends on the material's aspect ratio)
+func export_files(files, output_dir, target, target_file, image_size, image_height : int = 0) -> void:
 	var website_materials : Array = []
 	var export_list : PackedStringArray = PackedStringArray()
 	for f : String in files:
@@ -86,7 +88,7 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 					else:
 						var file_name : String = c.interpret_file_name(c.parameters.suffix, prefix.get_base_dir())
 						print("Saving additional export %s" % file_name)
-					await c.export_material(prefix, best_target, image_size, true)
+					await c.export_material(prefix, best_target, image_size, true, image_height)
 					if from_website:
 						export_list.append("\""+prefix.get_file()+"\": \""+mat_name+","+mat_author+"\"")
 			print("Done")
@@ -101,6 +103,7 @@ func _ready():
 	if ("--export" in args) or ("--export-material" in args):
 		print("Exporting...")
 		var image_size : int = 2048
+		var image_height : int = 0
 		var dir : DirAccess = DirAccess.open(".")
 		print("Current dir: ", dir.get_current_dir())
 		var target : String = "Godot/Godot 4 Standard"
@@ -122,9 +125,13 @@ func _ready():
 					output_file = OS.get_cmdline_args()[i]
 				"--size":
 					i += 1
-					image_size = int(OS.get_cmdline_args()[i])
-					if image_size < 0:
+					# A size, or <width>x<height> (e.g. 2048x1024) for non-square textures
+					var dimensions : PackedStringArray = OS.get_cmdline_args()[i].to_lower().split("x")
+					image_size = int(dimensions[0])
+					image_height = int(dimensions[1]) if dimensions.size() == 2 else 0
+					if image_size < 0 or dimensions.size() > 2 or (dimensions.size() == 2 and image_height <= 0):
 						show_error("ERROR: incorrect size "+OS.get_cmdline_args()[i])
+						get_tree().quit(1)
 						return
 				_:
 					files.push_back(OS.get_cmdline_args()[i])
@@ -163,7 +170,7 @@ func _ready():
 									expanded_files.push_back("website:"+str(mi))
 			else:
 				expanded_files.push_back(f)
-		await export_files(expanded_files, output_dir, target, output_file, image_size)
+		await export_files(expanded_files, output_dir, target, output_file, image_size, image_height)
 	else:
 		var no_logo : bool = ( args.find("--no-splash") != -1 )
 		var scene : PackedScene
