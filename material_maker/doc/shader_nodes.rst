@@ -55,6 +55,14 @@ So **mygradient** should be refered to as **$mygradient($uv.x)** if you want to 
 the gradient on the x axis (**$uv** is an implicit variable used by Material Maker for
 UV coordinates).
 
+The **$pass_size** implicit variable is a **vec2** that holds the width and height in
+pixels of the texture being rendered: the size of the buffer (or iterate buffer) the
+code is rendered into, or the size of the exported texture. Elsewhere (in the 2D preview
+of nodes that are not buffers, or in shaders exported as code) it is the size of the
+material. It can be used for resolution dependent effects, for example
+**floor($uv*$pass_size)** is the index of the pixel and **1.0/$pass_size** the size
+of a pixel in UV coordinates.
+
 Inputs
 ~~~~~~
 

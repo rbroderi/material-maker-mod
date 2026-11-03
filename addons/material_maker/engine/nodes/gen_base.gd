@@ -312,6 +312,21 @@ func init_parameters() -> void:
 func set_position(p) -> void:
 	position = p
 
+## Size of the texture rendered for this node when it is not rendered by a
+## compute shader (that sets the actual size): the material's size, or
+## 1024x1024 if the graph has no material ($pass_size in shaders)
+func get_pass_size() -> Vector2i:
+	var root : Node = self
+	while root.get_parent() is MMGenBase:
+		root = root.get_parent()
+	for c in root.get_children():
+		if c is MMGenMaterial:
+			var width : int = c.get_image_size()
+			if c.get_output_size() >= 0:
+				width = 1 << c.get_output_size()
+			return Vector2i(width, c.get_image_height(width))
+	return Vector2i(1024, 1024)
+
 func get_type() -> String:
 	return "generic"
 

@@ -175,6 +175,9 @@ func render(texture : MMTexture, size : Vector2i, output_parameters_values = nul
 func in_thread_render_ext(textures : Array[MMTexture], size : Vector2i, output_parameters_values = null) -> bool:
 	var rd : RenderingDevice = mm_renderer.rendering_device
 	var rids : RIDs = RIDs.new()
+	# $pass_size in shaders: the size of the rendered texture
+	set_parameter("mm_pass_size_x", float(size.x), true)
+	set_parameter("mm_pass_size_y", float(size.y), true)
 	var start_time = Time.get_ticks_msec()
 	set_parameter("elapsed_time", 0.001*float(start_time), true)
 	var status = render_2(rd, textures, output_parameters_values, size, rids)

@@ -69,6 +69,8 @@ Parameters are used to configure nodes. The following types are supported:
   a dollar sign. This feature is useful when two parameters of the same node must
   depend on each other, or when several parameters of several nodes of a subgraph
   must be calculated from one or more named parameters.
+  The *$pass_size* variable (a vec2) holds the width and height in pixels of the
+  texture being rendered, for example *$pass_size.x/64.0* (see Shader nodes).
   
   The *$time* variable can also be used in parameter expressions to define animations
   in generated shaders, but generated **Static PBR Materials** will still be
