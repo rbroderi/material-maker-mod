@@ -248,6 +248,32 @@ func fix_data(data : Dictionary) -> Dictionary:
 		data.type = "height_blend_levels"
 	return data
 
+## Node types implemented by generator scripts (plugins add theirs, see
+## MMPlugins.API.add_node_type)
+var node_types : Dictionary = {
+	material_export = MMGenMaterial,
+	autoexport = MMGenAutoExport,
+	buffer = MMGenBuffer,
+	image = MMGenImage,
+	text = MMGenText,
+	iterate_buffer = MMGenIterateBuffer,
+	meshmap = MMGenMeshMap,
+	sdf = MMGenSDF,
+	ios = MMGenIOs,
+	switch = MMGenSwitch,
+	export = MMGenExport,
+	comment = MMGenComment,
+	webcam = MMGenWebcam,
+	debug = MMGenDebug,
+	reroute = MMGenReroute,
+	comment_line = MMGenCommentLine,
+	portal = MMGenPortal,
+}
+
+## Whether nodes of a type can be created (by a script or a node definition)
+func has_node_type(type : String) -> bool:
+	return node_types.has(type) or MMPlugins.node_types.has(type) or predefined_generators.has(type)
+
 func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 	if fix:
 		data = fix_data(data)
@@ -261,25 +287,6 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 		{ keyword="model_data", type=MMGenShader },
 		{ keyword="widgets", type=MMGenRemote }
 	]
-	var types = {
-		material_export = MMGenMaterial,
-		autoexport = MMGenAutoExport,
-		buffer = MMGenBuffer,
-		image = MMGenImage,
-		text = MMGenText,
-		iterate_buffer = MMGenIterateBuffer,
-		meshmap = MMGenMeshMap,
-		sdf = MMGenSDF,
-		ios = MMGenIOs,
-		switch = MMGenSwitch,
-		export = MMGenExport,
-		comment = MMGenComment,
-		webcam = MMGenWebcam,
-		debug = MMGenDebug,
-		reroute = MMGenReroute,
-		comment_line = MMGenCommentLine,
-		portal = MMGenPortal,
-	}
 	var generator = null
 	for g in guess:
 		var guessed = true
@@ -293,8 +300,10 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 			generator = g.type.new()
 			break
 	if generator == null and data.has("type"):
-		if types.has(data.type):
-			generator = types[data.type].new()
+		if node_types.has(data.type):
+			generator = node_types[data.type].new()
+		elif MMPlugins.node_types.has(data.type):
+			generator = MMPlugins.node_types[data.type].script.new()
 		else:
 			if !predefined_generators.has(data.type) and data.type.left(8) == "website:":
 				var status = await get_node_from_website(data.type)

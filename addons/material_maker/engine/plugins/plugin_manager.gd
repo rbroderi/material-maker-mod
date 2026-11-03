@@ -24,7 +24,7 @@ class_name MMPlugins
 # is only disabled by default is enabled), and a plugin whose dependencies are
 # missing, too old, disabled, failed to load or depend on it is not loaded.
 # Their scripts can add menu items, command line commands
-# (material_maker --plugin <command> [arguments]) and export hooks.
+# (material_maker --plugin <command> [arguments]), export hooks and node types.
 
 
 const CONFIG_SECTION : String = "plugins"
@@ -56,10 +56,24 @@ class API:
 	func add_export_hook(callable : Callable) -> void:
 		MMPlugins.export_hooks.append(callable)
 
+	## Adds a node type (the "type" of nodes in graph files and libraries),
+	## implemented by a generator script (that extends MMGenBase and whose
+	## get_type() returns the type), for nodes that node definitions (.mmg
+	## files) cannot describe. Types of Material Maker's nodes, of node
+	## definitions and of other plugins cannot be replaced.
+	func add_node_type(type : String, script : Script) -> void:
+		var error : String = MMPlugins.check_node_type(type, script)
+		if error != "":
+			push_error("Plugin %s: cannot add node type %s (%s)" % [ plugin_id, type, error ])
+			return
+		MMPlugins.node_types[type] = { plugin=plugin_id, script=script }
+
 static var plugins : Array[Dictionary] = []
 static var menu_items : Array[Dictionary] = []
 static var commands : Dictionary = {}
 static var export_hooks : Array[Callable] = []
+## Node types of plugins (type -> { plugin, script })
+static var node_types : Dictionary = {}
 static var loaded : bool = false
 static var discovered : bool = false
 static var configs : Dictionary = {}
@@ -249,9 +263,26 @@ static func load_export_targets(path : String) -> void:
 static func get_libraries() -> PackedStringArray:
 	var rv : PackedStringArray = PackedStringArray()
 	for p in plugins:
-		if p.enabled and p.get("library", "") != "":
+		if p.enabled and p.error == "" and p.get("library", "") != "":
 			rv.append(p.library)
 	return rv
+
+## Why a plugin cannot add a node type (empty if it can)
+static func check_node_type(type : String, script : Script) -> String:
+	if type == "":
+		return "empty name"
+	if mm_loader.node_types.has(type) or mm_loader.predefined_generators.has(type):
+		return "a node of Material Maker or a node definition has this name"
+	if node_types.has(type):
+		return "already added by the %s plugin" % node_types[type].plugin
+	if script == null or not script.can_instantiate():
+		return "invalid script"
+	var base : Script = script
+	while base != null and base != MMGenBase:
+		base = base.get_base_script()
+	if base == null:
+		return "the script does not extend MMGenBase"
+	return ""
 
 static func call_export_hooks(material : MMGenBase, prefix : String, target : String) -> void:
 	for h in export_hooks:
@@ -275,5 +306,6 @@ static func clear_registrations() -> void:
 	menu_items.clear()
 	commands.clear()
 	export_hooks.clear()
+	node_types.clear()
 	for p in plugins:
 		p.erase("instance")

@@ -41,6 +41,7 @@ Maker starts, and **_disable()** when it quits. The API object adds:
   **api.add_command(name, callable)**, called with the arguments and returning the exit code
 * export hooks, called after each material export with the material node, the exported file
   prefix and the export target: **api.add_export_hook(callable)**
+* node types: **api.add_node_type(type, script)** (see below)
 * **api.get_main_window()**, the main window (null on the command line), to add panels or dialogs
 
 **MMPlugins.load_plugin_file(plugin_id, file_name)** loads a file of another (loaded) plugin, for
@@ -54,5 +55,28 @@ example a script shared with the plugins that depend on it.
         api.add_menu_item("Say hello", func(): print("Hello"))
         api.add_export_hook(func(material, prefix, target): print("exported ", prefix))
 
+Node types
+----------
+
+Nodes that a node definition (a **.mmg** file in the **nodes** folder) cannot describe, for
+example nodes that generate their texture on the CPU, can be implemented by a generator script
+that extends **MMGenBase** (or one of its subclasses, such as **MMGenTexture**) and registered
+with **api.add_node_type(type, script)**. **type** is the node's type in graph files and node
+libraries, and the script's **get_type()** must return it. Its parameters
+(**get_parameter_defs()**) and seed are saved with the node, and **_serialize(data)** returns
+the node's data with anything else it saves (and **_deserialize(data)** reads it). Nodes of this
+type load from graphs, and the plugin's library can list them (with **"type": "<type>"**
+items). The types of Material Maker's nodes and node definitions cannot be replaced, and a type
+that another plugin already added is not replaced either (plugins are loaded after their
+dependencies). Material Maker cannot load nodes of a plugin that is not installed or enabled.
+
+.. code-block:: gdscript
+
+    extends MMPlugin
+
+    func _enable(api) -> void:
+        api.add_node_type("my_node", load(api.plugin_path.path_join("my_node.gd")))
+
 The **material_maker/plugins/example** folder contains an example plugin (disabled by default)
-that adds a node, a menu item, a command and an export hook.
+that adds two nodes (a node definition, and a node type that generates a maze) in a library, a
+menu item, a command and an export hook.

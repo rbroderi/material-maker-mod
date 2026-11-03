@@ -8,6 +8,7 @@ func _enable(api : MMPlugins.API) -> void:
 	api.add_menu_item("Example: count nodes", count_nodes_in_ui)
 	api.add_command("example_list_nodes", list_nodes)
 	api.add_export_hook(on_exported)
+	api.add_node_type("example_maze", load(api.plugin_path.path_join("example_maze.gd")))
 
 func count_nodes_in_ui() -> void:
 	var graph_edit = mm_globals.main_window.get_current_graph_edit()
