@@ -55,6 +55,8 @@ func set_alpha(channel : String, value : float) -> void:
 func update_color_rects(channel : String, parent_alpha : float = 1.0) -> void:
 	var alpha = parent_alpha * get(channel+"_alpha")
 	for cr in get(channel+"_color_rects"):
+		if not is_instance_valid(cr):
+			continue
 		if cr.material is ShaderMaterial:
 			cr.material.set_shader_parameter("modulate", alpha)
 		else:
