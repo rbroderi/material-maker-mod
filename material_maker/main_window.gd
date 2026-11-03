@@ -1183,8 +1183,14 @@ func add_selection_to_library(index: int, should_ask_item_name: bool = true, upd
 	if selected_nodes.size() == 1:
 		data = selected_nodes[0].generator.serialize()
 		data.erase("node_position")
+		# Library items don't depend on the graph's local node definitions
+		var local_definitions : Dictionary = mm_loader.get_local_node_definitions(selected_nodes[0].generator.get_parent())
+		data = mm_loader.inline_local_nodes([ data ], local_definitions, {})[0]
 	elif graph_edit != null:
 		data = graph_edit.serialize_selection()
+		if data.has("local_node_definitions"):
+			data.nodes = mm_loader.inline_local_nodes(data.nodes, data.local_node_definitions, {})
+			data.erase("local_node_definitions")
 	# Create thumbnail
 	var image : Image = null
 	if update_thumbnail:

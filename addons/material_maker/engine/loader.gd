@@ -191,9 +191,12 @@ func load_gen(filename: String) -> MMGenBase:
 		var data = string_to_dict_tree(file.get_as_text())
 		if data != null:
 			current_project_path = filename.get_base_dir()
-			var generator = await create_gen(data)
+			var nodes_dir : String = get_local_nodes_dir(filename, data)
+			var generator = await create_gen(data, true, load_local_node_definitions(nodes_dir))
 			if generator:
 				generator.set_meta("file_path", filename)
+				if generator is MMGenGraph:
+					generator.local_nodes_dir = nodes_dir
 			current_project_path = ""
 			return generator
 	return null
@@ -216,8 +219,9 @@ func save_gen(filename : String, generator : MMGenBase) -> void:
 func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = Vector2(0, 0)) -> Dictionary:
 	var rv = { generators=[], connections=[] }
 	var gennames = {}
+	var local_definitions : Dictionary = get_local_node_definitions(gen_graph)
 	for n in generators:
-		var g = await create_gen(n)
+		var g = await create_gen(n, true, local_definitions)
 		if g != null:
 			g.orig_name = g.name
 			var orig_name = g.name
@@ -238,6 +242,118 @@ func add_to_gen_graph(gen_graph, generators, connections, position : Vector2 = V
 			print("Cannot connect %s:%d to %s:%d" % [c.from, c.from_port, c.to, c.to_port])
 	return rv
 
+# Graph-local node definitions
+
+## Returns the folder that holds the node definitions of a graph file: the graph's
+## "nodes_dir" (relative to the graph file), or <graph>_nodes next to the graph file
+## if it exists. Returns an empty string if the graph has no such folder.
+static func get_local_nodes_dir(filename : String, data : Dictionary) -> String:
+	# Rescue files (<graph>.ptex.mmcr) use the folder of their graph file
+	var graph_file : String = filename.replace("\\", "/").trim_suffix(".mmcr")
+	if data.get("nodes_dir") is String and data.nodes_dir != "":
+		var nodes_dir : String = data.nodes_dir.replace("\\", "/")
+		if nodes_dir.is_relative_path():
+			nodes_dir = graph_file.get_base_dir().path_join(nodes_dir)
+		return nodes_dir.simplify_path()
+	var default_nodes_dir : String = (graph_file.get_basename()+"_nodes").simplify_path()
+	if DirAccess.dir_exists_absolute(default_nodes_dir):
+		return default_nodes_dir
+	return ""
+
+## Returns how a graph saved as filename refers to the folder of its node
+## definitions: an empty string for <graph>_nodes, otherwise a path relative to
+## the graph file (or an absolute path if there is none)
+static func get_nodes_dir_for_file(nodes_dir : String, filename : String) -> String:
+	if filename == "":
+		return nodes_dir
+	var graph_file : String = filename.replace("\\", "/").trim_suffix(".mmcr")
+	if (graph_file.get_basename()+"_nodes").simplify_path() == nodes_dir:
+		return ""
+	var path : PackedStringArray = nodes_dir.split("/")
+	var base : PackedStringArray = graph_file.get_base_dir().simplify_path().split("/")
+	if path[0] != base[0]:
+		return nodes_dir
+	var common : int = 0
+	while common < path.size() and common < base.size() and path[common] == base[common]:
+		common += 1
+	var relative : PackedStringArray = PackedStringArray()
+	for i in base.size()-common:
+		relative.append("..")
+	relative.append_array(path.slice(common))
+	return "/".join(relative) if not relative.is_empty() else "."
+
+## Loads the node definitions (.mmg files) of a graph's own folder. Their file
+## names are node types that take precedence over the other nodes in that graph
+## only (see get_local_node_definitions).
+func load_local_node_definitions(nodes_dir : String) -> Dictionary:
+	var definitions : Dictionary = {}
+	if nodes_dir == "":
+		return definitions
+	var dir : DirAccess = DirAccess.open(nodes_dir)
+	if dir == null:
+		return definitions
+	for file_name in dir.get_files():
+		if file_name.get_extension() != "mmg":
+			continue
+		var definition : Dictionary = string_to_dict_tree(FileAccess.get_file_as_string(nodes_dir.path_join(file_name)))
+		if definition.is_empty():
+			print("Cannot load node definition "+nodes_dir.path_join(file_name))
+		else:
+			definitions[file_name.get_basename()] = definition
+	return definitions
+
+## Returns the graph-local node definitions used to create nodes in a graph
+static func get_local_node_definitions(generator : MMGenBase) -> Dictionary:
+	while generator != null:
+		if generator is MMGenGraph and generator.local_node_definitions != null:
+			return generator.local_node_definitions
+		generator = generator.get_parent() as MMGenBase
+	return {}
+
+## Returns the graph-local node definitions that serialized nodes (and the
+## definitions they use) need
+static func get_used_local_node_definitions(nodes : Array, definitions : Dictionary, used : Dictionary = {}) -> Dictionary:
+	for n in nodes:
+		if not n is Dictionary:
+			continue
+		if n.get("type") is String and definitions.has(n.type) and not used.has(n.type):
+			used[n.type] = definitions[n.type]
+			get_used_local_node_definitions([ definitions[n.type] ], definitions, used)
+		if n.get("nodes") is Array:
+			get_used_local_node_definitions(n.nodes, definitions, used)
+	return used
+
+## Whether two node definitions are the same (also after a copy through a JSON string)
+static func is_same_node_definition(a, b) -> bool:
+	if not a is Dictionary or not b is Dictionary:
+		return false
+	if a == b:
+		return true
+	return JSON.stringify(JSON.parse_string(JSON.stringify(a)), "", true) == JSON.stringify(JSON.parse_string(JSON.stringify(b)), "", true)
+
+## Replaces serialized nodes whose type is defined in definitions, but not in the
+## same way in target_definitions, with copies of their definitions, so they are
+## unchanged when pasted into another graph
+static func inline_local_nodes(nodes : Array, definitions : Dictionary, target_definitions : Dictionary) -> Array:
+	var rv : Array = []
+	for n in nodes:
+		if n is Dictionary:
+			n = n.duplicate()
+			var type = n.get("type")
+			if type is String and definitions.has(type) and not is_same_node_definition(target_definitions.get(type), definitions[type]):
+				var inlined : Dictionary = definitions[type].duplicate(true)
+				inlined.erase("type")
+				if definitions[type].get("type") is String and definitions[type].type != type:
+					inlined.type = definitions[type].type
+				for k in n.keys():
+					if k != "type":
+						inlined[k] = n[k]
+				n = inline_local_nodes([ inlined ], definitions, target_definitions)[0]
+			elif n.get("nodes") is Array:
+				n.nodes = inline_local_nodes(n.nodes, definitions, target_definitions)
+		rv.append(n)
+	return rv
+
 func fix_data(data : Dictionary) -> Dictionary:
 	if data.has("nodes") and data.has("connections") and data.has("label") and data.label == "HBAO":
 		data.type = "hbao"
@@ -248,7 +364,9 @@ func fix_data(data : Dictionary) -> Dictionary:
 		data.type = "height_blend_levels"
 	return data
 
-func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
+## Creates a generator from its serialized data. local_definitions are the
+## graph-local node definitions of the graph it is created in.
+func create_gen(data : Dictionary, fix : bool = true, local_definitions : Dictionary = {}) -> MMGenBase:
 	if fix:
 		data = fix_data(data)
 	var guess = [
@@ -296,10 +414,14 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 		if types.has(data.type):
 			generator = types[data.type].new()
 		else:
-			if !predefined_generators.has(data.type) and data.type.left(8) == "website:":
+			if !local_definitions.has(data.type) and !predefined_generators.has(data.type) and data.type.left(8) == "website:":
 				var status = await get_node_from_website(data.type)
-			if predefined_generators.has(data.type):
-				generator = await create_gen(predefined_generators[data.type], false)
+			if local_definitions.has(data.type) or predefined_generators.has(data.type):
+				# Library nodes don't use the graph's local node definitions
+				if local_definitions.has(data.type):
+					generator = await create_gen(local_definitions[data.type], false, local_definitions)
+				else:
+					generator = await create_gen(predefined_generators[data.type], false)
 				if generator == null:
 					print("Cannot find description for "+data.type)
 				else:
@@ -308,6 +430,8 @@ func create_gen(data : Dictionary, fix : bool = true) -> MMGenBase:
 			generator.name = data.type
 	if generator == null:
 		print("LOADER: data not supported:"+str(data))
+	if generator is MMGenGraph and generator.local_node_definitions == null:
+		generator.local_node_definitions = local_definitions
 	if generator != null:
 		var status = await generator.deserialize(data)
 	return generator

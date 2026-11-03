@@ -722,6 +722,10 @@ func do_create_nodes(data, nodes_position : Vector2 = Vector2(0, 0)) -> Array:
 	if data.has("type"):
 		data = { nodes=[data], connections=[] }
 	if data.has("nodes") and typeof(data.nodes) == TYPE_ARRAY and data.has("connections") and typeof(data.connections) == TYPE_ARRAY:
+		if data.get("local_node_definitions") is Dictionary:
+			# Nodes of graph-local types the target graph doesn't define in the same way are copied
+			data = data.duplicate()
+			data.nodes = mm_loader.inline_local_nodes(data.nodes, data.local_node_definitions, mm_loader.get_local_node_definitions(generator))
 		var new_stuff = await mm_loader.add_to_gen_graph(generator, data.nodes, data.connections, nodes_position)
 		var return_value = update_graph(new_stuff.generators, new_stuff.connections)
 		if new_stuff.generators.size() == 1:
@@ -871,6 +875,7 @@ func save_as() -> bool:
 
 func save_file(filename : String) -> bool:
 	generator.set_meta("file_path", filename)
+	top_generator.set_meta("file_path", filename)
 	mm_loader.current_project_path = filename.get_base_dir()
 	var data = top_generator.serialize()
 	data["project_thumbnail"] = await generate_project_thumbnail()
@@ -1001,6 +1006,10 @@ func serialize_selection(nodes = [], with_inputs : bool = false) -> Dictionary:
 			connection.erase("to_node")
 			connection.erase("keep_alive")
 			data.connections.append(connection)
+	# Graph-local node definitions, for pasting into other graphs
+	var local_definitions : Dictionary = mm_loader.get_used_local_node_definitions(data.nodes, mm_loader.get_local_node_definitions(generator))
+	if not local_definitions.is_empty():
+		data.local_node_definitions = local_definitions
 	return data
 
 func can_copy() -> bool:

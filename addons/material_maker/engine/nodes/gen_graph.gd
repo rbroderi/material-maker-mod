@@ -15,6 +15,13 @@ var current_mesh : Mesh = null
 
 var scroll_offset = null
 
+## Graph-local node definitions (node type -> definition) used to create the nodes
+## of this graph (see MMLoader.load_local_node_definitions), null to use those of
+## the parent graph. Not saved.
+var local_node_definitions = null
+## Folder the graph-local node definitions are loaded from (top-level graph only)
+var local_nodes_dir : String = ""
+
 signal graph_changed()
 signal connections_changed(removed_connections, added_connections)
 signal hierarchy_changed()
@@ -537,6 +544,10 @@ func _serialize(data: Dictionary) -> Dictionary:
 	data.connections = connections
 	if scroll_offset:
 		data.scroll_offset = { x=scroll_offset.x, y=scroll_offset.y }
+	if local_nodes_dir != "":
+		var nodes_dir : String = mm_loader.get_nodes_dir_for_file(local_nodes_dir, get_meta("file_path", ""))
+		if nodes_dir != "":
+			data.nodes_dir = nodes_dir
 	return data
 
 func _deserialize(data : Dictionary) -> void:
@@ -591,7 +602,7 @@ func apply_diff_from(graph : MMGenGraph) -> void:
 			idx1 += 1
 		else:
 			var gen = graph.get_node(NodePath(other_child_names[idx2][0])).serialize()
-			var generator = await mm_loader.create_gen(gen)
+			var generator = await mm_loader.create_gen(gen, true, mm_loader.get_local_node_definitions(self))
 			add_generator(generator)
 			idx2 += 1
 	
@@ -601,7 +612,7 @@ func apply_diff_from(graph : MMGenGraph) -> void:
 	
 	while idx2 < other_child_names.size():
 		var gen = graph.get_node(NodePath(other_child_names[idx2][0])).serialize()
-		var generator = await mm_loader.create_gen(gen)
+		var generator = await mm_loader.create_gen(gen, true, mm_loader.get_local_node_definitions(self))
 		add_generator(generator)
 		idx2 += 1
 		
