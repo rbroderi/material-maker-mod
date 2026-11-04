@@ -9,6 +9,8 @@ const SETTING_RENDER_SAMPLES := "3D_render_samples"
 const SETTING_RENDER_TRANSPARENT := "3D_render_transparent"
 const SETTING_RENDER_DISPLACEMENT := "3D_render_displacement"
 const SETTING_RENDER_THIN_WALLED := "3D_render_thin_walled"
+const SETTING_RENDER_SSS_RADIUS := "3D_render_sss_radius"
+const SETTING_RENDER_SSS_COLOR := "3D_render_sss_color"
 const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 
 @onready var preview3D := owner
@@ -25,6 +27,8 @@ var render_samples : SpinBox
 var render_transparent : CheckBox
 var render_displacement : CheckBox
 var render_thin_walled : CheckBox
+var render_sss_radius : SpinBox
+var render_sss_color : ColorPickerButton
 var render_button : Button
 var turntable_frames : SpinBox
 var turntable_button : Button
@@ -43,13 +47,14 @@ func set_map_generation_visible(v : bool) -> void:
 func get_config_value(setting : String, default):
 	return mm_globals.get_config(setting) if mm_globals.has_config(setting) else default
 
-func add_spin_box(parent : Control, label : String, minimum : float, maximum : float, setting : String, default : float) -> SpinBox:
+func add_spin_box(parent : Control, label : String, minimum : float, maximum : float, setting : String, default : float, step : float = 1.0) -> SpinBox:
 	var l : Label = Label.new()
 	l.text = label
 	parent.add_child(l)
 	var spin_box : SpinBox = SpinBox.new()
 	spin_box.min_value = minimum
 	spin_box.max_value = maximum
+	spin_box.step = step
 	spin_box.value = get_config_value(setting, default)
 	spin_box.value_changed.connect(func(v): mm_globals.set_config(setting, v))
 	parent.add_child(spin_box)
@@ -81,6 +86,21 @@ func add_render_options() -> void:
 	render_transparent = add_check_box(box, "Transparent background", "", SETTING_RENDER_TRANSPARENT, false)
 	render_displacement = add_check_box(box, "Displacement", "The mesh is subdivided and displaced by the material's depth", SETTING_RENDER_DISPLACEMENT, true)
 	render_thin_walled = add_check_box(box, "Thin walled", "Transmissive surfaces are thin sheets that let diffuse light through (leaves, paper, fabric)", SETTING_RENDER_THIN_WALLED, false)
+	var sss_grid : GridContainer = GridContainer.new()
+	sss_grid.columns = 2
+	box.add_child(sss_grid)
+	render_sss_radius = add_spin_box(sss_grid, "SSS radius (%)", 0.1, 100, SETTING_RENDER_SSS_RADIUS, 100.0*MMPathTracer.SSS_RADIUS, 0.1)
+	render_sss_radius.tooltip_text = "How far subsurface scattered light travels inside objects, in percents of the object's size"
+	var l : Label = Label.new()
+	l.text = "SSS radius color"
+	sss_grid.add_child(l)
+	render_sss_color = ColorPickerButton.new()
+	render_sss_color.color = get_config_value(SETTING_RENDER_SSS_COLOR, Color(1, 1, 1))
+	render_sss_color.edit_alpha = false
+	render_sss_color.custom_minimum_size = Vector2(32, 0)
+	render_sss_color.tooltip_text = "Scales the SSS radius for red, green and blue light: white scatters all colors as far, a reddish color (as skin) lets red light travel farther"
+	render_sss_color.color_changed.connect(func(c): mm_globals.set_config(SETTING_RENDER_SSS_COLOR, c))
+	sss_grid.add_child(render_sss_color)
 	render_button = Button.new()
 	render_button.text = "Path traced render..."
 	render_button.tooltip_text = "Renders the object from the current view with a path tracer (PNG or linear EXR)"
@@ -119,7 +139,7 @@ func _on_render_button_pressed() -> void:
 	render_button.disabled = true
 	var progress : Callable = func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ]
 	var error : String = await preview3D.render_path_traced(file_name, Vector2i(size_value, size_value), int(render_samples.value), render_transparent.button_pressed,
-		progress, render_displacement.button_pressed, render_thin_walled.button_pressed)
+		progress, render_displacement.button_pressed, render_thin_walled.button_pressed, render_sss_radius.value/100.0, render_sss_color.color)
 	render_button.text = "Path traced render..."
 	render_button.disabled = false
 	if error != "":
