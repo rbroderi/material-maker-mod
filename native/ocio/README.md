@@ -13,17 +13,24 @@ is its alias in the ACES configs).
 
 ## Building
 
-Needs git, CMake 3.24+, Python 3 and a C++17 compiler. Windows (x86_64, Visual
-Studio Build Tools with the C++ workload) is supported for now:
+Needs git, CMake 3.24+, Python 3 and a C++17 compiler (on Windows, Visual Studio
+Build Tools with the C++ workload; on Linux, GCC or Clang; on macOS, Xcode's
+command line tools):
 
 ```
 python native/ocio/build.py --generator "Visual Studio 18 2026"
+python3 native/ocio/build.py            # Linux and macOS
 ```
 
 It downloads OpenColorIO (v2.6.0) and godot-cpp (godot-4.5-stable) to
-`native/ocio/build`, builds them, and copies the extension
-(`mm_ocio.windows.x86_64.dll`), OpenColorIO's library and `mm_ocio.gdextension`
-to `addons/material_maker/ocio` (not versioned). An OpenColorIO already
+`native/ocio/build`, builds them, and copies the extension, OpenColorIO's
+library and `mm_ocio.gdextension` to `addons/material_maker/ocio` (not
+versioned). The extension is named after the platform and architecture
+(`mm_ocio.windows.x86_64.dll`, `mm_ocio.linux.x86_64.so`,
+`mm_ocio.macos.arm64.dylib`...). On Linux and macOS, OpenColorIO's library
+(`libOpenColorIO.so.2.6`, `libOpenColorIO.2.6.dylib`) is copied next to it and
+found through an `$ORIGIN`/`@loader_path` rpath. Building for macOS needs a
+Mac (Apple's SDK). An OpenColorIO already
 installed in `native/ocio/build/ocio-install` is reused. Then run Material
 Maker's import once (`godot --headless --path . --import`, or open the project
 in the editor) so Godot registers the extension.
