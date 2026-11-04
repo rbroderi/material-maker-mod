@@ -332,16 +332,22 @@ static func add_generators(root : Node, predicate : Callable, rv : Array) -> voi
 
 ## Renders an output of a generator, after the buffers it needs are rendered
 static func render_output_texture(generator : MMGenBase, output : int, size : Vector2i) -> MMTexture:
-	# Only the buffers the output reads (and theirs) are waited for, not all
-	# the buffers of the graph
+	# Only the buffers the output reads (and theirs) are rendered and waited
+	# for, not all the buffers of the graph
 	var source : MMGenBase.ShaderCode = generator.get_shader_code("uv", output, MMGenContext.new())
 	var buffer_names : Array = []
 	for u in source.uniforms:
 		if mm_deps.buffers.has(u.name):
 			buffer_names.append(u.name)
 	if not buffer_names.is_empty():
+		mm_deps.set_render_only(buffer_names)
 		await wait_for_renders(generator.get_tree(), buffer_names)
-	return await generator.render_output_to_texture(output, size)
+	var texture : MMTexture = await generator.render_output_to_texture(output, size)
+	if not buffer_names.is_empty():
+		# (the other buffers are rendered again, e.g. for the previews when
+		# this is called from the RPC server)
+		mm_deps.set_render_only([])
+	return texture
 
 static func render_output_image(generator : MMGenBase, output : int, size : Vector2i) -> Image:
 	var texture : MMTexture = await render_output_texture(generator, output, size)

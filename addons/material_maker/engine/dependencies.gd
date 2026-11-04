@@ -265,6 +265,39 @@ var update_scheduled : bool = false
 var update_generation : int = 0
 ## The buffer the update loop is waiting for (while it renders or restores it)
 var update_awaited_buffer : String = ""
+## When not empty, only these buffers and the buffers they read (directly or
+## not) are rendered, e.g. to render a single node from the command line
+var render_only : Array = []
+
+## Only renders these buffers (and the buffers they read), or all buffers if
+## buffer_names is empty
+func set_render_only(buffer_names : Array) -> void:
+	render_only = buffer_names
+	update()
+
+## The buffers rendered while render_only is set (the buffers they read are
+## known when their shaders are generated, so this grows while a graph loads).
+## All the buffers of an object are rendered together: an iterate buffer's
+## iterations go through buffers that are not dependencies of each other.
+func get_render_only_buffers() -> Dictionary:
+	var object_buffers : Dictionary = {}
+	for b in buffers.keys():
+		var object = buffers[b].object
+		if object != null:
+			if not object_buffers.has(object):
+				object_buffers[object] = []
+			object_buffers[object].append(b)
+	var needed : Dictionary = {}
+	var pending : Array = render_only.duplicate()
+	while not pending.is_empty():
+		var b = pending.pop_back()
+		if needed.has(b) or not buffers.has(b):
+			continue
+		needed[b] = true
+		pending.append_array(buffers[b].dependencies)
+		if buffers[b].object != null:
+			pending.append_array(object_buffers[buffers[b].object])
+	return needed
 
 func update():
 	if update_scheduled:
@@ -284,8 +317,14 @@ func do_update():
 		update_scheduled = false
 		var invalidated_buffers : int = 0
 		var releasing : bool = is_releasing()
+		# (render_only can change while the loop waits for a render)
+		var needed_for : Array = []
+		var needed : Dictionary = {}
 		for b in (get_render_order().duplicate() if releasing else buffers.keys()):
-			if ! buffers.has(b):
+			if render_only != needed_for:
+				needed_for = render_only
+				needed = get_render_only_buffers() if not render_only.is_empty() else {}
+			if ! buffers.has(b) or (not needed.is_empty() and not needed.has(b)):
 				continue
 			var buffer : Buffer = buffers[b]
 			# Buffers that failed to render are not pending (they would block
@@ -481,9 +520,10 @@ func get_stalled_buffers() -> PackedStringArray:
 		if buffers.has(awaited) and buffers[awaited].object is Node and is_instance_valid(buffers[awaited].object) and buffers[awaited].object.has_method("get_hier_name"):
 			awaited = "%s (%s)" % [ buffers[awaited].object.get_hier_name(), awaited ]
 		stalled.append("the update loop is waiting for "+awaited)
+	var needed : Dictionary = get_render_only_buffers() if not render_only.is_empty() else {}
 	for b in buffers.keys():
 		var buffer : Buffer = buffers[b]
-		if buffer.status == Buffer.Updated or buffer.status == Buffer.Error:
+		if buffer.status == Buffer.Updated or buffer.status == Buffer.Error or (not needed.is_empty() and not needed.has(b)):
 			continue
 		var waiting_for : PackedStringArray = PackedStringArray()
 		var blocked : bool = false
