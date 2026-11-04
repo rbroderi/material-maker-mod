@@ -56,12 +56,14 @@ from the current view:
 * **Path traced render...** renders the object with a progressive GPU path tracer and saves
   it as a PNG (tone mapped as the preview) or linear EXR file. The object is lit by the
   environment's panorama and its sun, and its material uses the Material node's albedo,
-  metallic, roughness, emission, normal, coat, sheen and transmission. *Samples* sets the
-  quality and *Transparent background* removes the background. With *Displacement*, the
-  object is subdivided and displaced by the material's depth (the preview only shows it
-  with parallax). With *Thin walled*, transmissive surfaces are thin sheets that let
-  diffuse light through, as leaves, paper or fabric (without it, transmission is not
-  rendered yet).
+  metallic, roughness, emission, normal, coat, sheen, transmission and subsurface scattering.
+  *Samples* sets the quality and *Transparent background* removes the background. With
+  *Displacement*, the object is subdivided and displaced by the material's depth (the
+  preview only shows it with parallax). Transmissive objects are rendered as glass-like
+  solids that refract light (with an index of refraction of 1.5, tinted by the albedo), or
+  with *Thin walled*, as thin sheets that let diffuse light through, as leaves, paper or
+  fabric. Subsurface scattering lets light travel inside solid objects (a random walk
+  whose mean free path is 3% of the object's size), as in wax, marble or skin.
 
 * **Turntable...** renders a full turn of the object with the 3D preview, as a sprite sheet,
   or as a PNG sequence if the file name contains ``#`` (replaced by the frame number).
