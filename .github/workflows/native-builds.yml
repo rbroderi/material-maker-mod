@@ -1,0 +1,128 @@
+name: "Native builds (runtime and OpenColorIO)"
+
+# Builds the C++ runtime (mmr_render) and the OpenColorIO GDExtension for
+# Windows, Linux and macOS. On Linux, mmr_render renders a test package with
+# Mesa's software Vulkan driver (lavapipe). macOS builds can't be produced on
+# other platforms without Apple's SDK, so they use macOS runners.
+#
+# Both projects need CMake 3.24+: the runners' preinstalled CMake is used
+# (Ubuntu 22.04's own cmake package is 3.22). Linux builds use Ubuntu 22.04 so
+# the binaries run on older glibc versions too.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'runtime/cpp/**'
+      - 'native/ocio/**'
+      - '.github/workflows/native-builds.yml'
+  pull_request:
+    paths:
+      - 'runtime/cpp/**'
+      - 'native/ocio/**'
+      - '.github/workflows/native-builds.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: C++ runtime (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, windows-2022, macos-26 ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Configure
+        run: |
+          cmake --version
+          cmake -S runtime/cpp -B runtime/cpp/build -DCMAKE_BUILD_TYPE=Release
+
+      - name: Build
+        run: cmake --build runtime/cpp/build --config Release --parallel
+
+      - name: Install a software Vulkan driver
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends mesa-vulkan-drivers libvulkan1
+
+      - name: Render the test package
+        if: runner.os == 'Linux'
+        # Only lavapipe, whatever other drivers are installed
+        env:
+          VK_DRIVER_FILES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+          VK_ICD_FILENAMES: /usr/share/vulkan/icd.d/lvp_icd.x86_64.json
+        run: python3 runtime/cpp/tests/check_render.py runtime/cpp/build/mmr_render
+
+      - name: Collect
+        shell: bash
+        run: |
+          mkdir -p dist
+          if [ -f runtime/cpp/build/Release/mmr_render.exe ]; then
+            cp runtime/cpp/build/Release/mmr_render.exe dist/
+          else
+            cp runtime/cpp/build/mmr_render dist/
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v6
+        with:
+          name: mmr_render-${{ runner.os }}-${{ runner.arch }}
+          path: dist
+          if-no-files-found: error
+
+  ocio:
+    name: OpenColorIO extension (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-22.04, windows-2022, macos-26 ]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      # build.py is run with "python", which macOS runners don't have by default
+      - name: Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+
+      - name: Cache OpenColorIO and godot-cpp
+        uses: actions/cache@v5
+        with:
+          path: |
+            native/ocio/build/ocio-src
+            native/ocio/build/ocio-install
+            native/ocio/build/godot-cpp
+          key: ${{ runner.os }}-${{ runner.arch }}-ocio-${{ hashFiles('native/ocio/build.py') }}
+
+      - name: Build
+        run: |
+          cmake --version
+          python native/ocio/build.py --jobs 4
+
+      - name: Check the extension
+        shell: bash
+        run: |
+          ls -l addons/material_maker/ocio addons/material_maker/ocio/bin
+          test -f addons/material_maker/ocio/mm_ocio.gdextension
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            # OpenColorIO's library must be found next to the extension
+            ldd addons/material_maker/ocio/bin/mm_ocio.linux.*.so | tee ldd.txt
+            ! grep -q "not found" ldd.txt
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            otool -L addons/material_maker/ocio/bin/mm_ocio.macos.*.dylib
+          fi
+
+      - name: Upload
+        uses: actions/upload-artifact@v6
+        with:
+          name: mm_ocio-${{ runner.os }}-${{ runner.arch }}
+          path: addons/material_maker/ocio
+          if-no-files-found: error

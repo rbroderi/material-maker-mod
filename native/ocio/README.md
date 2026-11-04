@@ -30,8 +30,8 @@ versioned). The extension is named after the platform and architecture
 `mm_ocio.macos.arm64.dylib`...). On Linux and macOS, OpenColorIO's library
 (`libOpenColorIO.so.2.6`, `libOpenColorIO.2.6.dylib`) is copied next to it and
 found through an `$ORIGIN`/`@loader_path` rpath. Building for macOS needs a
-Mac (Apple's SDK). An OpenColorIO already
-installed in `native/ocio/build/ocio-install` is reused. Then run Material
+Mac (Apple's SDK). The `native-builds.yml` GitHub workflow builds the
+extension for Windows, Linux and macOS. An OpenColorIO already installed in `native/ocio/build/ocio-install` is reused. Then run Material
 Maker's import once (`godot --headless --path . --import`, or open the project
 in the editor) so Godot registers the extension.
 

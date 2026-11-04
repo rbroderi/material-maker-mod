@@ -62,4 +62,6 @@ examples, at their own size and resized, with seeds, parameters and presets).
 `python runtime/cpp/tests/check_render.py <mmr_render>` renders
 `tests/bricks.mmr` (a 256 x 256 package of the bricks example) and checks its
 outputs, seeds and `--size`. It runs on any Vulkan driver, including Mesa's
-software driver (lavapipe) for CI.
+software driver (lavapipe): the `native-builds.yml` GitHub workflow builds the
+runtime for Windows, Linux and macOS, and runs this test on Linux with
+lavapipe.
