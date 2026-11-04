@@ -1,0 +1,73 @@
+{
+	"export_extension": "ktx2",
+	"files": [
+		{
+			"conditions": "$(connected:albedo_tex) or $(connected:opacity_tex)",
+			"expression": "rgba=vec4($albedo_tex($uv)*$albedo_color.rgb, $opacity_tex($uv))",
+			"file_name": "$(path_prefix)_albedo.ktx2",
+			"options": {
+				"bits": 8,
+				"srgb": true
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:metallic_tex)",
+			"expression": "f=$metallic*$metallic_tex($uv)",
+			"file_name": "$(path_prefix)_metallic.ktx2",
+			"options": {
+				"bits": 8
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:roughness_tex)",
+			"expression": "f=$roughness*$roughness_tex($uv)",
+			"file_name": "$(path_prefix)_roughness.ktx2",
+			"options": {
+				"bits": 8
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:normal_tex)",
+			"file_name": "$(path_prefix)_normal.ktx2",
+			"options": {
+				"bits": 8,
+				"normal_map": true
+			},
+			"output": 3,
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:emission_tex)",
+			"expression": "rgb=$emission_tex($uv)*$emission_energy",
+			"file_name": "$(path_prefix)_emission.ktx2",
+			"options": {
+				"bits": 8,
+				"srgb": true
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:depth_tex)",
+			"expression": "f=1.0-$depth_tex($uv)",
+			"file_name": "$(path_prefix)_height.ktx2",
+			"options": {
+				"bits": 16
+			},
+			"type": "texture"
+		},
+		{
+			"conditions": "$(connected:ao_tex)",
+			"expression": "f=$ao_tex($uv)",
+			"file_name": "$(path_prefix)_ao.ktx2",
+			"options": {
+				"bits": 8
+			},
+			"type": "texture"
+		}
+	],
+	"material": "material",
+	"name": "KTX2/Texture set"
+}
