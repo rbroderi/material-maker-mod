@@ -70,6 +70,7 @@
 				],
 				"parameters": [
 					{
+						"default": 1,
 						"label": "Scale",
 						"max": 3,
 						"min": 0,
@@ -79,6 +80,7 @@
 						"widget": "spinbox"
 					},
 					{
+						"default": 0,
 						"label": "X",
 						"max": 2,
 						"min": -2,
@@ -88,6 +90,7 @@
 						"widget": "spinbox"
 					},
 					{
+						"default": 0,
 						"label": "Y",
 						"max": 2,
 						"min": -2,
@@ -97,6 +100,7 @@
 						"widget": "spinbox"
 					},
 					{
+						"default": 10,
 						"label": "Contrast",
 						"max": 10000,
 						"min": 1,
