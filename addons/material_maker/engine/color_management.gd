@@ -228,6 +228,66 @@ static func get_export_space() -> String:
 		return export_space_override
 	return resolve_color_space(mm_globals.get_config("ocio_export_space"))
 
+## Bit depths of converted PNG color maps (the ocio_export_color_depth
+## setting): 16 bits for linear export color spaces, always 16 bits, always 8
+## bits
+enum { COLOR_DEPTH_AUTO, COLOR_DEPTH_16_BITS, COLOR_DEPTH_8_BITS }
+
+## Bit depth of converted color maps set on the command line
+## (--color-map-depth), that replaces the ocio_export_color_depth setting when
+## not -1
+static var export_color_depth_override : int = -1
+
+## True if a color space of the current config (or of o) is linear (e.g.
+## ACEScg, Linear Rec.709), false for encoded color spaces (sRGB, gamma, log,
+## video...) and data (Raw)
+static func is_linear_color_space(color_space : String, o = null) -> bool:
+	if o == null:
+		o = get_ocio()
+	if o == null or color_space == "":
+		return false
+	if o.has_method("is_color_space_linear"):
+		# The encoding of the color space, or its transform to its reference
+		# space (OCIO::Config::isColorSpaceLinear())
+		return o.is_color_space_linear(color_space)
+	# Older builds of the extension: values converted to the scene_linear role
+	# only differ by a scale factor per channel (data color spaces are not
+	# converted, and display-referred color spaces are not seen as linear)
+	var canonical : String = get_canonical_name(color_space, o)
+	var reference : String = o.get_role("scene_linear")
+	if canonical == "" or reference == "":
+		return false
+	if canonical == reference:
+		return true
+	# Pixels 1 and 3 are pixels 2 and 4 halved
+	var probe : PackedFloat32Array = PackedFloat32Array([ 0.0, 0.0, 0.0, 1.0, 0.05, 0.1, 0.2, 1.0, 0.1, 0.2, 0.4, 1.0, 0.3, 0.6, 0.45, 1.0, 0.6, 1.2, 0.9, 1.0 ])
+	var converted : PackedFloat32Array = o.convert(probe, canonical, reference)
+	if converted.size() != probe.size() or converted == probe:
+		return false
+	for c in 3:
+		if absf(converted[c]) > 1e-5:
+			return false
+		for p in [ 1, 3 ]:
+			var half : float = converted[p*4+c]
+			var full : float = converted[(p+1)*4+c]
+			if absf(full-2.0*half) > 1e-4*maxf(1.0, absf(full)):
+				return false
+	return true
+
+## True if converted color maps are written as 16 bits PNG files for an export
+## color space (depending on the ocio_export_color_depth setting or on
+## --color-map-depth)
+static func is_export_16_bits(export_space : String) -> bool:
+	var depth : int = export_color_depth_override
+	if depth == -1:
+		depth = int(mm_globals.get_config("ocio_export_color_depth"))
+	match depth:
+		COLOR_DEPTH_16_BITS:
+			return true
+		COLOR_DEPTH_8_BITS:
+			return false
+	return is_linear_color_space(export_space)
+
 ## The color spaces of a config file ("" is the built-in config), without
 ## changing the current config (empty if it cannot be loaded)
 static func get_config_color_spaces(config : String) -> PackedStringArray:

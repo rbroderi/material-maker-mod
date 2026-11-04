@@ -762,8 +762,8 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					# Color maps are converted from the working space (OpenColorIO)
 					var image : Image = (await result.get_texture()).get_image()
 					var converted_image : Image = MMColorManagement.convert_image_to(image, export_space)
-					if file_name.get_extension() == "png" and mm_globals.get_config("ocio_export_16_bits"):
-						# 16 bits PNG files (8 bits show banding in linear color spaces)
+					if file_name.get_extension() == "png" and MMColorManagement.is_export_16_bits(export_space):
+						# 16 bits PNG files (8 bits band in dark areas in linear color spaces)
 						e = MMColorManagement.save_png_16(converted_image, file_name)
 						saved = true
 					else:

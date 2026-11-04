@@ -17,6 +17,21 @@ func set_export_color_space(color_space : String) -> bool:
 	MMColorManagement.export_space_override = canonical
 	return true
 
+## Sets the bit depth of converted PNG color maps (--color-map-depth: auto,
+## 8 or 16), false (with an error) for other values
+func set_export_color_depth(depth : String) -> bool:
+	match depth.to_lower():
+		"auto":
+			MMColorManagement.export_color_depth_override = MMColorManagement.COLOR_DEPTH_AUTO
+		"16":
+			MMColorManagement.export_color_depth_override = MMColorManagement.COLOR_DEPTH_16_BITS
+		"8":
+			MMColorManagement.export_color_depth_override = MMColorManagement.COLOR_DEPTH_8_BITS
+		_:
+			show_error("ERROR: incorrect color map depth \"%s\" (auto, 8 or 16)" % depth)
+			return false
+	return true
+
 static func name_to_lower(s : String) -> String:
 	s = s.strip_edges()
 	s = s.to_lower()
@@ -144,6 +159,12 @@ func _ready():
 					i += 1
 					var color_space : String = OS.get_cmdline_args()[i] if i < OS.get_cmdline_args().size() else ""
 					if not set_export_color_space(color_space):
+						get_tree().quit(1)
+						return
+				"--color-map-depth":
+					i += 1
+					var depth : String = OS.get_cmdline_args()[i] if i < OS.get_cmdline_args().size() else ""
+					if not set_export_color_depth(depth):
 						get_tree().quit(1)
 						return
 				_:

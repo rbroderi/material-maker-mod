@@ -23,10 +23,20 @@ exporting (alpha and the other maps are not converted). The default (**No conver
 exports the values as they are.
 
 Color maps are exported as 8 bit PNG files by the export targets, which is enough for
-encoded color spaces (such as sRGB) but can show banding in dark areas with linear color
-spaces (such as ACEScg). The **16 bits converted PNG color maps** option writes the converted
-color maps as 16 bit PNG files instead (the file names, the other maps and the exports
-without color space conversion are unchanged).
+encoded color spaces (such as sRGB) but shows banding in dark areas with linear color
+spaces (such as ACEScg). The **Converted PNG color maps** option sets the bit depth of the
+converted color maps:
+
+* **Auto** (the default) writes them as 16 bit PNG files when the export color space is
+  linear, and as 8 bit PNG files otherwise. A color space is linear when its OpenColorIO
+  *encoding* is *scene-linear* or *display-linear* or, if the config does not set it, when
+  its transform to the reference space of the config is a scale or a matrix (e.g. ACEScg,
+  ACES2065-1, Linear Rec.709 (sRGB), Linear P3-D65). Encoded color spaces (sRGB, gamma, log,
+  video) and data color spaces (Raw) are not linear.
+* **Always 16 bits** and **Always 8 bits** write them as 16 or 8 bit PNG files whatever the
+  export color space.
+
+The file names, the other maps and the exports without color space conversion are unchanged.
 
 Blender
 -----------------

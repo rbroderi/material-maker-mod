@@ -113,10 +113,14 @@ func add_color_management_tab() -> void:
 	export_space.config_variable = "ocio_export_space"
 	export_space.none_text = "No conversion"
 	add_preference_row(vbox, "Exported color maps", export_space)
-	var export_16_bits : CheckBox = BoolOption.new()
-	export_16_bits.config_variable = "ocio_export_16_bits"
-	export_16_bits.tooltip_text = "Converted color maps are written as 16 bits PNG files (instead of 8 bits, that show banding in dark areas with linear color spaces)"
-	add_preference_row(vbox, "16 bits converted PNG color maps", export_16_bits)
+	# Items in the order of MMColorManagement.COLOR_DEPTH_*
+	var color_depth : OptionButton = EnumOption.new()
+	color_depth.config_variable = "ocio_export_color_depth"
+	color_depth.add_item("Auto (16 bits if linear)")
+	color_depth.add_item("Always 16 bits")
+	color_depth.add_item("Always 8 bits")
+	color_depth.tooltip_text = "The bit depth of converted PNG color maps: Auto writes 16 bits files for linear color spaces such as ACEScg (8 bits show banding in dark areas) and 8 bits files for the other ones"
+	add_preference_row(vbox, "Converted PNG color maps", color_depth)
 	# The color spaces of the config being edited
 	var update_color_spaces : Callable = func():
 		var o = MMColorManagement.get_config_ocio(config_file.text.strip_edges())

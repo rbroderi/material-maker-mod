@@ -26,6 +26,7 @@ void MMOCIO::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_canonical_name", "name"), &MMOCIO::get_canonical_name);
 	ClassDB::bind_method(D_METHOD("get_color_space_family", "name"), &MMOCIO::get_color_space_family);
 	ClassDB::bind_method(D_METHOD("get_color_space_aliases", "name"), &MMOCIO::get_color_space_aliases);
+	ClassDB::bind_method(D_METHOD("is_color_space_linear", "name"), &MMOCIO::is_color_space_linear);
 	ClassDB::bind_method(D_METHOD("convert", "rgba", "source", "destination"), &MMOCIO::convert);
 	ClassDB::bind_method(D_METHOD("display_view", "rgba", "source", "display", "view"), &MMOCIO::display_view);
 	ClassDB::bind_method(D_METHOD("convert_image", "image", "source", "destination"), &MMOCIO::convert_image);
@@ -135,6 +136,24 @@ PackedStringArray MMOCIO::get_color_space_aliases(const String &name) const {
 		}
 	}
 	return result;
+}
+
+bool MMOCIO::is_color_space_linear(const String &name) const {
+	if (!config) {
+		return false;
+	}
+	OCIO::ConstColorSpaceRcPtr color_space = config->getColorSpace(to_std(name).c_str());
+	if (!color_space) {
+		return false;
+	}
+	// The encoding attribute when the config sets it ("scene-linear",
+	// "display-linear"), otherwise values sampled through the transform to the
+	// color space's reference space (scene or display); false for data spaces
+	try {
+		return config->isColorSpaceLinear(color_space->getName(), color_space->getReferenceSpaceType());
+	} catch (const OCIO::Exception &) {
+		return false;
+	}
 }
 
 OCIO::ConstCPUProcessorRcPtr MMOCIO::get_processor(const std::string &key, const std::function<OCIO::ConstTransformRcPtr()> &create_transform) {

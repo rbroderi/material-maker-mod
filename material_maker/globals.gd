@@ -10,12 +10,13 @@ const DEFAULT_CONFIG : Dictionary = {
 	locale = "",
 	# OpenColorIO (when the extension is available): config file ("" is the
 	# built-in ACES studio config), the color space of Material Maker's values,
-	# and the color space of exported color maps ("" for no conversion,
-	# 16 bits PNG files if ocio_export_16_bits)
+	# the color space of exported color maps ("" for no conversion) and the
+	# bit depth of converted PNG color maps (MMColorManagement.COLOR_DEPTH_*:
+	# 16 bits for linear color spaces, always 16 bits, always 8 bits)
 	ocio_config = "",
 	ocio_working_space = "sRGB Encoded Rec.709 (sRGB)",
 	ocio_export_space = "",
-	ocio_export_16_bits = false,
+	ocio_export_color_depth = 0,
 	confirm_quit = true,
 	confirm_close_project = true,
 	vsync = true,
@@ -84,6 +85,12 @@ const DEFAULT_CONFIG : Dictionary = {
 
 func _enter_tree():
 	config.load("user://mm_config.ini")
+	# The former "16 bits converted PNG color maps" check box
+	if config.has_section_key("config", "ocio_export_16_bits"):
+		if config.get_value("config", "ocio_export_16_bits") == true and ! config.has_section_key("config", "ocio_export_color_depth"):
+			# Always 16 bits
+			config.set_value("config", "ocio_export_color_depth", 1)
+		config.erase_section_key("config", "ocio_export_16_bits")
 	for k : String in DEFAULT_CONFIG.keys():
 		if ! config.has_section_key("config", k):
 			config.set_value("config", k, DEFAULT_CONFIG[k])
