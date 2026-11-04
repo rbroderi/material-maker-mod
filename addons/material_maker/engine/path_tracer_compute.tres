@@ -297,8 +297,9 @@ void main() {
 	vec2 pixel = gl_GlobalInvocationID.xy+vec2(0.5, 0.5+mm_chunk_y);
 	vec2 image_size = imageSize(OUTPUT_TEXTURE);
 	rng_state = pcg(uint(pixel.x)+uint(pixel.y)*65536u)^pcg(uint(sample_index)*9781u+1u);
-	// Camera ray, with antialiasing
-	vec2 ndc = 2.0*(pixel+vec2(rand(), rand())-vec2(1.0))/image_size-vec2(1.0);
+	// Camera ray through a random point of the pixel (antialiasing): pixel is
+	// the pixel's center, so the offsets are in [-0.5, 0.5)
+	vec2 ndc = 2.0*(pixel+vec2(rand(), rand())-vec2(0.5))/image_size-vec2(1.0);
 	float tan_half_fov = tan(0.5*camera_fov);
 	vec3 dir = normalize(camera_forward+tan_half_fov*(ndc.x*image_size.x/image_size.y*camera_right-ndc.y*camera_up));
 	vec3 origin = camera_position;
