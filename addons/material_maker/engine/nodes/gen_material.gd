@@ -176,7 +176,9 @@ func update_material(m, sequential : bool = false) -> void:
 		for t in preview_textures.keys():
 			m.set_shader_parameter(t, await preview_textures[t].texture.get_texture())
 		for t in preview_texture_dependencies.keys():
-			m.set_shader_parameter(t, preview_texture_dependencies[t])
+			# Textures of inputs (such as Image nodes) are MMTextures
+			var texture = preview_texture_dependencies[t]
+			m.set_shader_parameter(t, await texture.get_texture() if texture is MMTexture else texture)
 		for p in preview_parameters.keys():
 			m.set_shader_parameter(p, preview_parameters[p])
 			if preview_parameters[p] is MMTexture:
