@@ -3448,7 +3448,7 @@
 			},
 			{
 				"control": "None",
-				"default": 1,
+				"default": 0,
 				"label": "Metallic",
 				"max": 1,
 				"min": 0,
@@ -3507,14 +3507,14 @@
 				"type": "float"
 			},
 			{
-				"default": false,
+				"default": true,
 				"label": "Transparency",
 				"name": "flags_transparent",
 				"type": "boolean"
 			},
 			{
 				"control": "None",
-				"default": 0,
+				"default": 1,
 				"label": "Subsurf. scatter.",
 				"max": 1,
 				"min": 0,
