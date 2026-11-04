@@ -194,6 +194,12 @@ var output_parameters : Dictionary
 var compiled_sources : Dictionary = {}
 var compiled_spirv : Dictionary = {}
 
+## Shaders created from the shader cache's SPIR-V, by rendering device and
+## cache key: pipelines with the same shader (e.g. the many instances of a
+## node in big graphs) share it, since creating a shader takes milliseconds.
+## Shaders are never freed (pipelines did not free theirs either).
+static var shared_shaders : Dictionary = {}
+
 func time(desc : String = ""):
 	return
 	if time_current_desc != "":
@@ -221,7 +227,12 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 		cache_key = MMShaderCache.get_key(rd, src, stages)
 		var cached_spirv : RDShaderSPIRV = MMShaderCache.load_spirv(cache_key, stages)
 		if cached_spirv != null:
-			var cached_shader : RID = rd.shader_create_from_spirv(cached_spirv)
+			var shared_key : String = "%d/%s" % [ rd.get_instance_id(), cache_key ]
+			var cached_shader : RID = shared_shaders.get(shared_key, RID())
+			if not cached_shader.is_valid():
+				cached_shader = rd.shader_create_from_spirv(cached_spirv)
+				if cached_shader.is_valid():
+					shared_shaders[shared_key] = cached_shader
 			if cached_shader.is_valid():
 				for k in stages:
 					compiled_spirv[k] = cached_spirv["bytecode_"+k]

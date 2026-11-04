@@ -405,10 +405,15 @@ var updating_shader : bool = false
 func update_shader() -> void:
 	if ! updating_shader:
 		updating_shader = true
-		do_update_shader.call_deferred()
+		do_update_shader.call_deferred(true)
 
-func do_update_shader() -> void:
+## Generates the shader. A deferred update is skipped when the shader was
+## generated since it was requested (e.g. a source that changed before the
+## buffer was ready).
+func do_update_shader(deferred : bool = false) -> void:
 	if ! is_instance_valid(self) or exiting:
+		return
+	if deferred and not updating_shader:
 		return
 	if not is_node_ready():
 		await ready
@@ -420,6 +425,16 @@ func do_update_shader() -> void:
 		source = source_output.generator.get_shader_code("uv", source_output.output_index, context)
 	else:
 		source = get_default_generated_shader()
+	# The buffer is greyscale when its code outputs floats (a single channel,
+	# see set_shader_from_shadercode_storage): the buffers that read it are
+	# told now, not after the shader is compiled, so those that generate
+	# their shaders in the meantime use the right type
+	var new_is_greyscale : bool = source.output_type == "f"
+	if new_is_greyscale != is_greyscale:
+		is_greyscale = new_is_greyscale
+		notify_output_change(0)
+		if version == VERSION_OLD:
+			notify_output_change(1)
 	var rg : bool = false
 	var rounding : int = MMPipeline.ROUNDING_GPU
 	if version == VERSION_COMPLEX:
@@ -427,12 +442,6 @@ func do_update_shader() -> void:
 		rounding = int(get_parameter("rounding"))
 	var shader_status : bool = await shader_compute.set_shader_from_shadercode_storage(source, get_storage(), rg, rounding)
 	if shader_status:
-		var new_is_greyscale = shader_compute.is_greyscale()
-		if new_is_greyscale != is_greyscale:
-			is_greyscale = new_is_greyscale
-			notify_output_change(0)
-			if version == VERSION_OLD:
-				notify_output_change(1)
 		await mm_deps.buffer_create_compute_material("o%d_tex" % get_instance_id(), shader_compute)
 		# The buffer is resized when the named parameters of its size offset
 		# change (also registered in Absolute mode, so they are in place if the

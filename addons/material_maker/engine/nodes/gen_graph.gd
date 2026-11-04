@@ -8,7 +8,18 @@ var longdesc = ""
 ## What the graph needs (Material Maker version, plugins, node types,
 ## features), see MMPlugins.check_requirements
 var requires : Dictionary = {}
-var connections = []
+var connections = [] :
+	set(value):
+		connections = value
+		connections_index_valid = false
+
+## Index of the connections by target port and by source node, so that finding
+## the source or the targets of a port does not go through all the connections
+## (that made loading big graphs quadratic). Rebuilt when connections is
+## replaced, updated by connect_children.
+var connections_index_valid : bool = false
+var connection_by_target : Dictionary = {}
+var connections_by_source : Dictionary = {}
 
 var editable : bool = false
 
@@ -182,26 +193,49 @@ func get_port_source(gen_name: String, input_index: int) -> MMGenBase.OutputPort
 		if parent != null and parent.get_script() == get_script():
 			rv = parent.get_port_source(name, input_index)
 	else:
-		for c in connections:
-			if c.to == gen_name and c.to_port == input_index:
-				var src_gen = get_node(NodePath(c.from))
-				if src_gen != null:
-					if src_gen.get_script() == get_script():
-						rv = src_gen.get_port_source("gen_outputs", c.from_port)
-					else:
-						rv = OutputPort.new(src_gen, c.from_port)
+		update_connections_index()
+		var c = connection_by_target.get(target_key(gen_name, input_index))
+		if c != null:
+			var src_gen = get_node(NodePath(c.from))
+			if src_gen != null:
+				if src_gen.get_script() == get_script():
+					rv = src_gen.get_port_source("gen_outputs", c.from_port)
+				else:
+					rv = OutputPort.new(src_gen, c.from_port)
 	if rv != null and rv.generator.name == "gen_inputs":
 		rv = get_port_source("gen_inputs", rv.output_index)
 	return rv
 
 func get_port_targets(gen_name: String, output_index: int) -> Array:
 	var rv = []
-	for c in connections:
-		if c.from == gen_name and c.from_port == output_index:
+	update_connections_index()
+	for c in connections_by_source.get(gen_name, []):
+		if c.from_port == output_index:
 			var tgt_gen = get_node(NodePath(c.to))
 			if tgt_gen != null:
 				rv.push_back(InputPort.new(tgt_gen, c.to_port))
 	return rv
+
+static func target_key(gen_name : String, port : int) -> String:
+	return "%s/%d" % [ gen_name, port ]
+
+func update_connections_index() -> void:
+	if connections_index_valid:
+		return
+	connection_by_target = {}
+	connections_by_source = {}
+	for c in connections:
+		index_connection(c)
+	connections_index_valid = true
+
+func index_connection(c : Dictionary) -> void:
+	# The last connection to a port is its source (as when looking for it in
+	# the connections)
+	connection_by_target[target_key(c.to, c.to_port)] = c
+	var source : String = c.from
+	if not connections_by_source.has(source):
+		connections_by_source[source] = []
+	connections_by_source[source].append(c)
 
 func add_generator(generator : MMGenBase) -> bool:
 	var name = generator.name
@@ -291,17 +325,23 @@ func connect_children(from, from_port : int, to, to_port : int) -> bool:
 			print("Loop detected, aborting connection")
 			return false
 	# disconnect target
-	while true:
-		var remove = -1
-		for i in connections.size():
-			if connections[i].to == to.name and connections[i].to_port == to_port:
-				remove = i
+	update_connections_index()
+	if connection_by_target.has(target_key(to.name, to_port)):
+		while true:
+			var remove = -1
+			for i in connections.size():
+				if connections[i].to == to.name and connections[i].to_port == to_port:
+					remove = i
+					break
+			if remove == -1:
 				break
-		if remove == -1:
-			break
-		connections.remove_at(remove)
+			connections.remove_at(remove)
+		connections_index_valid = false
 	# create new connection
-	connections.append({from=from.name, from_port=from_port, to=to.name, to_port=to_port})
+	var connection : Dictionary = {from=String(from.name), from_port=from_port, to=String(to.name), to_port=to_port}
+	connections.append(connection)
+	if connections_index_valid:
+		index_connection(connection)
 	to.source_changed(to_port)
 	return true
 

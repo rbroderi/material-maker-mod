@@ -152,9 +152,18 @@ func fix_instance_functions(code : String, instance_functions : Array):
 			location = p
 	return code
 
+## Preprocessed shader models with an instance section (preprocessing them is
+## slow, and big graphs have thousands of nodes with the same model), indexed
+## by a copy of the model
+static var preprocessed_shader_models : Dictionary = {}
+
 func preprocess_shader_model(data : Dictionary):
+	var has_instance : bool = data.has("instance") and data.instance != ""
+	if has_instance and preprocessed_shader_models.has(data):
+		# A copy, since expand_generic() replaces its sections
+		return preprocessed_shader_models[data].duplicate()
 	var preprocessed = {}
-	if data.has("instance") and data.instance != "":
+	if has_instance:
 		# if the instance section is not empty, parameters, code and instance sections must
 		# be preprocessed (add variations parameter to instance functions)
 		var instance_functions = find_instance_functions(data.instance)
@@ -203,6 +212,9 @@ func preprocess_shader_model(data : Dictionary):
 		preprocessed.includes = data.includes
 	if data.has("global"):
 		preprocessed.global = data.global
+	if has_instance:
+		preprocessed_shader_models[data.duplicate(true)] = preprocessed
+		return preprocessed.duplicate()
 	return preprocessed
 
 # Shader model genericity
@@ -777,10 +789,9 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 			rv.add_global(shader_model_preprocessed.global, "%s (%s)" % [ get_hier_name(), genname ])
 		if shader_model_preprocessed.has("instance"):
 			var instance_code = replace_variables(shader_model_preprocessed.instance, variables, rv, context)
-			instance_code = instance_code.strip_edges()
-			if instance_code != "":
+			if instance_code.strip_edges() != "":
 				rv.defs += "\n// #instance: %s (%s)\n" % [ get_hier_name(), genname ]
-				rv.defs += replace_variables(shader_model_preprocessed.instance, variables, rv, context)
+				rv.defs += instance_code
 				rv.defs += "\n\n"
 	# Add inline code
 	if shader_model_preprocessed.has("code") and output[output.type].find("@NOCODE") == -1:

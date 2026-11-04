@@ -76,8 +76,11 @@ func set_shader_ext(string : String, output_textures_desc : Array[Dictionary] = 
 	return shader.is_valid()
 
 func set_parameters_from_shadercode(shader_code : MMGenBase.ShaderCode, parameters_as_constants : bool = false):
+	# The code that can use the uniforms (the globals are generated once, not
+	# for each uniform)
+	var codes : Array[String] = [ shader_code.get_globals_string(shader_code.defs+shader_code.code+shader_code.output_values.rgba), shader_code.defs, shader_code.code, shader_code.output_values.rgba ]
 	for u in shader_code.uniforms:
-		for c in [ shader_code.get_globals_string(shader_code.defs+shader_code.code+shader_code.output_values.rgba), shader_code.defs, shader_code.code, shader_code.output_values.rgba ]:
+		for c in codes:
 			if c.find(u.name) != -1:
 				var type : String = u.type
 				if u.size > 0:
