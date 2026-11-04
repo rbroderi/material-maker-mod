@@ -14,7 +14,8 @@ const MAP_SIZE : int = 1024
 const MAPS : Dictionary = { albedo_tex=MMGenMaterial.OUTPUT_ALBEDO, orm_tex=MMGenMaterial.OUTPUT_ORM, emission_tex=MMGenMaterial.OUTPUT_EMISSION,
 	normal_tex=MMGenMaterial.OUTPUT_NORMAL, extra_tex=MMGenMaterial.OUTPUT_EXTRA, transmission_tex=MMGenMaterial.OUTPUT_TRANSMISSION,
 	sss_tex=MMGenMaterial.OUTPUT_SSS }
-## Mean free path of subsurface scattering, relative to the size of the scene
+## Default mean free path of subsurface scattering, relative to the size of the
+## scene
 const SSS_RADIUS : float = 0.03
 ## Size of the depth map used for displacement
 const DEPTH_MAP_SIZE : int = 512
@@ -219,8 +220,10 @@ static func is_input_connected(node : MMGenBase, input_name : String) -> bool:
 ## lighter) fallback meshes, and their UV scale is used. With displacement,
 ## the mesh is displaced by the depth map. Transmissive surfaces are solids
 ## that refract light, or with thin_walled, thin sheets that let diffuse light
-## through (as leaves or paper).
-func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = false, thin_walled : bool = false) -> bool:
+## through (as leaves or paper). Subsurface scattered light travels about
+## sss_radius (relative to the size of the object) inside solids, times the
+## red, green and blue components of sss_color for each color.
+func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = false, thin_walled : bool = false, sss_radius : float = SSS_RADIUS, sss_color : Color = Color(1, 1, 1)) -> bool:
 	image_size = size
 	sample_count = 0
 	# Only materials with texture outputs (not the dynamic, raymarching or
@@ -277,6 +280,7 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 	var environment_texture : MMTexture = MMTexture.from_image(env_image)
 	var basis : Basis = camera.global_transform.basis.orthonormalized()
 	var sun : Dictionary = find_sun(object)
+	var sss_radii : Vector3 = Vector3(maxf(sss_color.r, 0.01), maxf(sss_color.g, 0.01), maxf(sss_color.b, 0.01))*maxf(sss_radius, 0.0001)
 	var albedo_color = MMType.deserialize_value(material.get_parameter("albedo_color")) if not material.get_parameter_def("albedo_color").is_empty() else null
 	compute = MMComputeShader.new()
 	compute.clear()
@@ -295,7 +299,7 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 		[ "emission_energy", "float", get_float_parameter(material, "emission_energy", 1.0) ], [ "normal_strength", "float", get_float_parameter(material, "normal", 1.0) ],
 		[ "coat_value", "float", get_float_parameter(material, "coat", 0.0) ], [ "coat_roughness_value", "float", get_float_parameter(material, "coat_roughness", 0.1) ],
 		[ "sheen_value", "float", get_float_parameter(material, "sheen", 0.0) ], [ "transmission_value", "float", get_float_parameter(material, "transmission", 0.0) ],
-		[ "sss_value", "float", get_float_parameter(material, "sss", 0.0) ], [ "sss_radius", "float", SSS_RADIUS ],
+		[ "sss_value", "float", get_float_parameter(material, "sss", 0.0) ], [ "sss_radius", "vec3", sss_radii ],
 		[ "thin_walled", "int", 1 if thin_walled else 0 ],
 		[ "sun_direction", "vec3", sun.direction ], [ "sun_color", "vec3", sun.color ], [ "sun_energy", "float", sun.energy ], [ "sun_angle", "float", sun.angle ],
 		[ "uv_scale", "vec2", uv_scale ], [ "scene_scale", "float", max(prepared.aabb.size.length(), 0.001) ], [ "firefly_clamp", "float", 20.0 ] ]

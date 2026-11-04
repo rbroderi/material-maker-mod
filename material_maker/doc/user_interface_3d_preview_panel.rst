@@ -59,11 +59,15 @@ The *Export* menu can also render the preview:
   The brightest visible directional light (the sun) is sampled directly (with soft shadows
   of its angular size), in addition to the environment. Transmissive objects are rendered
   as glass-like solids that refract light (with an index of refraction of 1.5, tinted by the
-  albedo), or as thin walled transmission when **Thin walled** is checked. The subsurface
-  channel scatters light inside the object (a random walk whose distance depends on the
-  subsurface radius). When the Material node has a depth scale, the object is
-  subdivided and displaced by its depth map (as by the Tesselated Material node). Generated
-  preview models are rendered with their untesselated version.
+  albedo), or with **Thin walled**, as thin sheets that let diffuse light through, as leaves,
+  paper or fabric. The subsurface channel scatters light inside solid objects (a random walk),
+  as in wax, marble or skin: **SSS radius** is how far light travels (in percents of the
+  object's size, 3 by default) and **SSS radius color** scales it for red, green and blue
+  light (white scatters all colors as far; skin lets red light travel farther, for example
+  with a color of (1.0, 0.4, 0.25)). With **Displacement** (when the Material node's depth
+  input is connected), the object is subdivided and displaced by its depth map (0.2 times
+  the depth scale, as the preview's parallax). Generated preview models are rendered with
+  their untesselated version.
 
 * **Turntable...** renders a full turn of the object (the given number of frames) with the
   preview's renderer, as a sprite sheet, or as a PNG sequence if the file name contains #
