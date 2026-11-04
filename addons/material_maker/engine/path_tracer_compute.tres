@@ -298,8 +298,8 @@ vec3 ggx_bounce(inout vec3 dir, vec3 n, vec3 v, float a, vec3 f0) {
 
 // The BSDF times the cosine for a light direction l (used for the sun), as
 // sampled in main(). transmission is the part of the diffuse light that is
-// not reflected at this point: it goes through thin walls, and light refracted
-// by solids is not sampled directly.
+// not reflected at this point: it goes through thin walls (light refracted by
+// solids is added by dielectric_transmission()).
 vec3 evaluate_bsdf(vec3 n, vec3 v, vec3 l, vec3 albedo, float metallic, float roughness, float coat, float coat_roughness, float fuzz, float transmission) {
 	float NdotV = max(dot(n, v), 0.0001);
 	float NdotL = dot(n, l);
@@ -367,6 +367,38 @@ vec3 dielectric_bounce(inout vec3 dir, vec3 n, vec3 v, float a, float eta) {
 	return vec3(smith_g1(NdotV, a)*smith_g1(abs(dot(n, l)), a)*VdotH/(NdotH*NdotV));
 }
 
+// The refraction of dielectric_bounce() for a given direction l on the other
+// side of the surface: returns the BSDF times the cosine, and the probability
+// density (per solid angle) of dielectric_bounce() choosing l
+float dielectric_transmission(vec3 n, vec3 v, vec3 l, float a, float eta, out float pdf) {
+	pdf = 0.0;
+	if (dot(n, l) >= 0.0) {
+		return 0.0;
+	}
+	// Half vector of the refraction (Walter et al. 2007), on the side of n
+	vec3 h = eta*v+l;
+	float h_length2 = dot(h, h);
+	if (h_length2 < 0.0000001) {
+		return 0.0;
+	}
+	h = normalize(h);
+	if (dot(h, n) < 0.0) {
+		h = -h;
+	}
+	float VdotH = dot(v, h);
+	float LdotH = dot(l, h);
+	if (VdotH <= 0.0 || LdotH >= 0.0) {
+		return 0.0;
+	}
+	float NdotV = max(dot(n, v), 0.0001);
+	float NdotH = max(dot(n, h), 0.0001);
+	float t = (1.0-fresnel_dielectric(VdotH, eta))*ggx_d(NdotH, a);
+	// Change of variables from the half vector to l
+	float jacobian = -LdotH/h_length2;
+	pdf = t*NdotH*jacobian;
+	return t*smith_g1(NdotV, a)*smith_g1(-dot(n, l), a)*VdotH*jacobian/NdotV;
+}
+
 // Single scattering albedo that gives a multiple scattering albedo (van de
 // Hulst's inversion, as in Pixar's PxrSurface)
 vec3 single_scattering_albedo(vec3 albedo) {
@@ -413,6 +445,14 @@ void main() {
 	vec3 radiance = vec3(0.0);
 	vec3 throughput = vec3(1.0);
 	float alpha = 1.0;
+	// When the ray was refracted by a solid: the probability density of its
+	// direction, to combine the sun seen through the solid with the sun sampled
+	// directly (multiple importance sampling, balance heuristic)
+	float refraction_pdf = 0.0;
+	// Sun light refracted by solids (kept apart, so other renders are computed
+	// exactly as without it)
+	vec3 refracted_sun = vec3(0.0);
+	bool has_refracted_sun = false;
 	for (int bounce = 0; bounce < max_bounces; ++bounce) {
 		int face;
 		vec2 bary;
@@ -424,9 +464,16 @@ void main() {
 				radiance += background_color.rgb;
 			} else {
 				radiance += throughput*environment(dir);
+				// The sun seen through a refracting solid
+				if (refraction_pdf > 0.0 && sun_energy > 0.0 && dot(dir, sun_direction) >= cos(sun_angle)) {
+					float sun_solid_angle = TAU*(1.0-cos(sun_angle));
+					refracted_sun += throughput*sun_color*(PI*sun_energy/sun_solid_angle)*(refraction_pdf/(refraction_pdf+1.0/sun_solid_angle));
+					has_refracted_sun = true;
+				}
 			}
 			break;
 		}
+		refraction_pdf = 0.0;
 		vec3 position = origin+t*dir;
 		// Interpolated attributes: per vertex, normal and u, tangent, v
 		float w0 = 1.0-bary.x-bary.y;
@@ -485,6 +532,22 @@ void main() {
 					sun_transmission = 1.0-(1.0-transmission)*(1.0-subsurface);
 				}
 				radiance += throughput*sun_color*(PI*sun_energy)*evaluate_bsdf(n, v, l, albedo, metallic, roughness, coat, coat_roughness, fuzz, sun_transmission);
+				// Sun light refracted by solids (from the other side of the
+				// surface), weighted against the sun seen by refracted rays. After
+				// the last bounce, refracted rays are not traced.
+				float p_refraction = thin_walled == 0 ? transmission*(1.0-metallic) : 0.0;
+				if (p_refraction > 0.0 && dot(l, geometric_normal) < 0.0) {
+					float layers = (1.0-coat*(0.04+0.96*pow(1.0-max(dot(n, v), 0.0001), 5.0)))*(1.0-0.5*fuzz)*p_refraction;
+					float pdf;
+					float f = dielectric_transmission(n, v, l, roughness*roughness, front ? 1.0/1.5 : 1.5, pdf);
+					if (f > 0.0) {
+						// The sun is a cone of directions (sample_sun()), of this solid angle
+						float sun_solid_angle = TAU*(1.0-cos(sun_angle));
+						float mis = bounce < max_bounces-1 ? 1.0/(1.0+layers*pdf*sun_solid_angle) : 1.0;
+						refracted_sun += throughput*sun_color*(PI*sun_energy*layers*f*mis)*sqrt(albedo);
+						has_refracted_sun = true;
+					}
+				}
 			}
 		}
 		float NdotV = max(dot(n, v), 0.0001);
@@ -507,9 +570,15 @@ void main() {
 				if (p_transmission > 0.0 && rand() < p_transmission) {
 					// Refraction in a solid dielectric (IOR 1.5), tinted by the
 					// albedo each time the ray goes through the surface
-					weight = dielectric_bounce(next_dir, n, v, roughness*roughness, front ? 1.0/1.5 : 1.5);
+					float eta = front ? 1.0/1.5 : 1.5;
+					weight = dielectric_bounce(next_dir, n, v, roughness*roughness, eta);
 					if (dot(next_dir, geometric_normal) < 0.0) {
 						weight *= sqrt(albedo);
+						if (sun_energy > 0.0 && dot(weight, weight) > 0.0) {
+							float pdf;
+							dielectric_transmission(n, v, next_dir, roughness*roughness, eta, pdf);
+							refraction_pdf = (1.0-p_coat)*(1.0-p_fuzz)*p_transmission*pdf;
+						}
 					}
 				} else {
 					// The other layers: metal, and the opaque part of the dielectric
@@ -632,6 +701,9 @@ void main() {
 		}
 		origin = position+geometric_normal*(dot(next_dir, geometric_normal) > 0.0 ? 1.0 : -1.0)*0.0005*scene_scale;
 		dir = next_dir;
+	}
+	if (has_refracted_sun) {
+		radiance += refracted_sun;
 	}
 	// Clamped samples avoid fireflies
 	radiance = min(radiance, vec3(firefly_clamp));

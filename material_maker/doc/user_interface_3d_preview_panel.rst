@@ -59,7 +59,7 @@ The *Export* menu can also render the preview:
   The brightest visible directional light (the sun) is sampled directly (with soft shadows
   of its angular size), in addition to the environment. Transmissive objects are rendered
   as glass-like solids that refract light (with an index of refraction of 1.5, tinted by the
-  albedo), or with **Thin walled**, as thin sheets that let diffuse light through, as leaves,
+  albedo, and the sun shines through them), or with **Thin walled**, as thin sheets that let diffuse light through, as leaves,
   paper or fabric. The subsurface channel scatters light inside solid objects (a random walk),
   as in wax, marble or skin: **SSS radius** is how far light travels (in percents of the
   object's size, 3 by default) and **SSS radius color** scales it for red, green and blue
