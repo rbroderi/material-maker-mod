@@ -662,6 +662,9 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 	var exported_files : Array = []
 	var overwrite_files : Array = []
 	var export_profile = get_export(profile)
+	if not export_profile.has("files"):
+		push_error("Cannot export %s: no export target named \"%s\"" % [ get_type_name(), profile ])
+		return
 	if export_profile.has("custom"):
 		export_context["@mm_custom_script"] = export_profile.custom
 	for f in export_profile.files:
