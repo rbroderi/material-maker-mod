@@ -10,7 +10,7 @@ The filter nodes accept one or several inputs and generate one or several images
 	node_filter_brightnesscontrast
 	node_filter_adjust_hsv
 	node_filter_alter_hsv
-	node_filter_convert_from_to_rgb
+	node_filter_convert
 	node_filter_tones
 	node_filter_tones_map
 	node_filter_tones_step

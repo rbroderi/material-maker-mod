@@ -51,3 +51,6 @@ generates the overall normal and ambient occlusion maps using the height map.
 	node_workflow_apply_map
 	node_workflow_mix
 	node_workflow_output
+	node_workflow_materials
+	node_workflow_shapes
+	node_workflow_effects
