@@ -7,6 +7,8 @@ const SETTING_GENERATE_MAP_RESOLUTION := "3D_generate_map_resolution"
 const SETTING_RENDER_SIZE := "3D_render_size"
 const SETTING_RENDER_SAMPLES := "3D_render_samples"
 const SETTING_RENDER_TRANSPARENT := "3D_render_transparent"
+const SETTING_RENDER_DISPLACEMENT := "3D_render_displacement"
+const SETTING_RENDER_THIN_WALLED := "3D_render_thin_walled"
 const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 
 @onready var preview3D := owner
@@ -21,6 +23,8 @@ var render_separator : HSeparator
 var render_size : SpinBox
 var render_samples : SpinBox
 var render_transparent : CheckBox
+var render_displacement : CheckBox
+var render_thin_walled : CheckBox
 var render_button : Button
 var turntable_frames : SpinBox
 var turntable_button : Button
@@ -51,6 +55,16 @@ func add_spin_box(parent : Control, label : String, minimum : float, maximum : f
 	parent.add_child(spin_box)
 	return spin_box
 
+## A check box saved in a setting
+func add_check_box(parent : Control, text : String, tooltip : String, setting : String, default : bool) -> CheckBox:
+	var check_box : CheckBox = CheckBox.new()
+	check_box.text = text
+	check_box.tooltip_text = tooltip
+	check_box.button_pressed = get_config_value(setting, default)
+	check_box.toggled.connect(func(v): mm_globals.set_config(setting, v))
+	parent.add_child(check_box)
+	return check_box
+
 ## Path traced renders and turntables of the preview
 func add_render_options() -> void:
 	var box : VBoxContainer = $VBoxContainer
@@ -64,11 +78,9 @@ func add_render_options() -> void:
 	box.add_child(grid)
 	render_size = add_spin_box(grid, "Size", 64, 8192, SETTING_RENDER_SIZE, 1024)
 	render_samples = add_spin_box(grid, "Samples", 1, 65536, SETTING_RENDER_SAMPLES, 256)
-	render_transparent = CheckBox.new()
-	render_transparent.text = "Transparent background"
-	render_transparent.button_pressed = get_config_value(SETTING_RENDER_TRANSPARENT, false)
-	render_transparent.toggled.connect(func(v): mm_globals.set_config(SETTING_RENDER_TRANSPARENT, v))
-	box.add_child(render_transparent)
+	render_transparent = add_check_box(box, "Transparent background", "", SETTING_RENDER_TRANSPARENT, false)
+	render_displacement = add_check_box(box, "Displacement", "The mesh is subdivided and displaced by the material's depth", SETTING_RENDER_DISPLACEMENT, true)
+	render_thin_walled = add_check_box(box, "Thin walled", "Transmissive surfaces are thin sheets that let diffuse light through (leaves, paper, fabric)", SETTING_RENDER_THIN_WALLED, false)
 	render_button = Button.new()
 	render_button.text = "Path traced render..."
 	render_button.tooltip_text = "Renders the object from the current view with a path tracer (PNG or linear EXR)"
@@ -105,8 +117,9 @@ func _on_render_button_pressed() -> void:
 		return
 	var size_value : int = int(render_size.value)
 	render_button.disabled = true
+	var progress : Callable = func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ]
 	var error : String = await preview3D.render_path_traced(file_name, Vector2i(size_value, size_value), int(render_samples.value), render_transparent.button_pressed,
-		func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ])
+		progress, render_displacement.button_pressed, render_thin_walled.button_pressed)
 	render_button.text = "Path traced render..."
 	render_button.disabled = false
 	if error != "":

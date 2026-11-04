@@ -244,9 +244,10 @@ func do_generate_map(file_name : String, map : String, image_size : int) -> void
 
 
 ## A path traced render of the current object, from the current view, saved
-## to a PNG (tone mapped) or EXR (linear) file. Returns an error message, or
-## an empty string.
-func render_path_traced(file_name : String, image_size : Vector2i, samples : int, transparent_background : bool = false, progress : Callable = Callable()) -> String:
+## to a PNG (tone mapped) or EXR (linear) file, lit by the environment and the
+## sun, optionally with displacement and thin walled transmission. Returns an
+## error message, or an empty string.
+func render_path_traced(file_name : String, image_size : Vector2i, samples : int, transparent_background : bool = false, progress : Callable = Callable(), displacement : bool = false, thin_walled : bool = false) -> String:
 	var project = mm_globals.main_window.get_current_project() if mm_globals.main_window != null else null
 	var material = project.get_material_node() if project != null and project.has_method("get_material_node") else null
 	if material == null:
@@ -256,7 +257,7 @@ func render_path_traced(file_name : String, image_size : Vector2i, samples : int
 	object_rotate.pause()
 	var tracer : MMPathTracer = MMPathTracer.new()
 	var error : String = ""
-	if not await tracer.setup(current_object, material, camera, environment, image_size, transparent_background):
+	if not await tracer.setup(current_object, material, camera, environment, image_size, transparent_background, displacement, thin_walled):
 		error = "Cannot prepare the path tracer"
 	else:
 		var done : int = 0
