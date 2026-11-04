@@ -322,8 +322,6 @@ func init_parameters() -> void:
 		if !parameters.has(p.name):
 			if p.has("default"):
 				parameters[p.name] = MMType.deserialize_value(p.default)
-				if p.type == "size":
-					parameters[p.name] -= p.first
 			else:
 				print("No default value for parameter "+p.name)
 
