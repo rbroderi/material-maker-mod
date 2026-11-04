@@ -914,7 +914,8 @@ func export_material(export_prefix, profile) -> void:
 	var stack : Array[MMGenBase] = [top_generator]
 	while stack.size():
 		var node : MMGenBase = stack.pop_back()
-		if node.has_method("export_material"):
+		# The material is already exported
+		if node.has_method("export_material") and node != material_node:
 			exports.append(node)
 		stack.append_array(node.get_children())
 
