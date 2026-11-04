@@ -12,36 +12,21 @@ func _init() -> void:
 	fit_to_longest_item = false
 	clip_text = true
 
-## Lists color spaces, with current selected (current is added if it is not
-## listed, so a name that is not in the config is kept)
-func set_color_spaces(color_spaces : PackedStringArray, current : String) -> void:
-	clear()
-	if none_text != "":
-		add_item(none_text)
-		set_item_metadata(0, "")
-	for s in color_spaces:
-		add_item(s)
-		set_item_metadata(item_count-1, s)
-	if current != "" and not current in color_spaces:
-		add_item("%s (not in config)" % current)
-		set_item_metadata(item_count-1, current)
-	selected = -1
-	for i in item_count:
-		if get_item_metadata(i) == current:
-			selected = i
-	if selected == -1 and item_count > 0:
-		selected = 0
-	tooltip_text = get_color_space()
+## Lists the color spaces of the current config (or of o, an OCIO object)
+## grouped by family, with current (a name or an alias) selected (current is
+## added if it is not listed, so a name that is not in the config is kept)
+func set_color_spaces(current : String, o = null) -> void:
+	MMColorManagement.fill_color_space_picker(self, current, none_text, o)
 
 ## The selected color space ("" for none_text)
 func get_color_space() -> String:
-	return get_item_metadata(selected) if selected != -1 else ""
+	return MMColorManagement.get_picker_color_space(self)
 
 func init_from_config(config : ConfigFile) -> void:
 	var current : String = ""
 	if config.has_section_key("config", config_variable):
 		current = str(config.get_value("config", config_variable))
-	set_color_spaces(MMColorManagement.get_color_spaces(), current)
+	set_color_spaces(current)
 
 func update_config(config : ConfigFile) -> void:
 	if item_count > 0:

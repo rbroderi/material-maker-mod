@@ -18,6 +18,7 @@ Where:
 * **input_files** is the list of input files (wildcards are accepted)
 
 The **--color-space <color_space>** option converts the exported color maps (albedo and
-emission) to an OpenColorIO color space (for example *ACEScg*) instead of the one set in
-the Preferences dialog. It needs OpenColorIO support, and Material Maker exits with an
-error if the color space is not in the OpenColorIO config.
+emission) to an OpenColorIO color space (for example *ACEScg*, or an alias such as
+*sRGB - Texture*) instead of the one set in the Preferences dialog. It needs OpenColorIO
+support, and Material Maker exits with an error, and lists the color spaces of the
+OpenColorIO config by family, if the color space is not in the config.

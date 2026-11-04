@@ -32,6 +32,14 @@ public:
 	godot::PackedStringArray get_views(const godot::String &display) const;
 	godot::String get_default_display() const;
 	godot::String get_default_view(const godot::String &display) const;
+	/// The name of a color space, alias or role as listed by get_color_spaces(),
+	/// or "" if the config has no such color space
+	godot::String get_canonical_name(const godot::String &name) const;
+	/// The family of a color space ("ACES", "Utility"... levels separated by
+	/// the config's family separator), or ""
+	godot::String get_color_space_family(const godot::String &name) const;
+	/// The aliases of a color space
+	godot::PackedStringArray get_color_space_aliases(const godot::String &name) const;
 	/// The color space of a role ("scene_linear", "color_picking"...), or ""
 	godot::String get_role(const godot::String &role) const;
 

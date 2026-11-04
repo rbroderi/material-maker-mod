@@ -4,15 +4,17 @@ func show_error(message : String):
 	print(message)
 
 ## Sets the color space of exported color maps (--color-space), false (with
-## an error) if it is not a color space of the OpenColorIO config
+## an error) if it is not a color space of the OpenColorIO config (aliases
+## and roles are accepted)
 func set_export_color_space(color_space : String) -> bool:
 	if not MMColorManagement.is_available():
 		show_error("ERROR: --color-space needs OpenColorIO support (native/ocio)")
 		return false
-	if not color_space in MMColorManagement.get_color_spaces():
-		show_error("ERROR: unknown color space \"%s\" (color spaces: %s)" % [ color_space, ", ".join(MMColorManagement.get_color_spaces()) ])
+	var canonical : String = MMColorManagement.get_canonical_name(color_space)
+	if canonical == "":
+		show_error("ERROR: unknown color space \"%s\", the color spaces are:\n%s" % [ color_space, MMColorManagement.get_color_space_list() ])
 		return false
-	MMColorManagement.export_space_override = color_space
+	MMColorManagement.export_space_override = canonical
 	return true
 
 static func name_to_lower(s : String) -> String:

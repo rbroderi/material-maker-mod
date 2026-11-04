@@ -115,9 +115,12 @@ func add_color_management_tab() -> void:
 	add_preference_row(vbox, "Exported color maps", export_space)
 	# The color spaces of the config being edited
 	var update_color_spaces : Callable = func():
-		var color_spaces : PackedStringArray = MMColorManagement.get_config_color_spaces(config_file.text.strip_edges())
+		var o = MMColorManagement.get_config_ocio(config_file.text.strip_edges())
+		if o == null:
+			# A config that cannot be loaded has no color spaces
+			o = ClassDB.instantiate("MMOCIO")
 		for picker in [ working_space, export_space ]:
-			picker.set_color_spaces(color_spaces, picker.get_color_space())
+			picker.set_color_spaces(picker.get_color_space(), o)
 	config_file.text_submitted.connect(func(_t : String): update_color_spaces.call())
 	config_file.focus_exited.connect(update_color_spaces)
 	browse.pressed.connect(func():

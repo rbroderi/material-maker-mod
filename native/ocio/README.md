@@ -45,6 +45,8 @@ deleted extension there, and reports an error at every start).
   studio config)
 - `get_color_spaces()`, `get_displays()`, `get_views(display)`,
   `get_default_display()`, `get_default_view(display)`, `get_role(role)`
+- `get_canonical_name(name)` (the listed name of a color space, alias or role),
+  `get_color_space_family(name)`, `get_color_space_aliases(name)`
 - `convert(rgba, source, destination)` and `display_view(rgba, source, display, view)`
   on RGBA float arrays, `convert_image(image, source, destination)`
 - `bake_display_view_lut(source, display, view, size)`: a 3D LUT for previews
@@ -53,5 +55,7 @@ deleted extension there, and reports an error at every start).
 `MMColorManagement` loads the configured config, converts images between color
 spaces (`convert_image`, `convert_between`, `convert_image_to` for exported color
 maps, see `get_export_space`), lists display/view transforms
-(`get_views`, `create_view_picker`) and bakes them into 3D textures with the
+(`get_views`, `create_view_picker`), lists color spaces grouped by family
+(`get_color_space_groups`, `fill_color_space_picker`), resolves aliases
+(`resolve_color_space`) and bakes them into 3D textures with the
 matching shader code (`get_view_lut`, `get_view_shader_code`).

@@ -42,11 +42,124 @@ static func get_ocio():
 
 ## The color space of Material Maker's values
 static func get_working_space() -> String:
-	return mm_globals.get_config("ocio_working_space")
+	return resolve_color_space(mm_globals.get_config("ocio_working_space"))
 
 static func get_color_spaces() -> PackedStringArray:
 	var o = get_ocio()
 	return o.get_color_spaces() if o != null else PackedStringArray()
+
+## The name of a color space as the config lists it, for a color space name,
+## an alias (e.g. "sRGB - Texture") or a role, in the current config or in o
+## (an OCIO object). "" if the config has no such color space.
+static func get_canonical_name(color_space : String, o = null) -> String:
+	if o == null:
+		o = get_ocio()
+	if o == null or color_space == "":
+		return ""
+	if o.has_method("get_canonical_name"):
+		return o.get_canonical_name(color_space)
+	# Older builds of the extension (get_role() also accepts color spaces
+	# and aliases)
+	return o.get_role(color_space)
+
+## A color space name or alias as the config lists it (the name is returned
+## unchanged if the config has no such color space)
+static func resolve_color_space(color_space : String, o = null) -> String:
+	var canonical : String = get_canonical_name(color_space, o)
+	return canonical if canonical != "" else color_space
+
+## The color spaces of the current config (or of o) grouped by family, as an
+## array of { family, color_spaces } in the order of the config (color spaces
+## without family are in a last "Other" group)
+static func get_color_space_groups(o = null) -> Array[Dictionary]:
+	if o == null:
+		o = get_ocio()
+	var groups : Array[Dictionary] = []
+	if o == null:
+		return groups
+	var families : Dictionary = {}
+	var others : PackedStringArray = PackedStringArray()
+	for color_space in o.get_color_spaces():
+		var family : String = o.get_color_space_family(color_space) if o.has_method("get_color_space_family") else ""
+		if family == "":
+			others.append(color_space)
+		elif families.has(family):
+			families[family].color_spaces.append(color_space)
+		else:
+			families[family] = { family=family, color_spaces=PackedStringArray([ color_space ]) }
+			groups.append(families[family])
+	if not others.is_empty():
+		groups.append({ family="Other" if not groups.is_empty() else "", color_spaces=others })
+	return groups
+
+## The color spaces of the current config (or of o) grouped by family, one
+## family per line (for messages)
+static func get_color_space_list(o = null) -> String:
+	var lines : PackedStringArray = PackedStringArray()
+	for group in get_color_space_groups(o):
+		var names : String = ", ".join(group.color_spaces)
+		lines.append("  %s: %s" % [ group.family, names ] if group.family != "" else "  "+names)
+	return "\n".join(lines)
+
+## Lists the color spaces of the current config (or of o) in an OptionButton,
+## grouped by family (one separator per family), with current (a name or an
+## alias) selected. The item metadata are the color space names (none_text is
+## a first item for "" if not empty), and current is added if the config does
+## not have it, so a name that is not in the config is kept.
+static func fill_color_space_picker(picker : OptionButton, current : String, none_text : String = "", o = null) -> void:
+	if o == null:
+		o = get_ocio()
+	picker.clear()
+	if none_text != "":
+		picker.add_item(none_text)
+		picker.set_item_metadata(0, "")
+	var resolved : String = resolve_color_space(current, o)
+	var listed : bool = current == ""
+	for group in get_color_space_groups(o):
+		if group.family != "":
+			picker.add_separator(group.family)
+		for color_space in group.color_spaces:
+			picker.add_item(color_space)
+			var index : int = picker.item_count-1
+			picker.set_item_metadata(index, color_space)
+			var aliases : PackedStringArray = o.get_color_space_aliases(color_space) if o.has_method("get_color_space_aliases") else PackedStringArray()
+			if not aliases.is_empty():
+				picker.set_item_tooltip(index, "%s\nAliases: %s" % [ color_space, ", ".join(aliases) ])
+			if color_space == resolved:
+				listed = true
+	if not listed:
+		picker.add_item("%s (not in config)" % current)
+		picker.set_item_metadata(picker.item_count-1, current)
+	var selection : String = resolved if listed else current
+	picker.selected = -1
+	for i in picker.item_count:
+		if not picker.is_item_separator(i) and picker.get_item_metadata(i) == selection:
+			picker.selected = i
+			break
+	if picker.selected == -1:
+		for i in picker.item_count:
+			if not picker.is_item_separator(i):
+				picker.selected = i
+				break
+	picker.tooltip_text = get_picker_color_space(picker)
+
+## The color space selected in a picker filled by fill_color_space_picker()
+static func get_picker_color_space(picker : OptionButton) -> String:
+	if picker.selected == -1:
+		return ""
+	var color_space = picker.get_item_metadata(picker.selected)
+	return color_space if color_space is String else ""
+
+## The OCIO object of a config file ("" is the built-in config): the current
+## one for the configured config, a new one otherwise (null if it cannot be
+## loaded)
+static func get_config_ocio(config : String):
+	if config == mm_globals.get_config("ocio_config"):
+		return get_ocio()
+	if not is_available():
+		return null
+	var o = ClassDB.instantiate("MMOCIO")
+	return o if o.load_config(config) else null
 
 ## Display/view transforms, as "display / view"
 static func get_views() -> PackedStringArray:
@@ -113,19 +226,13 @@ static func get_export_space() -> String:
 		return ""
 	if export_space_override != "":
 		return export_space_override
-	return mm_globals.get_config("ocio_export_space")
+	return resolve_color_space(mm_globals.get_config("ocio_export_space"))
 
 ## The color spaces of a config file ("" is the built-in config), without
 ## changing the current config (empty if it cannot be loaded)
 static func get_config_color_spaces(config : String) -> PackedStringArray:
-	if config == mm_globals.get_config("ocio_config"):
-		return get_color_spaces()
-	if not is_available():
-		return PackedStringArray()
-	var o = ClassDB.instantiate("MMOCIO")
-	if not o.load_config(config):
-		return PackedStringArray()
-	return o.get_color_spaces()
+	var o = get_config_ocio(config)
+	return o.get_color_spaces() if o != null else PackedStringArray()
 
 ## The settings that images converted to the working space depend on
 static func get_settings_key() -> String:
