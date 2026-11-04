@@ -16,3 +16,8 @@ Where:
 * **engine** is the target engine/platform (Blender, Godot, Unity or Unreal)
 * **output_path** is the path where files will be generated
 * **input_files** is the list of input files (wildcards are accepted)
+
+The **--color-space <color_space>** option converts the exported color maps (albedo and
+emission) to an OpenColorIO color space (for example *ACEScg*) instead of the one set in
+the Preferences dialog. It needs OpenColorIO support, and Material Maker exits with an
+error if the color space is not in the OpenColorIO config.

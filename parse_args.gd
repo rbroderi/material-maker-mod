@@ -3,6 +3,18 @@ extends Node
 func show_error(message : String):
 	print(message)
 
+## Sets the color space of exported color maps (--color-space), false (with
+## an error) if it is not a color space of the OpenColorIO config
+func set_export_color_space(color_space : String) -> bool:
+	if not MMColorManagement.is_available():
+		show_error("ERROR: --color-space needs OpenColorIO support (native/ocio)")
+		return false
+	if not color_space in MMColorManagement.get_color_spaces():
+		show_error("ERROR: unknown color space \"%s\" (color spaces: %s)" % [ color_space, ", ".join(MMColorManagement.get_color_spaces()) ])
+		return false
+	MMColorManagement.export_space_override = color_space
+	return true
+
 static func name_to_lower(s : String) -> String:
 	s = s.strip_edges()
 	s = s.to_lower()
@@ -125,6 +137,12 @@ func _ready():
 					image_size = int(OS.get_cmdline_args()[i])
 					if image_size < 0:
 						show_error("ERROR: incorrect size "+OS.get_cmdline_args()[i])
+						return
+				"--color-space":
+					i += 1
+					var color_space : String = OS.get_cmdline_args()[i] if i < OS.get_cmdline_args().size() else ""
+					if not set_export_color_space(color_space):
+						get_tree().quit(1)
 						return
 				_:
 					files.push_back(OS.get_cmdline_args()[i])

@@ -42,7 +42,8 @@ func _open() -> void:
 	%CheckerSize.selected = owner.checker_size
 	%CheckerBrightness.selected = owner.checker_brightness
 	if view_transform_picker != null:
-		MMColorManagement.select_view(view_transform_picker, owner.view_transform)
+		# The views of the current config
+		MMColorManagement.fill_view_picker(view_transform_picker, owner.view_transform)
 		view_transform_picker.tooltip_text = owner.view_transform
 
 	size = Vector2()

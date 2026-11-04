@@ -10,6 +10,22 @@ specific files for the target game engine.
 In all cases, the generated PNG files (and especially the normal map) are generated in the
 correct format.
 
+Color spaces
+------------
+
+When OpenColorIO support is built (see the **native/ocio** directory of the source
+repository), the **Color** tab of the **Preferences** dialog defines the
+OpenColorIO config (the built-in ACES studio config by default), the working color space
+of Material Maker's values (sRGB encoded by default) and the color space of exported color
+maps. When a color space is selected for exported color maps, the albedo and emission maps
+of the Material node are converted from the working color space to this color space when
+exporting (alpha and the other maps are not converted). The default (**No conversion**)
+exports the values as they are.
+
+Color maps are exported as 8 bit PNG files by the export targets, which is enough for
+encoded color spaces (such as sRGB) but can show banding in dark areas with linear color
+spaces (such as ACEScg).
+
 Blender
 -----------------
 

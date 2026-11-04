@@ -103,6 +103,7 @@ func _ready():
 		var view : String = mm_globals.get_config("preview"+config_var_suffix+"_ocio_view")
 		if view in MMColorManagement.get_views():
 			view_transform = view
+	add_to_group(MMColorManagement.UPDATE_GROUP)
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_brightness"):
 		checker_brightness = mm_globals.get_config("preview"+config_var_suffix+"_checker_brightness")
 
@@ -118,6 +119,16 @@ func clear() -> void:
 	%PreviewLocked.visible = false
 	%ExportMenu.visible = preview_mode != Modes.CUSTOM_PREVIEW
 
+
+## Removes the view transform if it is not in the new OCIO config, and bakes
+## it again for the new config or working space
+func on_color_management_changed() -> void:
+	if view_transform == "":
+		return
+	if view_transform in MMColorManagement.get_views():
+		set_generator(generator, output, true)
+	else:
+		view_transform = ""
 
 func get_shader_custom_functions():
 	if view_transform != "" and MMColorManagement.get_view_lut(view_transform) != null:

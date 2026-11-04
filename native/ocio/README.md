@@ -9,7 +9,10 @@ The config is OCIO's built-in ACES studio config by default
 configuration file) can point to another config file, and `ocio_working_space`
 is the color space of Material Maker's values (`sRGB Encoded Rec.709 (sRGB)`
 by default, since Material Maker works with sRGB encoded colors; `sRGB - Texture`
-is its alias in the ACES configs).
+is its alias in the ACES configs). `ocio_export_space` is the color space exported
+albedo and emission maps are converted to (`""`, the default, for no conversion;
+the `--color-space` command line option replaces it). These settings are in the
+Color tab of the Preferences dialog.
 
 ## Building
 
@@ -48,6 +51,7 @@ deleted extension there, and reports an error at every start).
 - `get_error()`, `get_version()`, `get_config_name()`
 
 `MMColorManagement` loads the configured config, converts images between color
-spaces (`convert_image`, `convert_between`), lists display/view transforms
+spaces (`convert_image`, `convert_between`, `convert_image_to` for exported color
+maps, see `get_export_space`), lists display/view transforms
 (`get_views`, `create_view_picker`) and bakes them into 3D textures with the
 matching shader code (`get_view_lut`, `get_view_shader_code`).

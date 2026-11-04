@@ -6,7 +6,8 @@ class_name MMColorManagement
 # Material Maker works unchanged without it: is_available() is false and the
 # functions below return empty lists, null or their input unchanged.
 # Material Maker's values are in the working space (sRGB encoded by default),
-# images can be converted between color spaces of the config, and previews
+# images can be converted between color spaces of the config (images when
+# they are loaded, exported color maps), and previews
 # can show a display/view transform (baked into a 3D LUT).
 
 
@@ -62,12 +63,18 @@ static func get_views() -> PackedStringArray:
 ## None)
 static func create_view_picker(current : String, on_selected : Callable) -> OptionButton:
 	var picker : OptionButton = OptionButton.new()
+	fill_view_picker(picker, current)
+	picker.item_selected.connect(func(i : int): on_selected.call("" if i == 0 else picker.get_item_text(i)))
+	return picker
+
+## Lists the display/view transforms of the current config in a view picker,
+## with current selected
+static func fill_view_picker(picker : OptionButton, current : String) -> void:
+	picker.clear()
 	picker.add_item("None")
 	for v in get_views():
 		picker.add_item(v)
 	select_view(picker, current)
-	picker.item_selected.connect(func(i : int): on_selected.call("" if i == 0 else picker.get_item_text(i)))
-	return picker
 
 ## Selects a view in a view picker ("None" if it is not listed)
 static func select_view(picker : OptionButton, view : String) -> void:
@@ -91,6 +98,51 @@ static func convert_between(image : Image, source : String, destination : String
 		push_error("OCIO: %s" % o.get_error())
 		return image
 	return converted
+
+## Converts an image from the working space to a color space
+static func convert_image_to(image : Image, destination : String) -> Image:
+	return convert_between(image, get_working_space(), destination)
+
+## Color space of exported color maps set on the command line (--color-space),
+## that replaces the ocio_export_space setting when not empty
+static var export_space_override : String = ""
+
+## The color space exported color maps are converted to ("" for no conversion)
+static func get_export_space() -> String:
+	if not is_available():
+		return ""
+	if export_space_override != "":
+		return export_space_override
+	return mm_globals.get_config("ocio_export_space")
+
+## The color spaces of a config file ("" is the built-in config), without
+## changing the current config (empty if it cannot be loaded)
+static func get_config_color_spaces(config : String) -> PackedStringArray:
+	if config == mm_globals.get_config("ocio_config"):
+		return get_color_spaces()
+	if not is_available():
+		return PackedStringArray()
+	var o = ClassDB.instantiate("MMOCIO")
+	if not o.load_config(config):
+		return PackedStringArray()
+	return o.get_color_spaces()
+
+## The settings that images converted to the working space depend on
+static func get_settings_key() -> String:
+	return "%s|%s" % [ mm_globals.get_config("ocio_config"), get_working_space() ]
+
+## Group of the nodes (Image generators, 2D previews) that are notified with
+## on_color_management_changed() when the settings may have changed
+const UPDATE_GROUP : String = "mm_color_management"
+
+## Notifies the nodes that depend on the config and the working space (called
+## when the configuration changes)
+static func settings_changed() -> void:
+	if not is_available():
+		return
+	var tree : SceneTree = Engine.get_main_loop() as SceneTree
+	if tree != null:
+		tree.call_group(UPDATE_GROUP, "on_color_management_changed")
 
 ## A 3D texture that applies a display/view transform ("display / view") to
 ## values in [0, 1] of a color space (by default the working space), or null

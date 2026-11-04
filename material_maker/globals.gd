@@ -9,9 +9,11 @@ var config : ConfigFile = ConfigFile.new()
 const DEFAULT_CONFIG : Dictionary = {
 	locale = "",
 	# OpenColorIO (when the extension is available): config file ("" is the
-	# built-in ACES studio config), and the color space of Material Maker's values
+	# built-in ACES studio config), the color space of Material Maker's values,
+	# and the color space of exported color maps ("" for no conversion)
 	ocio_config = "",
 	ocio_working_space = "sRGB Encoded Rec.709 (sRGB)",
+	ocio_export_space = "",
 	confirm_quit = true,
 	confirm_close_project = true,
 	vsync = true,

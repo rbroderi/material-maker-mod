@@ -343,6 +343,9 @@ func on_config_changed() -> void:
 
 	if not get_window().gui_embed_subwindows:
 		get_window().gui_embed_subwindows = mm_globals.get_config("ui_single_window_mode")
+
+	# OpenColorIO config and working space
+	MMColorManagement.settings_changed()
 	
 	# set custom theme
 	if mm_globals.config.get_value("window", "theme") == "custom":
