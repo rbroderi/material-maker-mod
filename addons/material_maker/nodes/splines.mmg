@@ -133,8 +133,9 @@
 		"parameters": [
 			{
 				"default": {
-					"points": [],
-					"type": "Polygon"
+					"point_groups": [],
+					"type": "Splines",
+					"values": []
 				},
 				"label": "",
 				"name": "splines",
