@@ -197,6 +197,13 @@ func thread_run(c : Callable, p : Array = [], stop_thread = false):
 	else:
 		return await c.callv(p)
 
+## Describes the state of the rendering thread (to find what blocks renders)
+func get_rendering_thread_state() -> String:
+	var job : String = "none"
+	if rendering_callable.is_valid():
+		job = "%s.%s" % [ rendering_callable.get_object(), rendering_callable.get_method() ]
+	return "rendering thread: working %s, running %s, stopping %s, job %s, device tickets %d served %d" % [ rendering_thread_working, rendering_thread_running, rendering_thread_stopping, job, rendering_device_tickets, rendering_device_served ]
+
 func create_rendering_device():
 	rendering_device = RenderingServer.create_local_rendering_device()
 

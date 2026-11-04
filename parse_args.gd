@@ -135,7 +135,9 @@ func check_export_targets(gen : MMGenBase, f : String, target : String) -> bool:
 	var gen_stack : Array[MMGenBase] = [gen]
 	while gen_stack.size():
 		var c : MMGenBase = gen_stack.pop_back()
-		gen_stack.append_array(c.get_children())
+		for child in c.get_children():
+			if child is MMGenBase:
+				gen_stack.append(child)
 		if c.has_method("export_material") and c.has_method("get_export_profiles"):
 			if find_export_target(target, c.get_export_profiles()) == "":
 				show_error("ERROR: %s: unknown export target \"%s\", valid targets are:\n  %s" % [ f.get_file(), target, "\n  ".join(PackedStringArray(c.get_export_profiles())) ])
@@ -148,7 +150,9 @@ func export_variation(suffix : String, gen : MMGenBase, f : String, basename : S
 	var gen_stack : Array[MMGenBase] = [gen]
 	while gen_stack.size():
 		var c : MMGenBase = gen_stack.pop_back()
-		gen_stack.append_array(c.get_children())
+		for child in c.get_children():
+			if child is MMGenBase:
+				gen_stack.append(child)
 		if c.has_method("export_material"):
 			var best_target : String = target
 			if c.has_method("get_export_profiles"):

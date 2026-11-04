@@ -885,25 +885,40 @@ func export_material_with_profile(prefix : String, profile : String, size : int 
 ## while iterate buffers iterate, so this does not stop when it is stable
 ## (that exported textures of unfinished iterate buffers), but only gives up
 ## when it does not change for a long time (a buffer that never finishes).
+## Frames count for at most a second each: a long frame (e.g. generating the
+## shaders of a big graph) is not time the renders were stuck.
 ## Also used by Export nodes.
 static func wait_for_render_queue() -> void:
 	const STUCK_TIMEOUT_MS : int = 60000
+	const MAX_FRAME_MS : int = 1000
 	var render_queue_size : int = mm_deps.get_render_queue_size()
 	var render_progress : int = mm_deps.render_progress
-	var last_change : int = Time.get_ticks_msec()
+	var stuck_ms : int = 0
+	var last_frame : int = Time.get_ticks_msec()
 	while render_queue_size > 0:
 		mm_deps.update()
 		# Poll instead of awaiting mm_deps.updated: an update loop that is
 		# replaced (e.g. when a buffer being rendered is deleted) never emits it
 		await mm_deps.get_tree().process_frame
+		var now : int = Time.get_ticks_msec()
+		var frame_ms : int = mini(now-last_frame, MAX_FRAME_MS)
+		last_frame = now
 		if render_queue_size != mm_deps.get_render_queue_size() or render_progress != mm_deps.render_progress:
 			# Slow buffers (e.g. Iterate Buffers with many iterations) keep
 			# the queue size, but make progress
 			render_queue_size = mm_deps.get_render_queue_size()
 			render_progress = mm_deps.render_progress
-			last_change = Time.get_ticks_msec()
-		elif Time.get_ticks_msec()-last_change > STUCK_TIMEOUT_MS:
+			stuck_ms = 0
+		else:
+			stuck_ms += frame_ms
+		if stuck_ms > STUCK_TIMEOUT_MS:
 			push_warning("Exporting while %d buffer(s) are still rendering" % render_queue_size)
+			print("  "+mm_renderer.get_rendering_thread_state())
+			var stalled : PackedStringArray = mm_deps.get_stalled_buffers()
+			for i in mini(stalled.size(), 20):
+				print("  Stalled: "+stalled[i])
+			if stalled.size() > 20:
+				print("  ... and %d more stalled buffers" % (stalled.size()-20))
 			break
 
 ## The file name of a UDIM tile: <UDIM> is replaced by the tile number, or the

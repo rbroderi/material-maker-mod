@@ -263,6 +263,8 @@ var updating : bool = false
 var update_scheduled : bool = false
 ## Incremented when an update loop replaces a stuck one
 var update_generation : int = 0
+## The buffer the update loop is waiting for (while it renders or restores it)
+var update_awaited_buffer : String = ""
 
 func update():
 	if update_scheduled:
@@ -296,10 +298,13 @@ func do_update():
 					# Released inputs are rendered again first
 					for d in buffer.dependencies:
 						if buffers.has(d) and buffers[d].released:
+							update_awaited_buffer = d
 							await restore_buffer(d)
 					if generation != update_generation:
 						return
+					update_awaited_buffer = b
 					var status = await buffer.object.on_dep_update_buffer(b)
+					update_awaited_buffer = ""
 					if generation != update_generation:
 						# A newer update loop took over (see delete_buffer)
 						return
@@ -461,6 +466,35 @@ func get_failed_buffers(graph : Node) -> PackedStringArray:
 		if buffer.status == Buffer.Error and buffer.object is Node and is_instance_valid(buffer.object) and (buffer.object == graph or graph.is_ancestor_of(buffer.object)):
 			failed.append(buffer.object.get_hier_name() if buffer.object.has_method("get_hier_name") else b)
 	return failed
+
+## Describes the buffers that block the render queue: buffers waiting for
+## no buffer that is still to be rendered (their dependencies failed, or their
+## count of pending dependencies is wrong), and buffers stuck while rendering
+func get_stalled_buffers() -> PackedStringArray:
+	var stalled : PackedStringArray = PackedStringArray()
+	if updating and update_awaited_buffer != "":
+		var awaited : String = update_awaited_buffer
+		if buffers.has(awaited) and buffers[awaited].object is Node and is_instance_valid(buffers[awaited].object) and buffers[awaited].object.has_method("get_hier_name"):
+			awaited = "%s (%s)" % [ buffers[awaited].object.get_hier_name(), awaited ]
+		stalled.append("the update loop is waiting for "+awaited)
+	for b in buffers.keys():
+		var buffer : Buffer = buffers[b]
+		if buffer.status == Buffer.Updated or buffer.status == Buffer.Error:
+			continue
+		var waiting_for : PackedStringArray = PackedStringArray()
+		var blocked : bool = false
+		for d in buffer.dependencies:
+			if buffers.has(d) and buffers[d].status != Buffer.Updated:
+				waiting_for.append("%s (%s)" % [ d, Buffer.STATUS[buffers[d].status] ])
+				if buffers[d].status != Buffer.Error:
+					blocked = true
+		if blocked:
+			continue
+		var object_name : String = b
+		if buffer.object is Node and is_instance_valid(buffer.object) and buffer.object.has_method("get_hier_name"):
+			object_name = "%s (%s)" % [ buffer.object.get_hier_name(), b ]
+		stalled.append("%s: %s, %d pending dependencies, waiting for [%s]" % [ object_name, Buffer.STATUS[buffer.status], buffer.pending_dependencies, ", ".join(waiting_for) ])
+	return stalled
 
 func material_update_params(material : MMShaderBase):
 	for p in material.get_parameters().keys():
