@@ -505,7 +505,7 @@
 			},
 			{
 				"control": "None",
-				"default": 1,
+				"default": 0,
 				"label": "Metallic",
 				"max": 1,
 				"min": 0,
@@ -544,7 +544,7 @@
 				"type": "float"
 			},
 			{
-				"default": true,
+				"default": false,
 				"label": "World",
 				"name": "world",
 				"type": "boolean"
