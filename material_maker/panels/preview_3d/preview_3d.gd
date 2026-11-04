@@ -147,6 +147,30 @@ func get_materials() -> Array:
 	return []
 
 
+## Applies an OpenColorIO display/view transform ("display / view") to the
+## 3D view, or removes it ("" or a view that is not in the config). The
+## viewport then renders in HDR (linear Rec.709 values, not clamped), and
+## the transform is applied when it is drawn. Returns true if a transform is
+## applied.
+func set_ocio_view(view : String) -> bool:
+	var lut : ImageTexture3D = null
+	var scene_linear_space : String = MMColorManagement.get_scene_linear_space()
+	if view != "" and scene_linear_space != "":
+		lut = MMColorManagement.get_view_lut(view, scene_linear_space, true)
+	if lut == null:
+		material = null
+		$MaterialPreview.use_hdr_2d = false
+		return false
+	var shader : Shader = Shader.new()
+	shader.code = "shader_type canvas_item;\n"+MMColorManagement.get_view_shader_code(true)
+	shader.code += "void fragment() {\n\tvec4 c = texture(TEXTURE, UV);\n\tCOLOR = vec4(mm_ocio_view(c.rgb), c.a);\n}\n"
+	var shader_material : ShaderMaterial = ShaderMaterial.new()
+	shader_material.shader = shader
+	shader_material.set_shader_parameter("mm_ocio_lut", lut)
+	material = shader_material
+	$MaterialPreview.use_hdr_2d = true
+	return true
+
 func get_preview_settings() -> Dictionary:
 	var settings : Dictionary = {}
 	settings.object_mesh = current_object.mesh

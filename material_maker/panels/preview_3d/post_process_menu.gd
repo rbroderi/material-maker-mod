@@ -56,6 +56,7 @@ const SETTING_PREVIEW_TONEMAP_WHITE : String = "ui_3d_preview_tonemap_white"
 const SETTING_PREVIEW_TONEMAP_AGX_WHITE : String = "ui_3d_preview_tonemap_agx_white"
 const SETTING_PREVIEW_TONEMAP_AGX_CONTRAST : String = "ui_3d_preview_tonemap_agx_contrast"
 const SETTING_PREVIEW_TONEMAP_EXPOSURE : String = "ui_3d_preview_tonemap_exposure"
+const SETTING_PREVIEW_OCIO_VIEW : String = "ui_3d_preview_ocio_view"
 
 const SETTING_PREVIEW_GLOW_ENABLED : String = "ui_3d_preview_glow_enabled"
 const SETTING_PREVIEW_GLOW_SIZE : String = "ui_3d_preview_glow_size"
@@ -94,6 +95,9 @@ var environment : Environment
 var camera_attributes : CameraAttributesPractical
 
 var custom_min_width : float
+
+## True when an OpenColorIO view transform replaces Godot's tonemapper
+var ocio_view_active : bool = false
 
 signal setting_changed(section : Section)
 
@@ -158,6 +162,8 @@ func _ready() -> void:
 		DepthOfField.button_pressed = mm_globals.get_config(SETTINGS_PREVIEW_DOF_ENABLED)
 		DepthOfFieldSection.visible = DepthOfField.button_pressed
 	restore_dof_settings()
+
+	add_ocio_view()
 
 func _on_glow_blending_item_selected(index : Environment.GlowBlendMode) -> void:
 	environment.glow_blend_mode = index
@@ -341,6 +347,64 @@ func restore_dof_settings() -> void:
 
 	setting_changed.emit(Section.DOF)
 
+## Adds the OpenColorIO display/view transforms, when OpenColorIO support is
+## built and the config has a linear Rec.709 color space (Godot's rendering
+## space). A view transform replaces Godot's tonemapper.
+func add_ocio_view() -> void:
+	if not MMColorManagement.is_available() or MMColorManagement.get_scene_linear_space() == "":
+		return
+	var current : String = mm_globals.get_config(SETTING_PREVIEW_OCIO_VIEW)
+	# Views of another OpenColorIO config are not restored
+	if current not in MMColorManagement.get_views():
+		current = ""
+	var label : Label = Label.new()
+	label.text = "View transform (OCIO)"
+	label.tooltip_text = "OpenColorIO display/view transform, that replaces the tonemapper"
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.theme_type_variation = "MM_PanelMenuSubPanelLabel"
+	var picker : OptionButton = MMColorManagement.create_view_picker(current, func(view : String):
+		set_ocio_view(view)
+		ocio_view_picker_tooltip(view))
+	# View names are long ("display / view"), they are clipped and shown in the tooltip
+	picker.name = "OcioView"
+	picker.theme_type_variation = "MM_NodeOptionEdit"
+	picker.get_popup().theme_type_variation = "MM_NodeOptionEditPopup"
+	picker.fit_to_longest_item = false
+	picker.clip_text = true
+	picker.custom_minimum_size.x = 160
+	var box : Node = TonemapSection.get_parent()
+	box.add_child(label)
+	box.move_child(label, 0)
+	box.add_child(picker)
+	box.move_child(picker, 1)
+	ocio_view_picker_tooltip(current)
+	if current != "":
+		set_ocio_view(current)
+
+func ocio_view_picker_tooltip(view : String) -> void:
+	var picker : OptionButton = TonemapSection.get_parent().get_node_or_null("OcioView")
+	if picker != null:
+		picker.tooltip_text = view if view != "" else "None: Godot's tonemapper is used"
+
+## Applies an OpenColorIO view transform ("display / view") to the 3D view,
+## or removes it ("")
+func set_ocio_view(view : String) -> void:
+	mm_globals.set_config(SETTING_PREVIEW_OCIO_VIEW, view)
+	ocio_view_active = preview3D.set_ocio_view(view)
+	Tonemap.disabled = ocio_view_active
+	if ocio_view_active:
+		apply_ocio_view_tonemap()
+	else:
+		_on_tonemap_toggled(Tonemap.button_pressed)
+
+## Godot's tonemapper is linear (and does not clamp) when a view transform is
+## applied
+func apply_ocio_view_tonemap() -> void:
+	TonemapSection.visible = false
+	environment.tonemap_mode = Environment.TONE_MAPPER_LINEAR
+	environment.tonemap_exposure = 1.0
+	environment.tonemap_white = 1.0
+
 func _on_tonemap_toggled(toggled_on : bool) -> void:
 	TonemapSection.visible = toggled_on
 	mm_globals.set_config(SETTING_PREVIEW_TONEMAP_ENABLED, toggled_on)
@@ -405,6 +469,8 @@ func reset_post_process_section(section : String) -> void:
 func _on_reset_tonemap_section_pressed() -> void:
 	reset_post_process_section("preview_tonemap")
 	restore_tonemap_settings(true)
+	if ocio_view_active:
+		apply_ocio_view_tonemap()
 	ResetTonemapSection.disabled = true
 
 func _on_reset_glow_section_pressed() -> void:

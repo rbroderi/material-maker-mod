@@ -38,6 +38,14 @@ a material graph.
 
 The *Environment* menu provides different environments, as well as tonemap options.
 
+When OpenColorIO support is built (see the **native/ocio** directory of the source
+repository), the post-processing menu has a **View transform (OCIO)** list with the
+display/view transforms of the OpenColorIO config (for example *sRGB - Display / ACES 2.0 -
+SDR 100 nits (Rec.709)*). A view transform replaces Godot's tonemapper (the tonemap options
+are disabled): the 3D view is rendered in HDR (linear Rec.709 values, not clamped) and the
+transform is applied when it is displayed, to values up to 16. The list is only shown if the
+config has a linear Rec.709 color space (Godot's rendering space).
+
 In the 3D view, the view can be rotated about the yaw and the pitch axes (from the
 camera's point of view) by holding the left mouse button and moving the mouse horizontally
 or vertically. The object can also be rotated about the roll axis by holding Shift and
