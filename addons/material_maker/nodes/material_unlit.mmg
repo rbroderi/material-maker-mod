@@ -249,7 +249,7 @@
 					{
 						"file_name": "$(path_prefix).shader",
 						"template": [
-							"Shader \"Unlit/NewUnlitShader\"",
+							"Shader \"Material Maker/$(file_prefix)\"",
 							"{",
 							"\tProperties",
 							"\t{",

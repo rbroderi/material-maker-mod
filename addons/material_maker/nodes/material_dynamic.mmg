@@ -243,7 +243,7 @@
 					{
 						"file_name": "$(path_prefix).shader",
 						"template": [
-							"Shader \"Custom/NewSurfaceShader\"",
+							"Shader \"Material Maker/$(file_prefix)\"",
 							"{",
 							"\tProperties {",
 							"$begin_buffers",
