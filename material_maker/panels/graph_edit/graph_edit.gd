@@ -916,7 +916,7 @@ func export_material(export_prefix, profile) -> void:
 		var node : MMGenBase = stack.pop_back()
 		if node.has_method("export_material"):
 			exports.append(node)
-		stack.append_array(node.get_children())
+		stack.append_array(node.get_children().filter(func(n : Node): return n is MMGenBase))
 
 	# Show progress for additional exports (export nodes)
 	var dim_color_rect = ColorRect.new()

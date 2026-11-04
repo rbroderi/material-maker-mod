@@ -60,7 +60,7 @@ func export_files(files, output_dir, target, target_file, image_size) -> void:
 			var gen_stack : Array[MMGenBase] = [gen]
 			while gen_stack.size():
 				var c : MMGenBase = gen_stack.pop_back()
-				gen_stack.append_array(c.get_children())
+				gen_stack.append_array(c.get_children().filter(func(n : Node): return n is MMGenBase))
 				if c.has_method("export_material"):
 					var best_target : String = target
 					if c.has_method("get_export_profiles"):
