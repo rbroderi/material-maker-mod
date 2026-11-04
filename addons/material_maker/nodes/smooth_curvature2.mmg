@@ -370,7 +370,7 @@
 			},
 			"seed": -60745,
 			"type": "switch"
-		},
+		}
 	],
 	"parameters": {
 		"param0": 10,
