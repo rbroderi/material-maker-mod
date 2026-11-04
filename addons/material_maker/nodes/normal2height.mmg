@@ -37,18 +37,6 @@
 			"to_port": 0
 		},
 		{
-			"from": "normal2height_base",
-			"from_port": 0,
-			"to": "gen_outputs",
-			"to_port": 0
-		},
-		{
-			"from": "normal2height_base",
-			"from_port": 0,
-			"to": "gen_outputs",
-			"to_port": 0
-		},
-		{
 			"from": "gen_inputs",
 			"from_port": 0,
 			"to": "normal2height_simple_2",
