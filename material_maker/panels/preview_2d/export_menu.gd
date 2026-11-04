@@ -14,6 +14,8 @@ var additional_ids : Dictionary[String, String] = {"$node":"unnamed"}
 
 ## Extensions of the file types (PNG and EXR, then formats added by plugins)
 var file_type_extensions : Array[String] = [ "png", "exr" ]
+## Sections added by plugins (see MMPlugins.API.add_export_menu_section)
+var plugin_sections : Array[Control] = []
 
 func _ready() -> void:
 	for val in export_settings.values():
@@ -23,6 +25,18 @@ func _ready() -> void:
 	for extension in MMPlugins.image_formats.keys():
 		file_type_extensions.append(extension)
 		%FileType.add_item("."+extension)
+	for create_section in MMPlugins.export_menu_sections:
+		var section = create_section.call(self)
+		if section is Control:
+			plugin_sections.append(section)
+			get_node("VBox").add_child(section)
+
+## The previewed generator and output, for plugin sections
+func get_generator() -> MMGenBase:
+	return owner.generator
+
+func get_output() -> int:
+	return owner.output
 
 
 func _notification(what: int) -> void:
@@ -59,6 +73,9 @@ func _open() -> void:
 
 func update() -> void:
 	additional_ids["$node"] = mm_globals.get_node_title_from_gen(owner.generator)
+	for section in plugin_sections:
+		if section.has_method("update"):
+			section.update(owner.generator, owner.output)
 
 	if not is_visible_in_tree():
 		return

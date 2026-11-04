@@ -189,7 +189,8 @@ func _ready() -> void:
 	# Set window title
 	get_window().set_title(ProjectSettings.get_setting("application/config/name")+" v"+ProjectSettings.get_setting("application/config/actual_release"))
 
-	# Plugins add nodes, libraries, export targets and menu items
+	# Plugins add nodes, libraries, export targets, menu items, import formats
+	# and sections of the 2D preview's export menu (before panels are created)
 	MMPlugins.load_plugins()
 	for l in MMPlugins.get_libraries():
 		node_library_manager.add_plugin_library(l)
@@ -211,7 +212,7 @@ func _ready() -> void:
 
 	var args : PackedStringArray = OS.get_cmdline_args()
 	for a in args:
-		if a.get_extension().to_lower() in [ "ptex", "mmpp" ]:
+		if a.get_extension().to_lower() in [ "ptex", "mmpp" ] or a.get_extension().to_lower() in MMPlugins.import_formats:
 			do_load_project(get_file_absolute_path(a))
 		elif a.get_extension().to_lower() in [ "obj", "glb", "gltf", "fbx" ]:
 			var mesh_filename : String = get_file_absolute_path(a)
@@ -828,6 +829,8 @@ func load_project() -> void:
 		dialog.file_mode = FileDialog.FILE_MODE_OPEN_FILES
 		dialog.add_filter("*.ptex;Procedural Textures File")
 		dialog.add_filter("*.mmpp;Model Painting File")
+		for extension in MMPlugins.import_formats.keys():
+			dialog.add_filter("*.%s;%s (imported)" % [ extension, MMPlugins.import_formats[extension].description ])
 		dialog.current_dir = mm_globals.config.get_value("path", "project", mm_globals.get_home_directory())
 		var files = await dialog.select_files()
 		if files.size() > 0:
@@ -863,6 +866,11 @@ func do_load_project(file_name : String) -> bool:
 			hierarchy.update_from_graph_edit(get_current_graph_edit())
 		"mmpp":
 			status = do_load_painting(file_name)
+		_:
+			# Formats imported by plugins
+			if not MMPlugins.get_import_format(file_name).is_empty():
+				status = await do_load_material(file_name, false)
+				hierarchy.update_from_graph_edit(get_current_graph_edit())
 	if ! FileAccess.file_exists(file_name):
 		status = false
 	if status:
@@ -1526,7 +1534,11 @@ func on_files_dropped(files : PackedStringArray) -> void:
 		if file == null:
 			continue
 		f = file.get_path_absolute()
-		match f.get_extension().to_lower():
+		var extension : String = f.get_extension().to_lower()
+		if extension in MMPlugins.import_formats:
+			extension = "ptex"
+		match extension:
+			# Materials, and formats imported by plugins
 			"ptex":
 				var status : bool = await do_load_material(f)
 				if status:
