@@ -93,3 +93,21 @@ so you just have to paste it into Unreal's 5 Python prompt and execute it to cre
 
 When exporting, the target path is not that important (all necessary files will be imported into
 the Unreal project), but the file name will be used as material name.
+
+Multi-layer OpenEXR
+-------------------
+
+The **Multi-layer OpenEXR** plugin (enabled by default, see :doc:`plugins`) adds the
+**OpenEXR/Multi-layer** export target: a single **.exr** file with a layer per map (**albedo**,
+**metallic**, **roughness**, **normal**, **emission**, **height** and **ao**), whose channels are
+named like **albedo.R** or **normal.X**, as compositing and texturing tools that read multi-layer
+EXR files (Nuke, Blender, OpenImageIO...) expect. Values are linear 16 bits floats: albedo and
+emission are converted from sRGB, the normal map is a vector (OpenGL convention, from -1 to 1),
+and the Material node's colors and multipliers are applied. Files are ZIP compressed.
+
+Texture files of any export target that have a **"layer"** name and an **.exr** file name are
+saved in such a file (see :doc:`plugins`). Their **options** are **channels** (channel names, e.g.
+**XYZ**, by default **Y**, **RGB** or **RGBA** from the output's type), **bits** (32 for 32 bits
+floats, 16 bits floats otherwise), **srgb** (convert colors to linear, by default for the Material
+node's albedo and emission outputs) and **compression** (**zip**, **zips** or **none**, set by the
+first layer that has it).
