@@ -316,8 +316,26 @@ func get_connected_outputs(generator) -> Array:
 			rv.push_back(c.from_port)
 	return rv
 
+## Returns false if the output type cannot be converted to the input type
+## (the graph editor does not allow such connections, but files can contain them)
+func are_ports_compatible(from, from_port : int, to, to_port : int) -> bool:
+	var output_defs : Array = from.get_output_defs(true)
+	var input_defs : Array = to.get_input_defs()
+	if from_port >= output_defs.size() or to_port >= input_defs.size():
+		return true
+	var output_type = output_defs[from_port].get("type")
+	var input_type = input_defs[to_port].get("type")
+	if not mm_io_types.types.has(output_type) or not mm_io_types.types.has(input_type):
+		return true
+	var output_slot : int = mm_io_types.types[output_type].slot_type
+	var input_slot : int = mm_io_types.types[input_type].slot_type
+	return output_slot == input_slot or output_slot == 42 or input_slot == 42
+
 func connect_children(from, from_port : int, to, to_port : int) -> bool:
 	if from == null or to == null:
+		return false
+	if not are_ports_compatible(from, from_port, to, to_port):
+		print("Cannot connect %s output of %s to %s input of %s" % [ from.get_output_defs(true)[from_port].type, from.name, to.get_input_defs()[to_port].type, to.name ])
 		return false
 	# check the new connection does not create a loop
 	for port in follow_connections_find_matching(InputPort.new(to, to_port), from):
