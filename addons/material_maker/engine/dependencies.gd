@@ -449,9 +449,13 @@ func get_render_order() -> Array[String]:
 	render_order_dirty = false
 	return render_order
 
-func get_render_queue_size() -> int:
+## The number of buffers that are still to be rendered (only among
+## buffer_names if it is not empty)
+func get_render_queue_size(buffer_names : Array = []) -> int:
 	var invalidated_buffers : int = 0
-	for b in buffers.keys():
+	for b in (buffer_names if not buffer_names.is_empty() else buffers.keys()):
+		if not buffers.has(b):
+			continue
 		var buffer : Buffer = buffers[b]
 		if buffer.object != null and buffer.object is MMGenBase and buffer.status != Buffer.Updated and buffer.status != Buffer.Error:
 			invalidated_buffers += 1

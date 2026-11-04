@@ -194,14 +194,15 @@ static func value_to_string(value) -> String:
 ## Waits until all buffers are rendered. It only gives up when the renders
 ## make no progress for a long time (see MMGenMaterial.wait_for_render_queue):
 ## a number of frames is not enough, big graphs take more frames than that to
-## render, and what was not rendered yet was saved flat.
-static func wait_for_renders(tree : SceneTree) -> void:
+## render, and what was not rendered yet was saved flat. With buffer_names,
+## only waits for these buffers (and the buffers they read).
+static func wait_for_renders(tree : SceneTree, buffer_names : Array = []) -> void:
 	var idle_frames : int = 0
 	while idle_frames < IDLE_FRAMES_DONE:
-		if mm_deps.get_render_queue_size() > 0:
+		if mm_deps.get_render_queue_size(buffer_names) > 0:
 			idle_frames = 0
-			await MMGenMaterial.wait_for_render_queue()
-			if mm_deps.get_render_queue_size() > 0:
+			await MMGenMaterial.wait_for_render_queue(buffer_names)
+			if mm_deps.get_render_queue_size(buffer_names) > 0:
 				# The renders are stuck (wait_for_render_queue warned)
 				return
 		await tree.process_frame
@@ -331,8 +332,15 @@ static func add_generators(root : Node, predicate : Callable, rv : Array) -> voi
 
 ## Renders an output of a generator, after the buffers it needs are rendered
 static func render_output_texture(generator : MMGenBase, output : int, size : Vector2i) -> MMTexture:
-	generator.get_shader_code("uv", output, MMGenContext.new())
-	await wait_for_renders(generator.get_tree())
+	# Only the buffers the output reads (and theirs) are waited for, not all
+	# the buffers of the graph
+	var source : MMGenBase.ShaderCode = generator.get_shader_code("uv", output, MMGenContext.new())
+	var buffer_names : Array = []
+	for u in source.uniforms:
+		if mm_deps.buffers.has(u.name):
+			buffer_names.append(u.name)
+	if not buffer_names.is_empty():
+		await wait_for_renders(generator.get_tree(), buffer_names)
 	return await generator.render_output_to_texture(output, size)
 
 static func render_output_image(generator : MMGenBase, output : int, size : Vector2i) -> Image:

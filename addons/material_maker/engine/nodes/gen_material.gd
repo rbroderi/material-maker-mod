@@ -887,11 +887,12 @@ func export_material_with_profile(prefix : String, profile : String, size : int 
 ## when it does not change for a long time (a buffer that never finishes).
 ## Frames count for at most a second each: a long frame (e.g. generating the
 ## shaders of a big graph) is not time the renders were stuck.
-## Also used by Export nodes.
-static func wait_for_render_queue() -> void:
+## Also used by Export nodes. With buffer_names, only waits for these buffers
+## (and so for the buffers they read, that are rendered first).
+static func wait_for_render_queue(buffer_names : Array = []) -> void:
 	const STUCK_TIMEOUT_MS : int = 60000
 	const MAX_FRAME_MS : int = 1000
-	var render_queue_size : int = mm_deps.get_render_queue_size()
+	var render_queue_size : int = mm_deps.get_render_queue_size(buffer_names)
 	var render_progress : int = mm_deps.render_progress
 	var stuck_ms : int = 0
 	var last_frame : int = Time.get_ticks_msec()
@@ -903,10 +904,10 @@ static func wait_for_render_queue() -> void:
 		var now : int = Time.get_ticks_msec()
 		var frame_ms : int = mini(now-last_frame, MAX_FRAME_MS)
 		last_frame = now
-		if render_queue_size != mm_deps.get_render_queue_size() or render_progress != mm_deps.render_progress:
+		if render_queue_size != mm_deps.get_render_queue_size(buffer_names) or render_progress != mm_deps.render_progress:
 			# Slow buffers (e.g. Iterate Buffers with many iterations) keep
 			# the queue size, but make progress
-			render_queue_size = mm_deps.get_render_queue_size()
+			render_queue_size = mm_deps.get_render_queue_size(buffer_names)
 			render_progress = mm_deps.render_progress
 			stuck_ms = 0
 		else:

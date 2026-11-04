@@ -767,7 +767,7 @@ func for_each_variation(gen : MMGenBase, options : Dictionary, callable : Callab
 		await callable.call("_v%d" % v if variations > 1 else "")
 
 func render_variation(suffix : String, gen : MMGenBase, f : String, options : Dictionary) -> void:
-	await MMCliTools.wait_for_renders(get_tree())
+	# (render_node and render_flipbook wait for the buffers the node needs)
 	var file_name : String = options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), MMCliTools.spec_to_file_part(options.node), suffix, options.format ])
 	var error : String
 	if options.has("frames"):
