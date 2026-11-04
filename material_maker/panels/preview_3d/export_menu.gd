@@ -82,7 +82,7 @@ func add_render_options() -> void:
 	render_samples = add_spin_box(grid, "Samples", 1, 65536, SETTING_RENDER_SAMPLES, 256)
 	render_transparent = add_check_box(box, "Transparent background", "", SETTING_RENDER_TRANSPARENT)
 	render_displacement = add_check_box(box, "Displacement", "The mesh is subdivided and displaced by the material's depth", SETTING_RENDER_DISPLACEMENT, true)
-	render_thin_walled = add_check_box(box, "Thin walled", "Transmissive surfaces are thin sheets that let diffuse light through (leaves, paper, fabric)", SETTING_RENDER_THIN_WALLED, false)
+	render_thin_walled = add_check_box(box, "Thin walled", "On: transmissive surfaces are thin sheets that let diffuse light through (leaves, paper, fabric)\nOff: transmissive objects are solids that refract light (glass), and subsurface scattering lets light travel inside solid objects", SETTING_RENDER_THIN_WALLED, false)
 	var sss_grid : GridContainer = GridContainer.new()
 	sss_grid.columns = 2
 	box.add_child(sss_grid)
