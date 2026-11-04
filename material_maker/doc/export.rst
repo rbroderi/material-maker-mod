@@ -106,3 +106,23 @@ KTX2 is also a file type of the 2D preview's export menu (images are saved as th
 as floats), and texture files of any export target can be **.ktx2** files. Their **options** are
 **bits** (8, 16 or 32), **srgb** (8 bits only), **grayscale**, **normal_map** (renormalized
 mipmaps), **mipmaps** and **supercompression** (both true by default).
+
+Volumes
+-------
+
+The **Volume export** plugin (enabled by default, it needs the KTX2 format plugin) exports 3D
+textures (TEX3D outputs, for example of the 3D/Texture nodes) and 3D signed distance fields
+(SDF3D outputs, for example of the 3D/SDF nodes) as volumes, from the **Volume** section of the
+2D preview's export menu (when it shows such an output), from the command line
+(**--export-volume**, see :doc:`command_line`) or from scripts (**export_volume**). The output is
+sampled at the centers of a grid of voxels (128 in each direction by default) that covers a box
+centered on the origin (from -0.5 to 0.5 by default):
+
+* **OpenVDB** (.vdb) files can be used in Blender, Houdini and most renderers. SDFs become
+  narrow band level sets (a grid named *surface*), grayscale 3D textures fog volumes
+  (*density*), and color 3D textures a *color* grid with a *density* grid (the average of the
+  color). Only voxels that matter are stored: non zero densities, and distances within 3 voxels
+  of the surface.
+* **3D DDS** (.dds) and **KTX2** (.ktx2) files are 3D textures for game engines, in 16 bits floats
+  (the default), 32 bits floats or 8 bits, with 4 channels (colors) or 1 channel (grayscale
+  textures and SDFs).

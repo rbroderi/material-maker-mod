@@ -41,7 +41,16 @@ Modes
   with the arguments that follow it
 
 Plugins can also add modes (such as **--example-thumbnails** in the example plugin) and their
-options, that are listed by **material_maker -- --help** when the plugin is enabled.
+options, that are listed by **material_maker -- --help** when the plugin is enabled. The Volume
+export plugin adds:
+
+ material_maker --export-volume --node <node[:output]> [options] <input_files>
+
+that exports a 3D texture or SDF output as a volume (see :ref:`export-section`) named
+<input>_<node>.<format>, with **--format** vdb (the default), dds or ktx2, **--voxels** (the
+resolution, from 8 to 256, 128 by default), **--extent** (the size of the sampled box, 1 by
+default) and, for dds and ktx2, **--texel-format** (rgba16f, rgba32f, rgba8, r16f or r32f; by
+default rgba16f for color textures and r16f for others).
 
 Options
 -------

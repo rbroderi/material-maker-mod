@@ -73,6 +73,9 @@ graph (and in **list_nodes**).
 * **quit()** (without user interface only)
 
 Enabled plugins can add other methods (see :ref:`plugins-section`), that are called in the same
-way (for example **mm.call("example_node_count")** with the example plugin).
+way (for example **mm.call("example_node_count")** with the example plugin). The Volume
+export plugin adds **export_volume(node, path, output, resolution, extent, texel_format)**, that
+exports a 3D texture or SDF output of a node as a volume (.vdb, .dds or .ktx2, see
+:ref:`export-section`), for example **mm.call("export_volume", node="sphere", path="sphere.vdb")**.
 
 Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).
