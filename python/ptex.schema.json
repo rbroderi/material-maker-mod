@@ -274,11 +274,58 @@
 									"properties": { "name": { "type": "string" }, "value": { "type": "string" } }
 								}
 							}
-						}
+						},
+						"$ref": "#/$defs/parameter_default"
 					}
 				}
 			}
 		},
+		"parameter_default": {
+			"description": "The default value of a parameter has the type of its values (parameters of other types are not checked)",
+			"allOf": [
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "float" } } },
+					"then": { "properties": { "default": { "type": [ "number", "string" ], "description": "A string is an expression" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "enum": [ "size", "enum" ] } } },
+					"then": { "properties": { "default": { "type": "number", "description": "A power of 2, or the index of a value" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "boolean" } } },
+					"then": { "properties": { "default": { "type": "boolean" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "color" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/color" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "gradient" } } },
+					"then": { "properties": { "default": { "anyOf": [ { "$ref": "#/$defs/typed_gradient" }, { "$ref": "#/$defs/gradient_points" } ] } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "curve" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Curve" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "enum": [ "polygon", "polyline" ] } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Polygon" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "splines" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Splines" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "pixels" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Pixels" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "lattice" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Lattice" } } } } }
+				}
+			]
+		},
+		"typed_gradient": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Gradient" } } },
 		"widget": {
 			"type": "object",
 			"required": [ "name", "type" ],

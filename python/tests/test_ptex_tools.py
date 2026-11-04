@@ -130,6 +130,41 @@ class PtexToolsTest(unittest.TestCase):
         node(graph, "Perlin")["parameters"]["gradient"] = [{"pos": 0, "r": 0, "g": 0, "b": 0}, {"pos": 1, "r": 1, "g": 1, "b": 1, "a": 1}]
         self.assertEqual(ptex_tools.validate(graph), [])
 
+    def test_validate_parameter_defaults(self):
+        """Parameter defaults must have the type of the parameter's values"""
+        def definition(parameter_type, default):
+            return {"name": "n", "type": "shader", "shader_model": {"parameters": [{"name": "p", "type": parameter_type, "default": default}]}}
+        valid = [
+            ("float", 0.5), ("float", 1), ("float", "0.1+0.1*$seed"), ("size", 9), ("size", 9.0), ("enum", 2),
+            ("boolean", False), ("color", {"r": 1, "g": 1, "b": 1, "a": 1}), ("color", {"type": "Color", "r": 1, "g": 1, "b": 1, "a": 1}),
+            ("gradient", {"type": "Gradient", "interpolation": 1, "points": [{"pos": 0, "r": 0, "g": 0, "b": 0, "a": 1}]}),
+            ("gradient", [{"pos": 0, "r": 0, "g": 0, "b": 0}]),
+            ("curve", {"type": "Curve", "points": [{"x": 0, "y": 0, "ls": 0, "rs": 1}]}),
+            ("polygon", {"type": "Polygon", "points": [{"x": 0, "y": 0}]}), ("polyline", {"type": "Polygon", "points": []}),
+            ("splines", {"type": "Splines", "values": [], "point_groups": []}),
+            ("pixels", {"type": "Pixels", "bpp": 1, "w": 1, "h": 1, "pl": [{"r": 0, "g": 0, "b": 0, "a": 1}], "px": [0]}),
+            ("lattice", {"type": "Lattice", "size": {"x": 1, "y": 1}, "points": [{"x": 0, "y": 0}]}),
+            ("string", 3), ("some_new_type", [1, 2]),
+        ]
+        invalid = [
+            ("float", True), ("float", None), ("float", {"r": 1}), ("size", "big"), ("size", False), ("enum", "a"),
+            ("boolean", 3), ("boolean", "true"), ("color", 1), ("color", {"r": 1, "g": 1, "b": 1}),
+            ("gradient", {"type": "Curve", "points": []}), ("curve", {"type": "Polygon", "points": []}),
+            ("polygon", {"points": []}), ("splines", {"type": "Polygon", "points": []}), ("pixels", 0), ("lattice", "x"),
+        ]
+        try:
+            import jsonschema
+            reference = jsonschema.Draft202012Validator(ptex_tools.load(ptex_tools.SCHEMA_PATH))
+        except ImportError:
+            reference = None
+        for parameter_type, default, expected_valid in [c + (True,) for c in valid] + [c + (False,) for c in invalid]:
+            errors = ptex_tools.validate(definition(parameter_type, default))
+            self.assertEqual(errors == [], expected_valid, "%s default %r: %s" % (parameter_type, default, errors))
+            if reference is not None:
+                self.assertEqual(reference.is_valid(definition(parameter_type, default)), expected_valid, "jsonschema: %s default %r" % (parameter_type, default))
+        # Parameters without a default are still valid
+        self.assertEqual(ptex_tools.validate({"name": "n", "type": "shader", "shader_model": {"parameters": [{"name": "p", "type": "float"}]}}), [])
+
     def test_merge_removed_and_changed_key(self):
         base = {"type": "graph", "nodes": [], "connections": [], "label": "a"}
         ours = {"type": "graph", "nodes": [], "connections": []}
