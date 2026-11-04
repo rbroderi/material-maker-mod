@@ -93,3 +93,19 @@ so you just have to paste it into Unreal's 5 Python prompt and execute it to cre
 
 When exporting, the target path is not that important (all necessary files will be imported into
 the Unreal project), but the file name will be used as material name.
+
+TX textures
+-----------
+
+The **TX format** plugin (enabled by default, see :doc:`plugins`) adds the **TX/Texture set** export
+target: TX textures (albedo, metallic, roughness, normal, emission, height and ambient occlusion),
+tiled and mip-mapped TIFF files as OpenImageIO's maketx writes them, for renderers that cache
+textures (Arnold, RenderMan...). They are saved in 8 bits (albedo and emission marked as
+sRGB) and 16 bits floats for the height map, with 64x64 Deflate compressed tiles and a periodic
+wrap mode. The Material node's colors and multipliers are applied.
+
+TX is also a file type of the 2D preview's export menu (images are saved as they are rendered,
+as floats), and texture files of any export target can be **.tx** files. Their **options** are
+**bits** (8, 16 or 32), **srgb**, **grayscale**, **alpha**, **normal_map** (renormalized mipmaps),
+**compress** (true by default) and **wrap** (OpenImageIO's wrap mode: black, clamp, periodic or
+mirror).
