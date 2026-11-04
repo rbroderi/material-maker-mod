@@ -757,13 +757,21 @@ func export_material(prefix : String, profile : String, size : int = 0, command_
 					continue
 				var result : MMTexture = await render_output_to_texture(output_index, Vector2i(size, size))
 				var export_space : String = MMColorManagement.get_export_space()
+				var saved : bool = false
 				if export_space != "" and output_index in COLOR_OUTPUTS:
 					# Color maps are converted from the working space (OpenColorIO)
 					var image : Image = (await result.get_texture()).get_image()
-					var converted : MMTexture = MMTexture.new()
-					converted.set_texture(ImageTexture.create_from_image(MMColorManagement.convert_image_to(image, export_space)))
-					result = converted
-				e = await result.save_to_file(file_name)
+					var converted_image : Image = MMColorManagement.convert_image_to(image, export_space)
+					if file_name.get_extension() == "png" and mm_globals.get_config("ocio_export_16_bits"):
+						# 16 bits PNG files (8 bits show banding in linear color spaces)
+						e = MMColorManagement.save_png_16(converted_image, file_name)
+						saved = true
+					else:
+						var converted : MMTexture = MMTexture.new()
+						converted.set_texture(ImageTexture.create_from_image(converted_image))
+						result = converted
+				if not saved:
+					e = await result.save_to_file(file_name)
 				if e != OK:
 					error_files += 1
 				processed_files += 1

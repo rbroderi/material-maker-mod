@@ -24,7 +24,9 @@ exports the values as they are.
 
 Color maps are exported as 8 bit PNG files by the export targets, which is enough for
 encoded color spaces (such as sRGB) but can show banding in dark areas with linear color
-spaces (such as ACEScg).
+spaces (such as ACEScg). The **16 bits converted PNG color maps** option writes the converted
+color maps as 16 bit PNG files instead (the file names, the other maps and the exports
+without color space conversion are unchanged).
 
 Blender
 -----------------

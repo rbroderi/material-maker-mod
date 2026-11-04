@@ -286,3 +286,62 @@ static func get_view_shader_code() -> String:
 	code += "\treturn textureLod(mm_ocio_lut, clamp(c, 0.0, 1.0)*%f+vec3(%f), 0.0).rgb;\n" % [ scale, offset ]
 	code += "}\n"
 	return code
+
+## Saves an image as a 16 bits RGBA PNG file (Image.save_png() writes 8 bits
+## files, that show banding in dark areas for linear color spaces). Values
+## are clamped to [0, 1].
+static func save_png_16(image : Image, file_name : String) -> Error:
+	var rgba16 : Image = image.duplicate()
+	if rgba16.is_compressed():
+		rgba16.decompress()
+	rgba16.clear_mipmaps()
+	rgba16.convert(Image.FORMAT_RGBA16)
+	var width : int = rgba16.get_width()
+	var height : int = rgba16.get_height()
+	# PNG values are big endian: reversing the data swaps the bytes of each
+	# value but also reverses their order, which flipping an image of one
+	# value per pixel restores
+	var data : PackedByteArray = rgba16.get_data()
+	data.reverse()
+	var values : Image = Image.create_from_data(width*4, height, false, Image.FORMAT_R16, data)
+	values.flip_x()
+	values.flip_y()
+	data = values.get_data()
+	# Each row starts with its filter type (0, none)
+	var row_size : int = width*8
+	var rows : PackedByteArray = PackedByteArray()
+	for y in height:
+		rows.append(0)
+		rows.append_array(data.slice(y*row_size, (y+1)*row_size))
+	data.clear()
+	var png : PackedByteArray = PackedByteArray([ 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A ])
+	# Width, height, bit depth, color type (6: RGBA), compression, filter, interlace
+	var header : PackedByteArray = png_u32(width)
+	header.append_array(png_u32(height))
+	header.append_array(PackedByteArray([ 16, 6, 0, 0, 0 ]))
+	png.append_array(png_chunk("IHDR", header))
+	var compressed : PackedByteArray = rows.compress(FileAccess.COMPRESSION_DEFLATE)
+	rows.clear()
+	const MAX_CHUNK_SIZE : int = 1 << 24
+	for offset in range(0, compressed.size(), MAX_CHUNK_SIZE):
+		png.append_array(png_chunk("IDAT", compressed.slice(offset, offset+MAX_CHUNK_SIZE)))
+	png.append_array(png_chunk("IEND", PackedByteArray()))
+	var file : FileAccess = FileAccess.open(file_name, FileAccess.WRITE)
+	if file == null:
+		return FileAccess.get_open_error()
+	file.store_buffer(png)
+	return file.get_error()
+
+## A big endian 32 bits integer (for PNG files)
+static func png_u32(value : int) -> PackedByteArray:
+	return PackedByteArray([ (value >> 24) & 255, (value >> 16) & 255, (value >> 8) & 255, value & 255 ])
+
+## A PNG chunk: size, type, data and CRC (the CRC-32 that ends gzip data)
+static func png_chunk(type : String, data : PackedByteArray) -> PackedByteArray:
+	var body : PackedByteArray = type.to_ascii_buffer()
+	body.append_array(data)
+	var gzip : PackedByteArray = body.compress(FileAccess.COMPRESSION_GZIP)
+	var rv : PackedByteArray = png_u32(data.size())
+	rv.append_array(body)
+	rv.append_array(png_u32(gzip.decode_u32(gzip.size()-8)))
+	return rv

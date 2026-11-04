@@ -10,10 +10,12 @@ const DEFAULT_CONFIG : Dictionary = {
 	locale = "",
 	# OpenColorIO (when the extension is available): config file ("" is the
 	# built-in ACES studio config), the color space of Material Maker's values,
-	# and the color space of exported color maps ("" for no conversion)
+	# and the color space of exported color maps ("" for no conversion,
+	# 16 bits PNG files if ocio_export_16_bits)
 	ocio_config = "",
 	ocio_working_space = "sRGB Encoded Rec.709 (sRGB)",
 	ocio_export_space = "",
+	ocio_export_16_bits = false,
 	confirm_quit = true,
 	confirm_close_project = true,
 	vsync = true,
