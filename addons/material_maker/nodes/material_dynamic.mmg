@@ -727,7 +727,7 @@
 			},
 			{
 				"control": "None",
-				"default": 0.5,
+				"default": 0.2,
 				"label": "Depth",
 				"max": 1,
 				"min": 0,
