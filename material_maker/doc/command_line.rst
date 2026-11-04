@@ -38,7 +38,8 @@ Modes
 * **--rpc** starts a JSON-RPC server to control Material Maker from scripts (see
   :ref:`scripting-section`), and runs until the server's **quit** method is called
 * **--plugin <command> [<arguments>]** runs a command of a plugin (see :ref:`plugins-section`),
-  with the arguments that follow it
+  with the arguments that follow it, for example **--plugin axf_import material.axf output_dir**
+  to import an AxF material (see :ref:`axf-import-section`)
 
 Plugins can also add modes (such as **--example-thumbnails** in the example plugin) and their
 options, that are listed by **material_maker -- --help** when the plugin is enabled.

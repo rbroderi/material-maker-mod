@@ -80,3 +80,38 @@ The **material_maker/plugins/example** folder contains an example plugin (disabl
 that adds a node, a menu item, an import format (.stripes files), an RPC method, a command, a
 command line mode (**--example-thumbnails**), a section of the 2D preview's export menu and an
 export hook.
+
+.. _axf-import-section:
+
+AxF import
+----------
+
+The **AxF import** plugin (enabled by default) converts X-Rite AxF materials (.axf) to Material
+Maker graphs: **Plugins > Import AxF material...** imports a file and opens the graph, the
+**axf_import** command imports from the command line, and the **import_axf** JSON-RPC method
+(parameters **path** and an optional **output** directory) returns the written graphs. It runs
+the converter **python/axf2ptex.py**, that needs Python 3 with numpy and h5py (*pip install
+numpy h5py*). The plugin runs *python* (*python3* on Linux and macOS), or the Python given by
+the **MATERIAL_MAKER_PYTHON** environment variable. The converter can also be used on its own:
+
+.. code-block:: none
+
+    python python/axf2ptex.py -o imported material.axf
+    material_maker --plugin axf_import material.axf imported
+
+A graph (<name>.ptex) and its textures (<name>_textures) are written next to the AxF file (or
+in the output directory) for each material:
+
+* **SVBRDF** materials (a Lambert diffuse and a Ward, Cook-Torrance, Blinn-Phong or GGX lobe,
+  possibly anisotropic, with Fresnel or a clear coat) become a Material node with albedo,
+  metallic, roughness, normal and anisotropy maps. The measured specular color is converted to
+  the metallic workflow, the anisotropy is imported along U (its direction map is ignored), and
+  non-square textures are cropped to a square (**--fit stretch** stretches them).
+* **Car paints** (CarPaint2) become a **Car Paint Material** node (the plugin depends on the
+  **car_paint** plugin) that renders the measured model, with its color table resampled to the
+  node's 64x64 table. A static PBR approximation (<name>_pbr.ptex) is written too, for other
+  export targets.
+* **BTFs** (DPVF) are decoded and fitted to an SVBRDF (normals and diffuse color from
+  photometric stereo, then a GGX specular lobe per texel). Parallax, self-shadowing and
+  interreflections are lost, and the sheen of fabrics may be imported as a slightly metallic
+  gray specular reflection.

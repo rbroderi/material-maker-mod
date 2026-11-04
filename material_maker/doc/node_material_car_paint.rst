@@ -4,7 +4,8 @@ Car Paint Material node
 The **Car Paint Material** node renders measured car paints, as described by X-Rite's AxF
 CarPaint2 model. It is added by the **Car paint** plugin (enabled by default, see
 :ref:`plugins-section`), and is selected in the Material node's context menu. Its inputs and
-parameters come from AxF car paint measurements.
+parameters come from AxF car paint measurements: importing an AxF car paint (see
+:ref:`axf-import-section`) creates this node with its textures.
 
 .. image:: images/node_material_car_paint.png
 	:align: center
