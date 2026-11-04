@@ -6,6 +6,18 @@ class_name MMGenMaterial
 var buffer_name_prefix : String
 
 var export_last_target : String = ""
+
+## Outputs of the standard Material node (material.mmg), used by the path
+## tracer
+const OUTPUT_ALBEDO : int = 0
+const OUTPUT_ORM : int = 1
+const OUTPUT_EMISSION : int = 2
+const OUTPUT_NORMAL : int = 3
+const OUTPUT_DEPTH : int = 4
+const OUTPUT_SSS : int = 5
+const OUTPUT_HEIGHT : int = 8
+const OUTPUT_EXTRA : int = 14
+const OUTPUT_TRANSMISSION : int = 19
 var export_paths : Dictionary = {}
 var uids = {}
 
@@ -13,6 +25,7 @@ var updating : bool = false
 var update_again : bool = false
 
 var preview_material : ShaderMaterial = null
+var preview_conditionals : String = ""
 var preview_parameters : Dictionary = {}
 var preview_textures = {}
 var preview_texture_dependencies : Dictionary[String, MMTexture] = {}
@@ -41,7 +54,18 @@ func _ready() -> void:
 	preview_material.shader = Shader.new()
 	buffer_name_prefix = "material_%d" % get_instance_id()
 	mm_deps.create_buffer(buffer_name_prefix, self)
+	parameter_changed.connect(on_parameter_changed)
 	update()
+
+## Changing a float parameter only updates a uniform, so the preview shader
+## is regenerated when the change flips one of its $if conditions
+func on_parameter_changed(p : String, _v) -> void:
+	if preview_material == null or get_parameter_def(p).get("type") != "float":
+		return
+	if shader_model.preview_shader.find("$(param:"+p+")") == -1:
+		return
+	if process_conditionals(shader_model.preview_shader) != preview_conditionals:
+		update()
 
 func accept_float_expressions() -> bool:
 	return false
@@ -193,6 +217,7 @@ func update() -> void:
 	if preview_material == null:
 		return
 	var processed_preview_shader : String = process_conditionals(shader_model.preview_shader)
+	preview_conditionals = processed_preview_shader
 	var result = process_shader(processed_preview_shader)
 	result.shader_code = MMGenBase.remove_constant_declarations(result.shader_code)
 	mm_deps.buffer_create_shader_material(buffer_name_prefix, MMShaderMaterial.new(preview_material), result.shader_code)

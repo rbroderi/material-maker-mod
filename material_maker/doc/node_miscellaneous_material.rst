@@ -25,6 +25,11 @@ Inputs
 The **Material** node has an input for each supported property (albedo, metallic,
 roughness, emissive, normal, ambient occlusion, depth maps and subsurface scattering) of the material.
 
+The coat, coat roughness, anisotropy, sheen and transmission inputs are multiplied by
+the corresponding parameters, and when they are not connected the parameter value is used
+alone. In the 3D preview, they are shown using Godot's clear coat, anisotropy, rim and
+back light. The export targets don't use them yet.
+
 Outputs
 +++++++
 
@@ -52,3 +57,8 @@ The **Material** node provides the following parameters:
 * The value of the depth property of the material. The input depth map is multiplied by this value.
 
 * The strength of the subsurface scattering effect.
+
+* The strength and roughness of the clear coat, the anisotropy of the specular highlight,
+  the strength of the sheen (a soft rim light, used for fabrics) and the transmission
+  (light coming through thin surfaces such as leaves). The corresponding inputs are
+  multiplied by these values.

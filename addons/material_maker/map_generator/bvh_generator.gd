@@ -108,7 +108,8 @@ class BVHNode:
 				var vert_a: Vector3 = vertices[tri[0]]
 				var vert_b: Vector3 = vertices[tri[1]]
 				var vert_c: Vector3 = vertices[tri[2]]
-				_append_4(root._node_data, vert_a.x, vert_a.y, vert_a.z)
+				# The face index is used to look up attributes (high poly baking)
+				_append_4(root._node_data, vert_a.x, vert_a.y, vert_a.z, tri[3])
 				_append_4(root._node_data, vert_b.x, vert_b.y, vert_b.z)
 				_append_4(root._node_data, vert_c.x, vert_c.y, vert_c.z)
 			if root == self:
@@ -148,7 +149,8 @@ class BVHNode:
 				var vert_a: Vector3 = vertices[tri[0]]
 				var vert_b: Vector3 = vertices[tri[1]]
 				var vert_c: Vector3 = vertices[tri[2]]
-				_append_4(root._node_data, vert_a.x, vert_a.y, vert_a.z)
+				# The face index is used to look up attributes (high poly baking)
+				_append_4(root._node_data, vert_a.x, vert_a.y, vert_a.z, tri[3])
 				_append_4(root._node_data, vert_b.x, vert_b.y, vert_b.z)
 				_append_4(root._node_data, vert_c.x, vert_c.y, vert_c.z)
 			if root == self:

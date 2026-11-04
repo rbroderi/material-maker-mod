@@ -1,0 +1,714 @@
+[gd_resource type="Resource" script_class="TextResource" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://addons/material_maker/engine/text_resource.gd" id="1_pt"]
+
+[resource]
+script = ExtResource("1_pt")
+text = "#version 450
+
+// Progressive path tracer of the 3D preview (see path_tracer.gd): each
+// invocation traces one sample per pixel and averages it with the previous
+// ones (accumulation). Surfaces use an approximation of OpenPBR: a coat over
+// fuzz over the base (GGX specular, metal or dielectric, and diffuse), lit by
+// the environment and the sun. Transmissive surfaces are glass-like solids
+// that refract light, or thin walls that let a part of the diffuse light
+// through. Subsurface scattering is a random walk inside the object, with a
+// mean free path for each color channel.
+
+layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
+
+@DECLARATIONS
+
+layout(set = 3, binding = 0, std140) restrict buffer MM {
+	int mm_chunk_y;
+};
+
+const float PI = 3.14159265359;
+const float TAU = 2.0*PI;
+
+// ---------- Random numbers ----------
+
+uint rng_state;
+
+uint pcg(uint v) {
+	uint state = v*747796405u+2891336453u;
+	uint word = ((state >> ((state >> 28u)+4u)) ^ state)*277803737u;
+	return (word >> 22u) ^ word;
+}
+
+float rand() {
+	rng_state = pcg(rng_state);
+	return float(rng_state)/4294967296.0;
+}
+
+// ---------- Ray tracing (as the bakers, see map_generator) ----------
+
+float intersect_aabb(vec3 ray_origin, vec3 ray_dir, vec3 box_min, vec3 box_max, bool solid) {
+	// A ray parallel to a slab (null direction component) either stays inside it
+	// or misses the box. Dividing by zero would give 0/0 (NaN) for origins on a
+	// box face, and a small replacement direction gives wrong slabs near faces.
+	vec3 parallel = vec3(equal(ray_dir, vec3(0.0)));
+	vec3 outside = vec3(lessThan(ray_origin, box_min)) + vec3(greaterThan(ray_origin, box_max));
+	if (dot(parallel, outside) > 0.0) {
+		return -1.0;
+	}
+	vec3 safe_dir = mix(ray_dir, vec3(1.0), parallel);
+	vec3 tMin = (box_min - ray_origin) / safe_dir;
+	vec3 tMax = (box_max - ray_origin) / safe_dir;
+	vec3 t1 = mix(min(tMin, tMax), vec3(-1e30), parallel);
+	vec3 t2 = mix(max(tMin, tMax), vec3(1e30), parallel);
+	float tNear = max(max(t1.x, t1.y), t1.z);
+	float tFar = min(min(t2.x, t2.y), t2.z);
+	if (tNear > tFar || (tFar < 0.0 && tNear < 0.0)) {
+		return -1.0;
+	}
+	if (tNear < 0.0) {
+		float temp = tNear;
+		tNear = tFar;
+		tFar = temp;
+		tNear *= float(!solid);
+	}
+	return tNear;
+}
+
+const float EDGE_EPSILON = 0.00001;
+
+float intersects_triangle(vec3 ray_start, vec3 ray_dir, vec3 v0, vec3 v1, vec3 v2, out vec2 bary) {
+	vec3 e1 = v1-v0;
+	vec3 e2 = v2-v0;
+	vec3 h = cross(ray_dir, e2);
+	float a = dot(e1, h);
+	if (abs(a) < 0.0000001) {
+		return -1.0;
+	}
+	float f = 1.0/a;
+	vec3 s = ray_start-v0;
+	float u = f*dot(s, h);
+	if (u < -EDGE_EPSILON || u > 1.0+EDGE_EPSILON) {
+		return -1.0;
+	}
+	vec3 q = cross(s, e1);
+	float v = f*dot(ray_dir, q);
+	if (v < -EDGE_EPSILON || u+v > 1.0+EDGE_EPSILON) {
+		return -1.0;
+	}
+	bary = vec2(u, v);
+	float t = f*dot(e2, q);
+	return t > 0.0000001 ? t : -1.0;
+}
+
+vec4 get_data(int index) {
+	ivec2 data_size = textureSize(bvh_data, 0);
+	return texelFetch(bvh_data, ivec2(index%data_size.x, index/data_size.x), 0);
+}
+
+vec4 get_attribute(int index) {
+	ivec2 data_size = textureSize(attribute_data, 0);
+	return texelFetch(attribute_data, ivec2(index%data_size.x, index/data_size.x), 0);
+}
+
+// The same traversal as the high poly baker (highpoly_fragment.tres)
+float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hit_bary) {
+	hit_face = -1;
+	hit_bary = vec2(0.0);
+	int offset_to_nodes = int(get_data(0)[0]);
+	vec4 root_data_0 = get_data(int(get_data(1)[0]) + offset_to_nodes);
+	vec4 root_data_1 = get_data(int(get_data(1)[0]) + offset_to_nodes + 1);
+	float t = intersect_aabb(ray_start, ray_dir, root_data_0.xyz, root_data_1.xyz, false);
+	if (t == -1.0) {
+		return 65536.0;
+	}
+	float prev_hit = t;
+	t = 65536.0;
+	int stack_point = 0;
+	ivec3 node_stack[128];
+	int curr_node_idx = 0;
+	bool moving_up = false;
+	for (int i = 0; i < 1024; i++) {
+		if (moving_up && stack_point <= 0) {
+			break;
+		}
+		int node_data_off = int(get_data(1 + curr_node_idx)[0]) + offset_to_nodes;
+		vec4 node_data_0 = get_data(node_data_off);
+		vec4 node_data_1 = get_data(node_data_off + 1);
+		int level = int(node_data_0[3]);
+		if (!moving_up) {
+			if (node_data_1[3] > 0.0) {
+				for (int j = node_data_off + 2; j < node_data_off + 2 + int(node_data_1[3]) * 3; j += 3) {
+					vec4 tri_a = get_data(j);
+					vec2 bary;
+					float tri_t = intersects_triangle(ray_start, ray_dir, tri_a.xyz, get_data(j + 1).xyz, get_data(j + 2).xyz, bary);
+					if (tri_t != -1.0 && tri_t < t) {
+						t = tri_t;
+						hit_face = int(tri_a.w);
+						hit_bary = bary;
+					}
+				}
+				stack_point -= 1;
+				if (stack_point <= 0) {
+					break;
+				}
+				if (node_stack[stack_point][1] == level) {
+					if (t < intBitsToFloat(node_stack[stack_point][0])) {
+						stack_point -= 1;
+						moving_up = true;
+					}
+				} else {
+					moving_up = true;
+				}
+				prev_hit = intBitsToFloat(node_stack[stack_point][0]);
+				curr_node_idx = node_stack[stack_point][2];
+			} else {
+				node_stack[stack_point] = ivec3(floatBitsToInt(prev_hit), level, curr_node_idx);
+				stack_point += 1;
+				ivec2 child_indices = ivec2(get_data(node_data_off + 2).xy);
+				int left_data_off = int(get_data(1 + child_indices[0])[0]) + offset_to_nodes;
+				vec4 left_data_0 = get_data(left_data_off);
+				vec4 left_data_1 = get_data(left_data_off + 1);
+				int right_data_off = int(get_data(1 + child_indices[1])[0]) + offset_to_nodes;
+				vec4 right_data_0 = get_data(right_data_off);
+				vec4 right_data_1 = get_data(right_data_off + 1);
+				float t_left = intersect_aabb(ray_start, ray_dir, left_data_0.xyz, left_data_1.xyz, true);
+				float t_right = intersect_aabb(ray_start, ray_dir, right_data_0.xyz, right_data_1.xyz, true);
+				// Nodes farther than the best hit cannot contain a better hit
+				if (t_left > t) {
+					t_left = -1.0;
+				}
+				if (t_right > t) {
+					t_right = -1.0;
+				}
+				if (t_right == -1.0 && t_left != -1.0) {
+					prev_hit = t_left;
+					curr_node_idx = child_indices[0];
+				} else if (t_left == -1.0 && t_right != -1.0) {
+					prev_hit = t_right;
+					curr_node_idx = child_indices[1];
+				} else if (t_left < t_right && t_left != -1.0) {
+					node_stack[stack_point] = ivec3(floatBitsToInt(t_right), int(right_data_0[3]), child_indices[1]);
+					stack_point += 1;
+					prev_hit = t_left;
+					curr_node_idx = child_indices[0];
+				} else if (t_right <= t_left && t_right != -1.0) {
+					node_stack[stack_point] = ivec3(floatBitsToInt(t_left), int(left_data_0[3]), child_indices[0]);
+					stack_point += 1;
+					prev_hit = t_right;
+					curr_node_idx = child_indices[1];
+				} else {
+					stack_point -= 2;
+					if (stack_point <= 0) {
+						break;
+					}
+					if (node_stack[stack_point][1] == level) {
+						if (t < intBitsToFloat(node_stack[stack_point][0])) {
+							stack_point -= 1;
+							moving_up = true;
+						}
+					} else {
+						moving_up = true;
+					}
+					prev_hit = intBitsToFloat(node_stack[max(stack_point, 0)][0]);
+					curr_node_idx = node_stack[max(stack_point, 0)][2];
+				}
+			}
+		} else {
+			stack_point -= 1;
+			if (stack_point <= 0) {
+				break;
+			}
+			if (node_stack[stack_point][1] == level) {
+				if (t < intBitsToFloat(node_stack[stack_point][0])) {
+					stack_point -= 1;
+				} else {
+					moving_up = false;
+				}
+			}
+			prev_hit = intBitsToFloat(node_stack[max(stack_point, 0)][0]);
+			curr_node_idx = node_stack[max(stack_point, 0)][2];
+		}
+	}
+	return t;
+}
+
+// ---------- Environment ----------
+
+vec3 environment(vec3 dir) {
+	// Equirectangular panorama, rotated around the vertical axis, mapped as
+	// Godot's panorama skies (-Z at the left edge and the center is +Z)
+	float c = cos(env_rotation);
+	float s = sin(env_rotation);
+	dir = vec3(c*dir.x-s*dir.z, dir.y, s*dir.x+c*dir.z);
+	vec2 uv = vec2(fract(atan(dir.x, -dir.z)/TAU), acos(clamp(dir.y, -1.0, 1.0))/PI);
+	return env_energy*textureLod(env_texture, uv, 0.0).rgb;
+}
+
+// ---------- Materials ----------
+
+vec3 srgb_to_linear(vec3 c) {
+	return mix(pow((c+vec3(0.055))/1.055, vec3(2.4)), c/12.92, vec3(lessThan(c, vec3(0.04045))));
+}
+
+float ggx_d(float NdotH, float a) {
+	float a2 = a*a;
+	float d = NdotH*NdotH*(a2-1.0)+1.0;
+	return a2/(PI*d*d);
+}
+
+float smith_g1(float NdotX, float a) {
+	float a2 = a*a;
+	return 2.0*NdotX/(NdotX+sqrt(a2+(1.0-a2)*NdotX*NdotX));
+}
+
+// A half vector following the GGX distribution, around the normal n
+vec3 sample_ggx(vec3 n, float a) {
+	float u1 = rand();
+	float u2 = rand();
+	float phi = TAU*u1;
+	float cos_theta = sqrt((1.0-u2)/(1.0+(a*a-1.0)*u2));
+	float sin_theta = sqrt(max(1.0-cos_theta*cos_theta, 0.0));
+	vec3 t = normalize(abs(n.y) < 0.99 ? cross(vec3(0.0, 1.0, 0.0), n) : cross(vec3(1.0, 0.0, 0.0), n));
+	vec3 b = cross(n, t);
+	return normalize(t*cos(phi)*sin_theta+b*sin(phi)*sin_theta+n*cos_theta);
+}
+
+vec3 sample_cosine(vec3 n) {
+	float u1 = rand();
+	float u2 = rand();
+	float r = sqrt(u1);
+	float phi = TAU*u2;
+	vec3 t = normalize(abs(n.y) < 0.99 ? cross(vec3(0.0, 1.0, 0.0), n) : cross(vec3(1.0, 0.0, 0.0), n));
+	vec3 b = cross(n, t);
+	return normalize(t*r*cos(phi)+b*r*sin(phi)+n*sqrt(max(1.0-u1, 0.0)));
+}
+
+// Reflects the ray on a GGX lobe, returns the weight (f*cos/pdf) or 0
+vec3 ggx_bounce(inout vec3 dir, vec3 n, vec3 v, float a, vec3 f0) {
+	vec3 h = sample_ggx(n, a);
+	vec3 l = reflect(-v, h);
+	float NdotL = dot(n, l);
+	float NdotV = max(dot(n, v), 0.0001);
+	if (NdotL <= 0.0) {
+		return vec3(0.0);
+	}
+	float VdotH = max(dot(v, h), 0.0001);
+	float NdotH = max(dot(n, h), 0.0001);
+	vec3 f = f0+(vec3(1.0)-f0)*pow(1.0-VdotH, 5.0);
+	dir = l;
+	return f*smith_g1(NdotV, a)*smith_g1(NdotL, a)*VdotH/(NdotH*NdotV);
+}
+
+// The BSDF times the cosine for a light direction l (used for the sun), as
+// sampled in main(). transmission is the part of the diffuse light that is
+// not reflected at this point: it goes through thin walls (light refracted by
+// solids is added by dielectric_transmission()).
+vec3 evaluate_bsdf(vec3 n, vec3 v, vec3 l, vec3 albedo, float metallic, float roughness, float coat, float coat_roughness, float fuzz, float transmission) {
+	float NdotV = max(dot(n, v), 0.0001);
+	float NdotL = dot(n, l);
+	float cNdotL = abs(NdotL);
+	float fresnel = pow(1.0-NdotV, 5.0);
+	float below_coat = 1.0-coat*(0.04+0.96*fresnel);
+	float below_fuzz = 1.0-0.5*fuzz;
+	vec3 diffuse = albedo*(1.0-metallic)*(1.0-(0.04+0.96*fresnel))/PI;
+	if (NdotL <= 0.0) {
+		// Light from behind only goes through thin walls
+		return thin_walled != 0 ? below_coat*below_fuzz*transmission*diffuse*cNdotL : vec3(0.0);
+	}
+	vec3 h = normalize(v+l);
+	float NdotH = max(dot(n, h), 0.0001);
+	float VdotH = max(dot(v, h), 0.0001);
+	float a = roughness*roughness;
+	vec3 f0 = mix(vec3(0.04), albedo, metallic);
+	vec3 f = f0+(vec3(1.0)-f0)*pow(1.0-VdotH, 5.0);
+	vec3 specular = ggx_d(NdotH, a)*smith_g1(NdotV, a)*smith_g1(cNdotL, a)*f/(4.0*NdotV*cNdotL);
+	float ca = coat_roughness*coat_roughness;
+	float coat_f = 0.04+0.96*pow(1.0-VdotH, 5.0);
+	float coat_specular = coat*ggx_d(NdotH, ca)*smith_g1(NdotV, ca)*smith_g1(cNdotL, ca)*coat_f/(4.0*NdotV*cNdotL);
+	vec3 base = specular+(1.0-transmission)*diffuse;
+	return (below_coat*(below_fuzz*base+vec3(0.5*fuzz/PI))+vec3(coat_specular))*cNdotL;
+}
+
+// Fresnel reflectance of a dielectric interface (eta = n_from/n_to), or 1.0
+// for total internal reflection
+float fresnel_dielectric(float cos_i, float eta) {
+	float sin2_t = eta*eta*max(1.0-cos_i*cos_i, 0.0);
+	if (sin2_t >= 1.0) {
+		return 1.0;
+	}
+	float cos_t = sqrt(1.0-sin2_t);
+	float rs = (eta*cos_i-cos_t)/(eta*cos_i+cos_t);
+	float rp = (cos_i-eta*cos_t)/(cos_i+eta*cos_t);
+	return 0.5*(rs*rs+rp*rp);
+}
+
+// Rough dielectric (GGX microfacets): reflects or refracts the ray (chosen by
+// Fresnel), returns the weight (Walter et al. 2007, for half vectors sampled
+// from D(h)cos)
+vec3 dielectric_bounce(inout vec3 dir, vec3 n, vec3 v, float a, float eta) {
+	vec3 h = sample_ggx(n, a);
+	float VdotH = dot(v, h);
+	if (VdotH <= 0.0) {
+		return vec3(0.0);
+	}
+	float f = fresnel_dielectric(VdotH, eta);
+	vec3 l;
+	if (rand() < f) {
+		l = reflect(-v, h);
+		if (dot(n, l) <= 0.0) {
+			return vec3(0.0);
+		}
+	} else {
+		l = refract(-v, h, eta);
+		if (dot(n, l) >= 0.0 || dot(l, l) == 0.0) {
+			return vec3(0.0);
+		}
+	}
+	float NdotV = max(dot(n, v), 0.0001);
+	float NdotH = max(dot(n, h), 0.0001);
+	dir = l;
+	return vec3(smith_g1(NdotV, a)*smith_g1(abs(dot(n, l)), a)*VdotH/(NdotH*NdotV));
+}
+
+// The refraction of dielectric_bounce() for a given direction l on the other
+// side of the surface: returns the BSDF times the cosine, and the probability
+// density (per solid angle) of dielectric_bounce() choosing l
+float dielectric_transmission(vec3 n, vec3 v, vec3 l, float a, float eta, out float pdf) {
+	pdf = 0.0;
+	if (dot(n, l) >= 0.0) {
+		return 0.0;
+	}
+	// Half vector of the refraction (Walter et al. 2007), on the side of n
+	vec3 h = eta*v+l;
+	float h_length2 = dot(h, h);
+	if (h_length2 < 0.0000001) {
+		return 0.0;
+	}
+	h = normalize(h);
+	if (dot(h, n) < 0.0) {
+		h = -h;
+	}
+	float VdotH = dot(v, h);
+	float LdotH = dot(l, h);
+	if (VdotH <= 0.0 || LdotH >= 0.0) {
+		return 0.0;
+	}
+	float NdotV = max(dot(n, v), 0.0001);
+	float NdotH = max(dot(n, h), 0.0001);
+	float t = (1.0-fresnel_dielectric(VdotH, eta))*ggx_d(NdotH, a);
+	// Change of variables from the half vector to l
+	float jacobian = -LdotH/h_length2;
+	pdf = t*NdotH*jacobian;
+	return t*smith_g1(NdotV, a)*smith_g1(-dot(n, l), a)*VdotH*jacobian/NdotV;
+}
+
+// Single scattering albedo that gives a multiple scattering albedo (van de
+// Hulst's inversion, as in Pixar's PxrSurface)
+vec3 single_scattering_albedo(vec3 albedo) {
+	vec3 a = clamp(albedo, vec3(0.0), vec3(0.999));
+	vec3 s = 4.09712+4.20863*a-sqrt(9.59217+41.6808*a+17.7126*a*a);
+	return vec3(1.0)-s*s;
+}
+
+vec3 sample_sphere() {
+	float z = 1.0-2.0*rand();
+	float r = sqrt(max(1.0-z*z, 0.0));
+	float phi = TAU*rand();
+	return vec3(r*cos(phi), r*sin(phi), z);
+}
+
+// The interpolated normal of a face
+vec3 face_normal(int face, vec2 bary) {
+	float w0 = 1.0-bary.x-bary.y;
+	return normalize(w0*get_attribute(9*face).xyz+bary.x*get_attribute(9*face+3).xyz+bary.y*get_attribute(9*face+6).xyz);
+}
+
+// A direction in the cone of the sun
+vec3 sample_sun() {
+	float cos_max = cos(sun_angle);
+	float cos_theta = 1.0-rand()*(1.0-cos_max);
+	float sin_theta = sqrt(max(1.0-cos_theta*cos_theta, 0.0));
+	float phi = TAU*rand();
+	vec3 n = sun_direction;
+	vec3 t = normalize(abs(n.y) < 0.99 ? cross(vec3(0.0, 1.0, 0.0), n) : cross(vec3(1.0, 0.0, 0.0), n));
+	vec3 b = cross(n, t);
+	return normalize(t*cos(phi)*sin_theta+b*sin(phi)*sin_theta+n*cos_theta);
+}
+
+void main() {
+	vec2 pixel = gl_GlobalInvocationID.xy+vec2(0.5, 0.5+mm_chunk_y);
+	vec2 image_size = imageSize(OUTPUT_TEXTURE);
+	rng_state = pcg(uint(pixel.x)+uint(pixel.y)*65536u)^pcg(uint(sample_index)*9781u+1u);
+	// Camera ray through a random point of the pixel (antialiasing): pixel is
+	// the pixel's center, so the offsets are in [-0.5, 0.5)
+	vec2 ndc = 2.0*(pixel+vec2(rand(), rand())-vec2(0.5))/image_size-vec2(1.0);
+	float tan_half_fov = tan(0.5*camera_fov);
+	vec3 dir = normalize(camera_forward+tan_half_fov*(ndc.x*image_size.x/image_size.y*camera_right-ndc.y*camera_up));
+	vec3 origin = camera_position;
+	vec3 radiance = vec3(0.0);
+	vec3 throughput = vec3(1.0);
+	float alpha = 1.0;
+	// When the ray was refracted by a solid: the probability density of its
+	// direction, to combine the sun seen through the solid with the sun sampled
+	// directly (multiple importance sampling, balance heuristic)
+	float refraction_pdf = 0.0;
+	// Sun light refracted by solids (kept apart, so other renders are computed
+	// exactly as without it)
+	vec3 refracted_sun = vec3(0.0);
+	bool has_refracted_sun = false;
+	for (int bounce = 0; bounce < max_bounces; ++bounce) {
+		int face;
+		vec2 bary;
+		float t = intersects_bvh(origin, dir, face, bary);
+		if (face < 0 || t >= 65536.0) {
+			if (bounce == 0 && transparent_background != 0) {
+				alpha = 0.0;
+			} else if (bounce == 0 && background_color.a > 0.0) {
+				radiance += background_color.rgb;
+			} else {
+				radiance += throughput*environment(dir);
+				// The sun seen through a refracting solid
+				if (refraction_pdf > 0.0 && sun_energy > 0.0 && dot(dir, sun_direction) >= cos(sun_angle)) {
+					float sun_solid_angle = TAU*(1.0-cos(sun_angle));
+					refracted_sun += throughput*sun_color*(PI*sun_energy/sun_solid_angle)*(refraction_pdf/(refraction_pdf+1.0/sun_solid_angle));
+					has_refracted_sun = true;
+				}
+			}
+			break;
+		}
+		refraction_pdf = 0.0;
+		vec3 position = origin+t*dir;
+		// Interpolated attributes: per vertex, normal and u, tangent, v
+		float w0 = 1.0-bary.x-bary.y;
+		vec4 a0 = get_attribute(9*face);
+		vec4 a1 = get_attribute(9*face+3);
+		vec4 a2 = get_attribute(9*face+6);
+		vec4 t0 = get_attribute(9*face+1);
+		vec4 t1 = get_attribute(9*face+4);
+		vec4 t2 = get_attribute(9*face+7);
+		vec2 uv = vec2(w0*a0.w+bary.x*a1.w+bary.y*a2.w, w0*get_attribute(9*face+2).x+bary.x*get_attribute(9*face+5).x+bary.y*get_attribute(9*face+8).x);
+		vec3 geometric_normal = normalize(w0*a0.xyz+bary.x*a1.xyz+bary.y*a2.xyz);
+		vec3 tangent = normalize(w0*t0.xyz+bary.x*t1.xyz+bary.y*t2.xyz);
+		bool front = dot(geometric_normal, dir) < 0.0;
+		if (!front) {
+			geometric_normal = -geometric_normal;
+		}
+		vec3 binormal = cross(geometric_normal, tangent)*(t0.w < 0.0 ? -1.0 : 1.0);
+		uv = fract(uv*uv_scale);
+		// Normal map (OpenGL convention), as Godot's NORMAL_MAP and
+		// NORMAL_MAP_DEPTH: z is rebuilt from x and y
+		vec3 nm = vec3(textureLod(normal_tex, uv, 0.0).rg*2.0-vec2(1.0), 0.0);
+		nm.z = sqrt(max(0.0, 1.0-dot(nm.xy, nm.xy)));
+		vec3 n = normalize(mix(geometric_normal, tangent*nm.x+binormal*nm.y+geometric_normal*nm.z, normal_strength));
+		if (dot(n, -dir) <= 0.0) {
+			n = geometric_normal;
+		}
+		vec3 v = -dir;
+		vec4 albedo_sample = textureLod(albedo_tex, uv, 0.0);
+		vec3 albedo = albedo_color.rgb*srgb_to_linear(albedo_sample.rgb);
+		vec4 orm = textureLod(orm_tex, uv, 0.0);
+		float metallic = clamp(metallic_value*orm.b, 0.0, 1.0);
+		float roughness = clamp(roughness_value*orm.g, 0.02, 1.0);
+		vec4 extra = textureLod(extra_tex, uv, 0.0);
+		float coat = clamp(coat_value*extra.r, 0.0, 1.0);
+		float coat_roughness = clamp(coat_roughness_value*extra.g, 0.02, 1.0);
+		float fuzz = clamp(sheen_value*extra.a, 0.0, 1.0);
+		float transmission = clamp(transmission_value*textureLod(transmission_tex, uv, 0.0).r, 0.0, 1.0);
+		// Subsurface scattering enters solids from the outside (thin walls
+		// have no volume)
+		float subsurface = (front && thin_walled == 0) ? clamp(sss_value*textureLod(sss_tex, uv, 0.0).r, 0.0, 1.0) : 0.0;
+		radiance += throughput*emission_energy*srgb_to_linear(textureLod(emission_tex, uv, 0.0).rgb);
+		vec3 next_dir = dir;
+		vec3 weight;
+		// Direct light from the sun (it is not in the environment)
+		if (sun_energy > 0.0) {
+			vec3 l = sample_sun();
+			vec3 shadow_origin = position+geometric_normal*(dot(l, geometric_normal) > 0.0 ? 1.0 : -1.0)*0.0005*scene_scale;
+			int shadow_face;
+			vec2 shadow_bary;
+			intersects_bvh(shadow_origin, l, shadow_face, shadow_bary);
+			if (shadow_face < 0) {
+				// The subsurface scattered part of the diffuse light is lit where
+				// the random walk leaves the object
+				float sun_transmission = transmission;
+				if (subsurface > 0.0) {
+					sun_transmission = 1.0-(1.0-transmission)*(1.0-subsurface);
+				}
+				radiance += throughput*sun_color*(PI*sun_energy)*evaluate_bsdf(n, v, l, albedo, metallic, roughness, coat, coat_roughness, fuzz, sun_transmission);
+				// Sun light refracted by solids (from the other side of the
+				// surface), weighted against the sun seen by refracted rays. After
+				// the last bounce, refracted rays are not traced.
+				float p_refraction = thin_walled == 0 ? transmission*(1.0-metallic) : 0.0;
+				if (p_refraction > 0.0 && dot(l, geometric_normal) < 0.0) {
+					float layers = (1.0-coat*(0.04+0.96*pow(1.0-max(dot(n, v), 0.0001), 5.0)))*(1.0-0.5*fuzz)*p_refraction;
+					float pdf;
+					float f = dielectric_transmission(n, v, l, roughness*roughness, front ? 1.0/1.5 : 1.5, pdf);
+					if (f > 0.0) {
+						// The sun is a cone of directions (sample_sun()), of this solid angle
+						float sun_solid_angle = TAU*(1.0-cos(sun_angle));
+						float mis = bounce < max_bounces-1 ? 1.0/(1.0+layers*pdf*sun_solid_angle) : 1.0;
+						refracted_sun += throughput*sun_color*(PI*sun_energy*layers*f*mis)*sqrt(albedo);
+						has_refracted_sun = true;
+					}
+				}
+			}
+		}
+		float NdotV = max(dot(n, v), 0.0001);
+		float coat_fresnel = 0.04+0.96*pow(1.0-NdotV, 5.0);
+		float p_coat = coat*coat_fresnel;
+		if (rand() < p_coat) {
+			// Coat reflection (IOR 1.5)
+			weight = ggx_bounce(next_dir, n, v, coat_roughness*coat_roughness, vec3(0.04))/max(coat_fresnel, 0.0001);
+		} else {
+			// Below the coat: fuzz, then the base
+			float p_fuzz = 0.5*fuzz;
+			if (rand() < p_fuzz) {
+				next_dir = sample_cosine(n);
+				weight = vec3(1.0);
+			} else {
+				float base_fresnel = 0.04+0.96*pow(1.0-NdotV, 5.0);
+				// Solid transmission replaces the diffuse and specular layers of
+				// the dielectric part of the base
+				float p_transmission = thin_walled == 0 ? transmission*(1.0-metallic) : 0.0;
+				if (p_transmission > 0.0 && rand() < p_transmission) {
+					// Refraction in a solid dielectric (IOR 1.5), tinted by the
+					// albedo each time the ray goes through the surface
+					float eta = front ? 1.0/1.5 : 1.5;
+					weight = dielectric_bounce(next_dir, n, v, roughness*roughness, eta);
+					if (dot(next_dir, geometric_normal) < 0.0) {
+						weight *= sqrt(albedo);
+						if (sun_energy > 0.0 && dot(weight, weight) > 0.0) {
+							float pdf;
+							dielectric_transmission(n, v, next_dir, roughness*roughness, eta, pdf);
+							refraction_pdf = (1.0-p_coat)*(1.0-p_fuzz)*p_transmission*pdf;
+						}
+					}
+				} else {
+					// The other layers: metal, and the opaque part of the dielectric
+					float base_metallic = metallic;
+					if (p_transmission > 0.0) {
+						base_metallic = min(metallic/max(1.0-p_transmission, 0.0001), 1.0);
+					}
+					vec3 f0 = mix(vec3(0.04), albedo, base_metallic);
+					float p_specular = mix(base_fresnel, 1.0, base_metallic);
+					if (rand() < p_specular) {
+						weight = ggx_bounce(next_dir, n, v, roughness*roughness, f0)/p_specular;
+					} else if (subsurface > 0.0 && rand() < subsurface) {
+						// Subsurface scattering: a random walk in the volume, from
+						// below the surface to where the path comes out
+						weight = vec3(1.0);
+						vec3 scattering = single_scattering_albedo(albedo);
+						// Mean free paths of red, green and blue light
+						vec3 mean_free_path = sss_radius*scene_scale;
+						// With different mean free paths, each distance is sampled
+						// for a color chosen by the path's weight, and the weights
+						// account for the probabilities of all colors (spectral
+						// multiple importance sampling)
+						bool chromatic = mean_free_path.r != mean_free_path.g || mean_free_path.r != mean_free_path.b;
+						vec3 color_p = vec3(1.0/3.0);
+						vec3 p = position-geometric_normal*0.0005*scene_scale;
+						vec3 d = -sample_cosine(geometric_normal);
+						bool exited = false;
+						// Light albedos need long walks (64 steps lose 4% of the
+						// light of an albedo of 0.8, 256 steps less than 0.1%)
+						for (int walk_step = 0; walk_step < 256; ++walk_step) {
+							float free_path;
+							if (chromatic) {
+								color_p = throughput*weight;
+								float total = color_p.r+color_p.g+color_p.b;
+								color_p = total > 0.0 ? color_p/total : vec3(1.0/3.0);
+								float u = rand();
+								float color_mean_free_path = u < color_p.r ? mean_free_path.r : (u < color_p.r+color_p.g ? mean_free_path.g : mean_free_path.b);
+								free_path = -log(max(1.0-rand(), 0.000001))*color_mean_free_path;
+							} else {
+								free_path = -log(max(1.0-rand(), 0.000001))*mean_free_path.r;
+							}
+							int walk_face;
+							vec2 walk_bary;
+							float walk_t = intersects_bvh(p, d, walk_face, walk_bary);
+							if (walk_face < 0) {
+								// Open meshes: the walk leaves the object
+								next_dir = d;
+								position = p;
+								geometric_normal = d;
+								exited = true;
+								break;
+							}
+							if (walk_t < free_path) {
+								if (chromatic) {
+									// Probability of no collision before the surface
+									vec3 no_collision = exp(-walk_t/mean_free_path);
+									float q = dot(color_p, no_collision);
+									weight = q > 0.0 ? weight*no_collision/q : vec3(0.0);
+								}
+								// Out of the volume, diffusely
+								vec3 out_normal = face_normal(walk_face, walk_bary);
+								if (dot(out_normal, d) < 0.0) {
+									out_normal = -out_normal;
+								}
+								position = p+walk_t*d;
+								geometric_normal = out_normal;
+								next_dir = sample_cosine(out_normal);
+								exited = true;
+								// Direct light from the sun where the path comes out
+								if (sun_energy > 0.0) {
+									vec3 l = sample_sun();
+									float NdotL = dot(out_normal, l);
+									if (NdotL > 0.0) {
+										int shadow_face;
+										vec2 shadow_bary;
+										intersects_bvh(position+out_normal*0.0005*scene_scale, l, shadow_face, shadow_bary);
+										if (shadow_face < 0) {
+											radiance += throughput*weight*sun_color*sun_energy*NdotL;
+										}
+									}
+								}
+								break;
+							}
+							p += free_path*d;
+							if (chromatic) {
+								// Probability density of a collision at this distance
+								vec3 collision = exp(-free_path/mean_free_path)/mean_free_path;
+								float q = dot(color_p, collision);
+								weight = q > 0.0 ? weight*scattering*collision/q : vec3(0.0);
+							} else {
+								weight *= scattering;
+							}
+							d = sample_sphere();
+						}
+						if (!exited) {
+							weight = vec3(0.0);
+						}
+					} else {
+						next_dir = sample_cosine(n);
+						if (thin_walled != 0 && transmission > 0.0 && rand() < transmission) {
+							// Thin walled transmission: through the surface
+							next_dir = -next_dir;
+						}
+						weight = albedo*(1.0-base_metallic)/(1.0-p_specular)*(1.0-base_fresnel);
+					}
+				}
+			}
+		}
+		throughput *= weight;
+		if (dot(throughput, throughput) < 0.0000001) {
+			break;
+		}
+		// Russian roulette
+		if (bounce >= 3) {
+			float survive = clamp(max(max(throughput.r, throughput.g), throughput.b), 0.05, 0.95);
+			if (rand() > survive) {
+				break;
+			}
+			throughput /= survive;
+		}
+		origin = position+geometric_normal*(dot(next_dir, geometric_normal) > 0.0 ? 1.0 : -1.0)*0.0005*scene_scale;
+		dir = next_dir;
+	}
+	if (has_refracted_sun) {
+		radiance += refracted_sun;
+	}
+	// Clamped samples avoid fireflies
+	radiance = min(radiance, vec3(firefly_clamp));
+	vec4 previous = sample_index > 0 ? texelFetch(accumulation, ivec2(pixel), 0) : vec4(0.0);
+	float n_samples = float(sample_index);
+	imageStore(OUTPUT_TEXTURE, ivec2(pixel), (previous*n_samples+vec4(radiance, alpha))/(n_samples+1.0));
+}
+"

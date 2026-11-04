@@ -3372,6 +3372,36 @@
 				"label": "",
 				"name": "sss_tex",
 				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"name": "coat_tex",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"name": "coat_roughness_tex",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"name": "anisotropy_tex",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"name": "sheen_tex",
+				"type": "f"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"name": "transmission_tex",
+				"type": "f"
 			}
 		],
 		"instance": "",
@@ -3431,6 +3461,30 @@
 			},
 			{
 				"f": "$roughness_tex($uv)",
+				"type": "f"
+			},
+			{
+				"rgba": "vec4($coat_tex($uv), $coat_roughness_tex($uv), $anisotropy_tex($uv), $sheen_tex($uv))",
+				"type": "rgba"
+			},
+			{
+				"f": "$coat_tex($uv)",
+				"type": "f"
+			},
+			{
+				"f": "$coat_roughness_tex($uv)",
+				"type": "f"
+			},
+			{
+				"f": "$anisotropy_tex($uv)",
+				"type": "f"
+			},
+			{
+				"f": "$sheen_tex($uv)",
+				"type": "f"
+			},
+			{
+				"f": "$transmission_tex($uv)",
 				"type": "f"
 			}
 		],
@@ -3523,6 +3577,61 @@
 				"type": "float"
 			},
 			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Coat",
+				"max": 1,
+				"min": 0,
+				"name": "coat",
+				"step": 0.01,
+				"type": "float",
+				"longdesc": "Coat, multiplied by the coat input"
+			},
+			{
+				"control": "None",
+				"default": 0.1,
+				"label": "Coat roughness",
+				"max": 1,
+				"min": 0,
+				"name": "coat_roughness",
+				"step": 0.01,
+				"type": "float",
+				"longdesc": "Coat roughness, multiplied by the coat roughness input"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Anisotropy",
+				"max": 1,
+				"min": 0,
+				"name": "anisotropy",
+				"step": 0.01,
+				"type": "float",
+				"longdesc": "Anisotropy, multiplied by the anisotropy input"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Sheen",
+				"max": 1,
+				"min": 0,
+				"name": "sheen",
+				"step": 0.01,
+				"type": "float",
+				"longdesc": "Sheen, multiplied by the sheen input"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Transmission",
+				"max": 1,
+				"min": 0,
+				"name": "transmission",
+				"step": 0.01,
+				"type": "float",
+				"longdesc": "Transmission, multiplied by the transmission input"
+			},
+			{
 				"default": 11,
 				"first": 6,
 				"label": "Size",
@@ -3545,6 +3654,12 @@
 			"uniform sampler2D texture_orm : hint_default_white; // $output(1)",
 			"uniform sampler2D texture_subsurface_scattering : hint_default_white; // $output(5)",
 			"uniform sampler2D texture_depth : hint_default_black; // $output(4)",
+			"$if (($(connected:coat_tex) or $(connected:coat_roughness_tex)) and $(param:coat) > 0.0) or ($(connected:anisotropy_tex) and $(param:anisotropy) > 0.0) or ($(connected:sheen_tex) and $(param:sheen) > 0.0)",
+			"uniform sampler2D texture_extra : hint_default_white; // $output(14)",
+			"$fi",
+			"$if $(connected:transmission_tex) and $(param:transmission) > 0.0",
+			"uniform sampler2D texture_transmission : hint_default_white; // $output(19)",
+			"$fi",
 			"uniform int depth_min_layers = 64;",
 			"uniform int depth_max_layers = 64;",
 			"uniform vec2 depth_flip = vec2(1.0);",
@@ -3610,6 +3725,31 @@
 			"$if $(connected:sss_tex)",
 			"\tfloat sss_tex = texture(texture_subsurface_scattering, base_uv).r;",
 			"\tSSS_STRENGTH=$sss*sss_tex;",
+			"$fi",
+			"$if $(param:coat) > 0.0 or $(param:anisotropy) > 0.0 or $(param:sheen) > 0.0",
+			"\t// Coat, anisotropy and sheen (rim light), only when used so other materials render as before",
+			"\tvec4 extra_tex = vec4(1.0);",
+			"$fi",
+			"$if (($(connected:coat_tex) or $(connected:coat_roughness_tex)) and $(param:coat) > 0.0) or ($(connected:anisotropy_tex) and $(param:anisotropy) > 0.0) or ($(connected:sheen_tex) and $(param:sheen) > 0.0)",
+			"\textra_tex = texture(texture_extra, base_uv);",
+			"$fi",
+			"$if $(param:coat) > 0.0",
+			"\tCLEARCOAT = $coat*extra_tex.r;",
+			"\tCLEARCOAT_ROUGHNESS = $coat_roughness*extra_tex.g;",
+			"$fi",
+			"$if $(param:anisotropy) > 0.0",
+			"\tANISOTROPY = $anisotropy*extra_tex.b;",
+			"$fi",
+			"$if $(param:sheen) > 0.0",
+			"\tRIM = $sheen*extra_tex.a;",
+			"\tRIM_TINT = 0.5;",
+			"$fi",
+			"$if $(param:transmission) > 0.0 and $(connected:transmission_tex)",
+			"\t// Transmission (back light)",
+			"\tBACKLIGHT = vec3($transmission*texture(texture_transmission, base_uv).r);",
+			"$fi",
+			"$if $(param:transmission) > 0.0 and not $(connected:transmission_tex)",
+			"\tBACKLIGHT = vec3($transmission);",
 			"$fi",
 			"$end_generate",
 			"}",

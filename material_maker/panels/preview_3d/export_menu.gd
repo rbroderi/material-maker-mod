@@ -4,6 +4,14 @@ extends PanelContainer
 const SETTING_GENERATE_MAP_EXPORT_PATH := "3D_generate_map_export_path"
 const SETTING_GENERATE_MAP_LAST_TYPE := "3D_generage_map_type"
 const SETTING_GENERATE_MAP_RESOLUTION := "3D_generate_map_resolution"
+const SETTING_RENDER_SIZE := "3D_render_size"
+const SETTING_RENDER_SAMPLES := "3D_render_samples"
+const SETTING_RENDER_TRANSPARENT := "3D_render_transparent"
+const SETTING_RENDER_DISPLACEMENT := "3D_render_displacement"
+const SETTING_RENDER_THIN_WALLED := "3D_render_thin_walled"
+const SETTING_RENDER_SSS_RADIUS := "3D_render_sss_radius"
+const SETTING_RENDER_SSS_COLOR := "3D_render_sss_color"
+const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 
 @onready var preview3D := owner
 
@@ -13,8 +21,141 @@ const SETTING_GENERATE_MAP_RESOLUTION := "3D_generate_map_resolution"
 @onready var MapExportFileResultLabel := %MapExportFileResultLabel
 @onready var MapResolution := %MapResolution
 
+var render_separator : HSeparator
+var render_size : SpinBox
+var render_samples : SpinBox
+var render_transparent : CheckBox
+var render_displacement : CheckBox
+var render_thin_walled : CheckBox
+var render_sss_radius : SpinBox
+var render_sss_color : ColorPickerButton
+var render_button : Button
+var turntable_frames : SpinBox
+var turntable_button : Button
+
+
 func _ready() -> void:
-	pass
+	add_render_options()
+
+## Map generation is only available for custom meshes
+func set_map_generation_visible(v : bool) -> void:
+	for n in [ "GenerateMapLabel", "GenerateMapsSection", "GenerateMapButton" ]:
+		$VBoxContainer.get_node(n).visible = v
+	render_separator.visible = v
+	size = Vector2()
+
+func get_config_value(setting : String, default):
+	return mm_globals.get_config(setting) if mm_globals.has_config(setting) else default
+
+func add_spin_box(parent : Control, label : String, minimum : float, maximum : float, setting : String, default : float, step : float = 1.0) -> SpinBox:
+	var l : Label = Label.new()
+	l.text = label
+	parent.add_child(l)
+	var spin_box : SpinBox = SpinBox.new()
+	spin_box.min_value = minimum
+	spin_box.max_value = maximum
+	spin_box.step = step
+	spin_box.value = get_config_value(setting, default)
+	spin_box.value_changed.connect(func(v): mm_globals.set_config(setting, v))
+	parent.add_child(spin_box)
+	return spin_box
+
+## A check box saved in a setting
+func add_check_box(parent : Control, text : String, tooltip : String, setting : String, default : bool) -> CheckBox:
+	var check_box : CheckBox = CheckBox.new()
+	check_box.text = text
+	check_box.tooltip_text = tooltip
+	check_box.button_pressed = get_config_value(setting, default)
+	check_box.toggled.connect(func(v): mm_globals.set_config(setting, v))
+	parent.add_child(check_box)
+	return check_box
+
+## Path traced renders and turntables of the preview
+func add_render_options() -> void:
+	var box : VBoxContainer = $VBoxContainer
+	render_separator = HSeparator.new()
+	box.add_child(render_separator)
+	var title : Label = Label.new()
+	title.text = "Render"
+	box.add_child(title)
+	var grid : GridContainer = GridContainer.new()
+	grid.columns = 2
+	box.add_child(grid)
+	render_size = add_spin_box(grid, "Size", 64, 8192, SETTING_RENDER_SIZE, 1024)
+	render_samples = add_spin_box(grid, "Samples", 1, 65536, SETTING_RENDER_SAMPLES, 256)
+	render_transparent = add_check_box(box, "Transparent background", "", SETTING_RENDER_TRANSPARENT, false)
+	render_displacement = add_check_box(box, "Displacement", "The mesh is subdivided and displaced by the material's depth", SETTING_RENDER_DISPLACEMENT, true)
+	render_thin_walled = add_check_box(box, "Thin walled", "On: transmissive surfaces are thin sheets that let diffuse light through (leaves, paper, fabric)\nOff: transmissive objects are solids that refract light (glass), and subsurface scattering lets light travel inside solid objects", SETTING_RENDER_THIN_WALLED, false)
+	var sss_grid : GridContainer = GridContainer.new()
+	sss_grid.columns = 2
+	box.add_child(sss_grid)
+	render_sss_radius = add_spin_box(sss_grid, "SSS radius (%)", 0.1, 100, SETTING_RENDER_SSS_RADIUS, 100.0*MMPathTracer.SSS_RADIUS, 0.1)
+	render_sss_radius.tooltip_text = "How far subsurface scattered light travels inside objects, in percents of the object's size"
+	var l : Label = Label.new()
+	l.text = "SSS radius color"
+	sss_grid.add_child(l)
+	render_sss_color = ColorPickerButton.new()
+	render_sss_color.color = get_config_value(SETTING_RENDER_SSS_COLOR, Color(1, 1, 1))
+	render_sss_color.edit_alpha = false
+	render_sss_color.custom_minimum_size = Vector2(32, 0)
+	render_sss_color.tooltip_text = "Scales the SSS radius for red, green and blue light: white scatters all colors as far, a reddish color (as skin) lets red light travel farther"
+	render_sss_color.color_changed.connect(func(c): mm_globals.set_config(SETTING_RENDER_SSS_COLOR, c))
+	sss_grid.add_child(render_sss_color)
+	render_button = Button.new()
+	render_button.text = "Path traced render..."
+	render_button.tooltip_text = "Renders the object from the current view with a path tracer (PNG or linear EXR)"
+	render_button.pressed.connect(_on_render_button_pressed)
+	box.add_child(render_button)
+	var turntable_grid : GridContainer = GridContainer.new()
+	turntable_grid.columns = 2
+	box.add_child(turntable_grid)
+	turntable_frames = add_spin_box(turntable_grid, "Turntable frames", 2, 720, SETTING_TURNTABLE_FRAMES, 36)
+	turntable_button = Button.new()
+	turntable_button.text = "Turntable..."
+	turntable_button.tooltip_text = "Renders a full turn of the object as a sprite sheet, or a PNG sequence if the file name contains #"
+	turntable_button.pressed.connect(_on_turntable_button_pressed)
+	box.add_child(turntable_button)
+
+func select_render_file(filters : Array, default_name : String) -> String:
+	var dialog := preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instantiate()
+	dialog.min_size = Vector2(500, 500)
+	dialog.access = FileDialog.ACCESS_FILESYSTEM
+	dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
+	for f in filters:
+		dialog.add_filter(f)
+	dialog.current_dir = mm_globals.config.get_value("path", "renders", mm_globals.get_home_directory())
+	dialog.current_file = default_name
+	var files = await dialog.select_files()
+	if files.size() != 1:
+		return ""
+	mm_globals.config.set_value("path", "renders", files[0].get_base_dir())
+	return files[0]
+
+func _on_render_button_pressed() -> void:
+	var file_name : String = await select_render_file([ "*.png; PNG image File", "*.exr; EXR image File" ], "render.png")
+	if file_name == "":
+		return
+	var size_value : int = int(render_size.value)
+	render_button.disabled = true
+	var progress : Callable = func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ]
+	var error : String = await preview3D.render_path_traced(file_name, Vector2i(size_value, size_value), int(render_samples.value), render_transparent.button_pressed,
+		progress, render_displacement.button_pressed, render_thin_walled.button_pressed, render_sss_radius.value/100.0, render_sss_color.color)
+	render_button.text = "Path traced render..."
+	render_button.disabled = false
+	if error != "":
+		mm_globals.set_tip_text(error, 5)
+
+func _on_turntable_button_pressed() -> void:
+	var file_name : String = await select_render_file([ "*.png; PNG image File" ], "turntable.png")
+	if file_name == "":
+		return
+	var size_value : int = int(render_size.value)
+	turntable_button.disabled = true
+	var images : Array[Image] = await preview3D.render_turntable(int(turntable_frames.value), Vector2i(size_value, size_value))
+	var error : String = preview3D.save_turntable(images, file_name)
+	turntable_button.disabled = false
+	if error != "":
+		mm_globals.set_tip_text(error, 5)
 
 
 func _open() -> void:
