@@ -191,14 +191,21 @@ static func value_to_string(value) -> String:
 		return JSON.stringify(MMType.serialize_value(value))
 	return str(value)
 
-## Waits until all buffers are rendered (or max_frames frames)
-static func wait_for_renders(tree : SceneTree, max_frames : int = 6000) -> void:
+## Waits until all buffers are rendered. It only gives up when the renders
+## make no progress for a long time (see MMGenMaterial.wait_for_render_queue):
+## a number of frames is not enough, big graphs take more frames than that to
+## render, and what was not rendered yet was saved flat.
+static func wait_for_renders(tree : SceneTree) -> void:
 	var idle_frames : int = 0
-	for i in max_frames:
+	while idle_frames < IDLE_FRAMES_DONE:
+		if mm_deps.get_render_queue_size() > 0:
+			idle_frames = 0
+			await MMGenMaterial.wait_for_render_queue()
+			if mm_deps.get_render_queue_size() > 0:
+				# The renders are stuck (wait_for_render_queue warned)
+				return
 		await tree.process_frame
-		idle_frames = idle_frames+1 if mm_deps.get_render_queue_size() == 0 else 0
-		if idle_frames >= IDLE_FRAMES_DONE:
-			return
+		idle_frames += 1
 
 ## Sets the mesh of a graph's Mesh Map and High Poly Bake nodes (as the 3D
 ## preview's custom mesh does) and waits until their maps are generated
