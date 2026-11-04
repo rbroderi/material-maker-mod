@@ -500,3 +500,82 @@ func api_quit(_params : Dictionary):
 		return fail("quit is only available in --rpc mode")
 	get_tree().quit.call_deferred()
 	return true
+
+# 3D preview renders (with the user interface only)
+
+## The 3D preview panel, or null (with an error) without the user interface
+func get_preview_3d():
+	if mm_globals.main_window == null:
+		return fail("3D preview renders are only available with the user interface")
+	var preview = mm_globals.main_window.get_panel("Preview3D")
+	if preview == null or not preview.has_method("render_path_traced"):
+		return fail("the 3D preview panel is not available")
+	return preview
+
+## An optional boolean parameter (sets an error and returns default if it is
+## not a boolean)
+func get_bool(params : Dictionary, parameter_name : String, default : bool) -> bool:
+	var value = params.get(parameter_name, default)
+	if value is bool:
+		return value
+	fail("parameter '%s' must be a boolean" % parameter_name)
+	return default
+
+## Path traced render of the 3D preview's object, from the current view (PNG,
+## or linear EXR). sss_radius is relative to the object's size, and sss_color
+## ([r, g, b] or a serialized Color) scales it for each color.
+func api_render_path_traced(params : Dictionary):
+	if not require(params, [ "path" ]):
+		return null
+	var size : int = get_int(params, "size", 512)
+	var samples : int = get_int(params, "samples", 64)
+	var transparent : bool = get_bool(params, "transparent", false)
+	var displacement : bool = get_bool(params, "displacement", false)
+	var thin_walled : bool = get_bool(params, "thin_walled", false)
+	var sss_radius = params.get("sss_radius", MMPathTracer.SSS_RADIUS)
+	if not (sss_radius is int or sss_radius is float):
+		fail("parameter 'sss_radius' must be a number")
+	var sss_color : Color = Color(1, 1, 1)
+	if params.has("sss_color"):
+		var c = params.sss_color
+		if c is Array and c.size() == 3 and c.all(func(x): return x is int or x is float):
+			sss_color = Color(c[0], c[1], c[2])
+		elif c is Dictionary and MMType.deserialize_value(c) is Color:
+			sss_color = MMType.deserialize_value(c)
+		else:
+			fail("parameter 'sss_color' must be [r, g, b] or a color")
+	if method_error != "":
+		return null
+	if size <= 0 or samples <= 0:
+		return fail("incorrect size %d" % size if size <= 0 else "incorrect samples %d" % samples)
+	if sss_radius <= 0:
+		return fail("incorrect sss_radius %s" % str(sss_radius))
+	if not params.path.get_extension().to_lower() in [ "png", "exr" ]:
+		return fail("path must be a .png or .exr file")
+	var preview = get_preview_3d()
+	if preview == null:
+		return null
+	await MMCliTools.wait_for_renders(get_tree())
+	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
+	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), samples, transparent, Callable(), displacement, thin_walled, float(sss_radius), sss_color)
+	return fail(error) if error != "" else params.path
+
+## Turntable of the 3D preview's object (rendered by the preview), as a sprite
+## sheet, or a PNG sequence when the path contains #
+func api_render_turntable(params : Dictionary):
+	if not require(params, [ "path" ]):
+		return null
+	var size : int = get_int(params, "size", 256)
+	var frames : int = get_int(params, "frames", 36)
+	if method_error != "":
+		return null
+	if size <= 0 or frames <= 0:
+		return fail("incorrect size %d" % size if size <= 0 else "incorrect frames %d" % frames)
+	var preview = get_preview_3d()
+	if preview == null:
+		return null
+	await MMCliTools.wait_for_renders(get_tree())
+	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
+	var images : Array[Image] = await preview.render_turntable(frames, Vector2i(size, size))
+	var error : String = preview.save_turntable(images, params.path)
+	return fail(error) if error != "" else params.path

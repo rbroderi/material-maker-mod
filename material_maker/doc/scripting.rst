@@ -70,5 +70,11 @@ graph (and in **list_nodes**).
   the path of the exported files without extension, and size 0 uses the Material node's size)
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
+* **render_path_traced(path, size, samples, transparent, displacement, thin_walled, sss_radius, sss_color)**
+  makes a path traced render of the 3D preview's object, from the current view, as the 3D
+  preview's Export menu (a PNG, or a linear EXR file; **sss_radius** is relative to the
+  object's size, 0.03 by default, and **sss_color**, as [r, g, b], scales it for each color),
+  and **render_turntable(path, frames, size)** renders a turntable as a sprite sheet, or a PNG
+  sequence when the path contains # (both with the user interface only)
 
 Errors are returned as JSON-RPC errors (the Python client raises **MaterialMakerError**).
