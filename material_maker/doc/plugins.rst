@@ -80,3 +80,34 @@ The **material_maker/plugins/example** folder contains an example plugin (disabl
 that adds a node, a menu item, an import format (.stripes files), an RPC method, a command, a
 command line mode (**--example-thumbnails**), a section of the 2D preview's export menu and an
 export hook.
+
+.. _materialx-import-section:
+
+MaterialX import
+----------------
+
+The **MaterialX import** plugin (enabled by default) imports MaterialX materials (.mtlx files) as
+new Material Maker graphs: .mtlx files can be opened with *File > Load*, by drag and drop, with
+*File > Import MaterialX material...*, on the command line, with the **load** JSON-RPC method, and
+converted to a .ptex file with the **materialx_import** command:
+
+.. code-block:: none
+
+    material_maker --plugin materialx_import material.mtlx [output.ptex]
+
+The first material of the file is imported. Its surface shader (**standard_surface**,
+**open_pbr_surface**, **UsdPreviewSurface** or **gltf_pbr**) becomes a Material node: constant
+inputs set the node's parameters (inputs that are not set get the shader's default value), and
+images (image, tiledimage, UsdUVTexture and the glTF image nodes) become Image nodes connected to
+its inputs (albedo, metallic, roughness, emission, normal, ambient occlusion and opacity, and
+depth from the displacement shader's height map). The nodes that select a channel of an image,
+convert it or scale it by a constant (constant, convert, dot, extract, swizzle, separate,
+multiply and normalmap) are followed. Color images whose color space does not match the input
+(albedo and emission are sRGB, other inputs linear) get a Color Conversion node, and normal maps
+are converted from the OpenGL convention. The MaterialX library is not needed.
+
+Procedural MaterialX nodes are not translated: the inputs they drive are left unconnected.
+Inputs that cannot be imported (procedural nodes, inputs that the Material node does not have,
+such as coat or sheen, UDIM images) and ignored settings (texture coordinates tiling and
+offsets, the specular workflow of UsdPreviewSurface) are reported as warnings, in the console
+and in the status bar.
