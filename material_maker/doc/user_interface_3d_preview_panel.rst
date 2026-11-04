@@ -60,13 +60,13 @@ from the current view:
   *Samples* sets the quality and *Transparent background* removes the background. With
   *Displacement*, the object is subdivided and displaced by the material's depth (the
   preview only shows it with parallax). Transmissive objects are rendered as glass-like
-  solids that refract light (with an index of refraction of 1.5, tinted by the albedo), or
-  with *Thin walled*, as thin sheets that let diffuse light through, as leaves, paper or
-  fabric. Subsurface scattering lets light travel inside solid objects (a random walk), as
-  in wax, marble or skin: *SSS radius* is how far light travels (in percents of the object's
-  size, 3 by default) and *SSS radius color* scales it for red, green and blue light (white
-  scatters all colors as far; skin lets red light travel farther, for example with a color
-  of (1.0, 0.4, 0.25)).
+  solids that refract light (with an index of refraction of 1.5, tinted by the albedo, and
+  the sun shines through them), or with *Thin walled*, as thin sheets that let diffuse light
+  through, as leaves, paper or fabric. Subsurface scattering lets light travel inside solid
+  objects (a random walk), as in wax, marble or skin: *SSS radius* is how far light travels
+  (in percents of the object's size, 3 by default) and *SSS radius color* scales it for red,
+  green and blue light (white scatters all colors as far; skin lets red light travel
+  farther, for example with a color of (1.0, 0.4, 0.25)).
 
 * **Turntable...** renders a full turn of the object with the 3D preview, as a sprite sheet,
   or as a PNG sequence if the file name contains ``#`` (replaced by the frame number).
