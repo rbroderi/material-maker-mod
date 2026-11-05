@@ -320,8 +320,8 @@ Three plugins (enabled by default) add these export targets:
 
 * **KTX2/Texture set** (**KTX2 format** plugin): KTX2 textures (albedo, metallic, roughness, normal, emission, height,
   ambient occlusion) with mipmaps and Zstandard supercompression, 8 bits (sRGB for albedo and
-  emission) and 16 bits floats for the height map. The Material node's colors and multipliers
-  are applied.
+  emission, with mipmaps filtered in linear space; RGB without alpha for emission and normal)
+  and 16 bits floats for the height map. The Material node's colors and multipliers are applied.
 * **TX/Texture set** (**TX format** plugin): the same maps as TX files (tiled and mip-mapped TIFF files, as OpenImageIO's
   maketx writes them) for renderers that cache textures.
 * **OpenEXR/Multi-layer** (**Multi-layer OpenEXR** plugin): all maps in a single EXR file, a layer per map (albedo.R, albedo.G,
