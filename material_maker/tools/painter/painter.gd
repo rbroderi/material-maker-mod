@@ -116,6 +116,10 @@ var mesh_tangent_tex : MMTexture = MMTexture.new()
 
 const VIEW_TO_TEXTURE_RATIO = 1.0
 
+## Remaps the clip-space depth of Godot camera projections (OpenGL convention,
+## -1..1) to the 0..1 range used by RenderingDevice
+const DEPTH_CORRECTION : Projection = Projection(Vector4(1.0, 0.0, 0.0, 0.0), Vector4(0.0, 1.0, 0.0, 0.0), Vector4(0.0, 0.0, 0.5, 0.0), Vector4(0.0, 0.0, 0.5, 1.0))
+
 # shader files
 var shader_files : Dictionary = {}
 const CACHE_SHADER_FILES : bool = false
@@ -300,7 +304,9 @@ func set_texture_size(s : float):
 			update_textures()
 
 func update_view(p : Projection, t : Transform3D, s : Vector2i):
-	projection = p*Projection(t)
+	# Camera projections map depth to -1..1 but RenderingDevice clips z < 0: without
+	# the correction, the part of the mesh closest to the camera would be missing from v2t
+	projection = DEPTH_CORRECTION*p*Projection(t)
 	transform = t
 	viewport_size = s
 	brush_params.view_back = Vector3(0.0, 0.0, 1.0) * transform.basis.orthonormalized()
