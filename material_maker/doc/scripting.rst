@@ -318,3 +318,10 @@ Validating libraries
 example materials, so node libraries can be checked in CI:
 
  python python/validate_library.py --mm "material_maker" --examples material_maker/examples
+
+An item fails when the server returns an error, when nothing is rendered, when buffers are
+still waiting to be rendered afterwards, when Material Maker prints errors (such as shader
+compilation errors) while the item is validated, or when it does not answer within
+**--timeout** seconds. Material Maker is restarted after each failure, so that it does not
+affect the next items. **--filter** only validates items whose path contains a text, **--log**
+saves the output of Material Maker, and the exit code is 1 if anything failed.
