@@ -16,11 +16,14 @@ const MAPS : Dictionary = { albedo_tex=MMGenMaterial.OUTPUT_ALBEDO, orm_tex=MMGe
 	sss_tex=MMGenMaterial.OUTPUT_SSS }
 ## Mean free path of subsurface scattering, relative to the size of the scene
 const SSS_RADIUS : float = 0.03
-## Material output of the depth, used for displacement
-const DEPTH_OUTPUT : int = MMGenMaterial.OUTPUT_DEPTH
+## Size of the depth map used for displacement
+const DEPTH_MAP_SIZE : int = 512
 ## Displaced meshes are subdivided up to about this number of triangles (the
 ## BVH is built in GDScript)
 const DISPLACEMENT_TRIANGLES : int = 60000
+## Displacement depth for a depth_scale of 1, as the preview's parallax and
+## the Static PBR Material Displacement node
+const DISPLACEMENT_SCALE : float = 0.2
 
 var compute : MMComputeShader
 var accumulation : Array[MMTexture] = [ MMTexture.new(), MMTexture.new() ]
@@ -30,7 +33,8 @@ var dummy : MMTexture
 
 
 ## Positions (in world space) of the faces of all surfaces of a mesh, and per
-## face attributes: for each vertex, (normal, u), (tangent), (v, 0, 0, 0)
+## face attributes: for each vertex, (normal, u), (tangent), (v, 0, 0, 0).
+## With a depth map, the mesh is subdivided and displaced (see displace()).
 static func prepare_mesh(mesh : Mesh, transform : Transform3D, depth : Image = null, depth_scale : float = 0.0, uv_scale : Vector2 = Vector2(1, 1)) -> Dictionary:
 	var vertices : PackedVector3Array = PackedVector3Array()
 	var indices : PackedInt32Array = PackedInt32Array()
@@ -92,7 +96,7 @@ static func prepare_mesh(mesh : Mesh, transform : Transform3D, depth : Image = n
 
 ## Subdivides triangles (attributes are 12 floats per face vertex: normal, u,
 ## tangent, sign, v, unused) and moves vertices inside along their normal by the
-## depth map times depth_scale, as the Tesselated Material does in the preview
+## depth map (white is deepest) times depth_scale
 static func displace(vertices : PackedVector3Array, indices : PackedInt32Array, attributes : PackedFloat32Array, depth : Image, depth_scale : float, uv_scale : Vector2) -> Array:
 	var triangles : Array = []
 	for f in indices.size()/3:
@@ -109,35 +113,63 @@ static func displace(vertices : PackedVector3Array, indices : PackedInt32Array, 
 			var m20 : Array = midpoint(t[2], t[0])
 			subdivided.append_array([ [ t[0], m01, m20 ], [ m01, t[1], m12 ], [ m20, m12, t[2] ], [ m01, m12, m20 ] ])
 		triangles = subdivided
+	# The depth map is filtered down to about the size of the triangles, so
+	# details smaller than them do not show as spikes
+	var uv_edges : float = 0.0
+	for t in triangles:
+		uv_edges += (Vector2(t[0][1][3], t[0][1][8])-Vector2(t[1][1][3], t[1][1][8])).length()
+	var mean_uv_edge : float = max(uv_edges/triangles.size()*max(uv_scale.x, uv_scale.y), 0.000001)
+	var filtered_size : int = clampi(nearest_po2(int(1.0/mean_uv_edge)), 4, depth.get_width())
+	if filtered_size < depth.get_width():
+		depth = depth.duplicate()
+		depth.resize(filtered_size, filtered_size, Image.INTERPOLATE_TRILINEAR)
 	# Corners at the same position (e.g. on both sides of a UV seam or of a box
 	# edge) move together, along their average normal by their average depth,
-	# so the surface does not crack open
-	var depth_size : Vector2 = Vector2(depth.get_size())
+	# so the surface does not crack open. Each distinct (normal, UV) of a
+	# position counts once, however many triangles share it.
 	var welded : Dictionary = {}
 	for t in triangles:
 		for corner in t:
-			var a : PackedFloat32Array = corner[1]
-			var uv : Vector2 = Vector2(a[3], a[8])*uv_scale
-			uv = uv-uv.floor()
-			var d : float = depth.get_pixelv(Vector2i((uv*depth_size).floor()).clamp(Vector2i(), depth.get_size()-Vector2i(1, 1))).r
 			var key : Vector3i = Vector3i((corner[0]*100000.0).round())
 			if not welded.has(key):
-				welded[key] = [ Vector3(), 0.0, 0 ]
-			var w : Array = welded[key]
-			w[0] += Vector3(a[0], a[1], a[2])
-			w[1] += d
-			w[2] += 1
+				welded[key] = {}
+			var a : PackedFloat32Array = corner[1]
+			var normal : Vector3 = Vector3(a[0], a[1], a[2])
+			var uv : Vector2 = Vector2(a[3], a[8])
+			welded[key][[ Vector3i((normal*10000.0).round()), Vector2i((uv*100000.0).round()) ]] = [ normal, uv ]
+	var displacements : Dictionary = {}
+	for key in welded.keys():
+		var normal : Vector3 = Vector3()
+		var d : float = 0.0
+		for corner in welded[key].values():
+			normal += corner[0]
+			d += sample_bilinear(depth, corner[1]*uv_scale)
+		displacements[key] = -normal.normalized()*(d/welded[key].size())*depth_scale
 	var new_vertices : PackedVector3Array = PackedVector3Array()
 	var new_indices : PackedInt32Array = PackedInt32Array()
 	var new_attributes : PackedFloat32Array = PackedFloat32Array()
 	for t in triangles:
 		for corner in t:
-			var w : Array = welded[Vector3i((corner[0]*100000.0).round())]
 			new_indices.append(new_vertices.size())
-			new_vertices.append(corner[0]-w[0].normalized()*(w[1]/w[2])*depth_scale)
+			new_vertices.append(corner[0]+displacements[Vector3i((corner[0]*100000.0).round())])
 			new_attributes.append_array(corner[1])
 	return [ new_vertices, new_indices, new_attributes ]
 
+## Bilinear sample of the red channel of a tiling image
+static func sample_bilinear(image : Image, uv : Vector2) -> float:
+	var size : Vector2i = image.get_size()
+	var p : Vector2 = uv*Vector2(size)-Vector2(0.5, 0.5)
+	var p0 : Vector2 = p.floor()
+	var f : Vector2 = p-p0
+	var x0 : int = posmod(int(p0.x), size.x)
+	var y0 : int = posmod(int(p0.y), size.y)
+	var x1 : int = (x0+1)%size.x
+	var y1 : int = (y0+1)%size.y
+	var top : float = lerpf(image.get_pixel(x0, y0).r, image.get_pixel(x1, y0).r, f.x)
+	var bottom : float = lerpf(image.get_pixel(x0, y1).r, image.get_pixel(x1, y1).r, f.x)
+	return lerpf(top, bottom, f.y)
+
+## The middle of a triangle edge (position and attributes)
 static func midpoint(a : Array, b : Array) -> Array:
 	var attributes : PackedFloat32Array = PackedFloat32Array()
 	attributes.resize(12)
@@ -166,35 +198,64 @@ static func strip_to_triangles(strip_indices, vertex_count : int) -> PackedInt32
 			rv.append_array([ b, a, c ])
 	return rv
 
+## A float parameter of a material, or a default value for material nodes
+## that do not have it
+static func get_float_parameter(material : MMGenBase, parameter : String, default : float) -> float:
+	if material.parameters.has(parameter) or not material.get_parameter_def(parameter).is_empty():
+		return float(material.get_parameter(parameter))
+	return default
+
+## Whether an input of a node is connected
+static func is_input_connected(node : MMGenBase, input_name : String) -> bool:
+	var inputs : Array = node.get_input_defs()
+	for i in inputs.size():
+		if inputs[i].name == input_name:
+			return node.get_source(i) != null
+	return false
+
 ## Prepares a render of a mesh instance with a Material node's maps, seen from
-## a camera, lit by an environment. Generated preview meshes are replaced by
-## their (much lighter) fallback meshes, and their UV scale is used.
-## Transmission is refraction in solids (IOR 1.5), or light passing through
-## thin walls.
-func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = true, thin_walled : bool = false) -> bool:
+## a camera, lit by an environment and the brightest directional light of the
+## object's scene. Generated preview meshes are replaced by their (much
+## lighter) fallback meshes, and their UV scale is used. With displacement,
+## the mesh is displaced by the depth map. Transmissive surfaces are solids
+## that refract light, or with thin_walled, thin sheets that let diffuse light
+## through (as leaves or paper).
+func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, environment : Environment, size : Vector2i, transparent_background : bool = false, displacement : bool = false, thin_walled : bool = false) -> bool:
 	image_size = size
 	sample_count = 0
+	# Only materials with texture outputs (not the dynamic, raymarching or
+	# unlit ones) can be rendered
+	var output_count : int = material.get_output_defs(true).size()
+	if output_count <= MMGenMaterial.OUTPUT_NORMAL:
+		return false
 	var mesh : Mesh = object.mesh
 	if object.get("fallback_mesh") != null:
 		mesh = object.fallback_mesh
 	var uv_scale : Vector2 = object.uv_scale if object.get("uv_scale") is Vector2 else Vector2(1, 1)
 	await MMCliTools.wait_for_renders(material.get_tree())
 	var depth : Image = null
-	var depth_scale : float = float(material.get_parameter("depth_scale")) if displacement else 0.0
+	var depth_scale : float = 0.0
+	if displacement and is_input_connected(material, "depth_tex"):
+		depth_scale = DISPLACEMENT_SCALE*get_float_parameter(material, "depth_scale", 0.0)
 	if depth_scale > 0.0:
-		depth = (await (await material.render_output_to_texture(DEPTH_OUTPUT, Vector2i(512, 512))).get_texture()).get_image()
+		depth = (await (await material.render_output_to_texture(MMGenMaterial.OUTPUT_DEPTH, Vector2i(DEPTH_MAP_SIZE, DEPTH_MAP_SIZE))).get_texture()).get_image()
 		depth.convert(Image.FORMAT_RF)
 	var prepared : Dictionary = prepare_mesh(mesh, object.global_transform, depth, depth_scale, uv_scale)
 	if prepared.is_empty():
 		return false
 	var bvh : MMTexture = MMTexture.new()
 	bvh.set_texture(MMBvhGenerator.generate(prepared.mesh))
+	# Maps that the material node does not have (e.g. coat or transmission) are
+	# black
+	dummy = MMTexture.from_image(Image.create(1, 1, false, Image.FORMAT_RGBAH))
 	var maps : Dictionary = {}
 	for m in MAPS.keys():
-		maps[m] = await material.render_output_to_texture(MAPS[m], Vector2i(MAP_SIZE, MAP_SIZE))
-	# Environment: the sky's panorama, or the background color
+		maps[m] = await material.render_output_to_texture(MAPS[m], Vector2i(MAP_SIZE, MAP_SIZE)) if MAPS[m] < output_count else dummy
+	# Environment: the sky's panorama lights the object. Camera rays that miss
+	# it show the panorama, or the background color as the preview does.
 	var env_image : Image = null
 	var env_energy : float = 1.0
+	var background_color : Color = Color(0, 0, 0, 0)
 	if environment != null:
 		env_energy = environment.background_energy_multiplier
 		if environment.sky != null and environment.sky.sky_material is PanoramaSkyMaterial and environment.sky.sky_material.panorama != null:
@@ -202,7 +263,10 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 			env_energy *= environment.sky.sky_material.energy_multiplier
 		else:
 			env_image = Image.create(1, 1, false, Image.FORMAT_RGBAF)
-			env_image.fill(environment.background_color)
+			env_image.fill(environment.background_color.srgb_to_linear())
+		if environment.background_mode == Environment.BG_COLOR:
+			background_color = environment.background_color.srgb_to_linear()
+			background_color.a = 1.0
 	if env_image == null:
 		env_image = Image.create(1, 1, false, Image.FORMAT_RGBAF)
 		env_image.fill(Color(0.5, 0.5, 0.5))
@@ -211,10 +275,9 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 		env_image.decompress()
 	env_image.convert(Image.FORMAT_RGBAH)
 	var environment_texture : MMTexture = MMTexture.from_image(env_image)
-	dummy = MMTexture.from_image(Image.create(1, 1, false, Image.FORMAT_RGBAH))
 	var basis : Basis = camera.global_transform.basis.orthonormalized()
 	var sun : Dictionary = find_sun(object)
-	var albedo_color = MMType.deserialize_value(material.get_parameter("albedo_color"))
+	var albedo_color = MMType.deserialize_value(material.get_parameter("albedo_color")) if not material.get_parameter_def("albedo_color").is_empty() else null
 	compute = MMComputeShader.new()
 	compute.clear()
 	for t in [ [ "bvh_data", bvh ], [ "attribute_data", MMTexture.from_image(prepared.attributes) ], [ "env_texture", environment_texture ], [ "accumulation", dummy ] ]:
@@ -226,12 +289,14 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 		[ "camera_position", "vec3", camera.global_position ], [ "camera_forward", "vec3", -basis.z ],
 		[ "camera_right", "vec3", basis.x ], [ "camera_up", "vec3", basis.y ], [ "camera_fov", "float", deg_to_rad(camera.fov) ],
 		[ "env_rotation", "float", environment.sky_rotation.y if environment != null else 0.0 ], [ "env_energy", "float", env_energy ],
+		[ "background_color", "vec4", background_color ],
 		[ "albedo_color", "vec4", albedo_color if albedo_color is Color else Color(1, 1, 1) ],
-		[ "metallic_value", "float", float(material.get_parameter("metallic")) ], [ "roughness_value", "float", float(material.get_parameter("roughness")) ],
-		[ "emission_energy", "float", float(material.get_parameter("emission_energy")) ], [ "normal_strength", "float", float(material.get_parameter("normal")) ],
-		[ "coat_value", "float", float(material.get_parameter("coat")) ], [ "coat_roughness_value", "float", float(material.get_parameter("coat_roughness")) ],
-		[ "sheen_value", "float", float(material.get_parameter("sheen")) ], [ "transmission_value", "float", float(material.get_parameter("transmission")) ],
-		[ "sss_value", "float", float(material.get_parameter("sss")) ], [ "sss_radius", "float", SSS_RADIUS ], [ "thin_walled", "int", 1 if thin_walled else 0 ],
+		[ "metallic_value", "float", get_float_parameter(material, "metallic", 1.0) ], [ "roughness_value", "float", get_float_parameter(material, "roughness", 1.0) ],
+		[ "emission_energy", "float", get_float_parameter(material, "emission_energy", 1.0) ], [ "normal_strength", "float", get_float_parameter(material, "normal", 1.0) ],
+		[ "coat_value", "float", get_float_parameter(material, "coat", 0.0) ], [ "coat_roughness_value", "float", get_float_parameter(material, "coat_roughness", 0.1) ],
+		[ "sheen_value", "float", get_float_parameter(material, "sheen", 0.0) ], [ "transmission_value", "float", get_float_parameter(material, "transmission", 0.0) ],
+		[ "sss_value", "float", get_float_parameter(material, "sss", 0.0) ], [ "sss_radius", "float", SSS_RADIUS ],
+		[ "thin_walled", "int", 1 if thin_walled else 0 ],
 		[ "sun_direction", "vec3", sun.direction ], [ "sun_color", "vec3", sun.color ], [ "sun_energy", "float", sun.energy ], [ "sun_angle", "float", sun.angle ],
 		[ "uv_scale", "vec2", uv_scale ], [ "scene_scale", "float", max(prepared.aabb.size.length(), 0.001) ], [ "firefly_clamp", "float", 20.0 ] ]
 	for v in values:
@@ -240,10 +305,10 @@ func setup(object : MeshInstance3D, material : MMGenBase, camera : Camera3D, env
 	return await compute.set_shader_ext(template, [ { name="OUTPUT_TEXTURE", type=3 } ])
 
 ## The brightest visible directional light of the object's scene (direction
-## towards the light, color, energy and angular radius), or no light
+## towards the light, linear color, energy and angular radius), or no light
 static func find_sun(object : Node3D) -> Dictionary:
-	var sun : Dictionary = { direction=Vector3(0, 1, 0), color=Vector3(1, 1, 1), energy=0.0, angle=0.01 }
-	for l in object.get_viewport().find_children("*", "DirectionalLight3D", true, false):
+	var sun : Dictionary = { direction=Vector3(0, 1, 0), color=Vector3(1, 1, 1), energy=0.0, angle=0.001 }
+	for l : DirectionalLight3D in object.get_viewport().find_children("*", "DirectionalLight3D", true, false):
 		if not l.is_visible_in_tree() or l.light_energy <= sun.energy:
 			continue
 		var c : Color = l.light_color.srgb_to_linear()
@@ -261,25 +326,31 @@ func render_samples(count : int) -> bool:
 		sample_count += 1
 	return true
 
-## The average of the samples, in linear values
+## The average of the samples, in linear values (with premultiplied alpha)
 func get_hdr_image() -> Image:
 	var image : Image = (await accumulation[(sample_count+1)%2].get_texture()).get_image()
 	if image.get_format() != Image.FORMAT_RGBAF:
 		image.convert(Image.FORMAT_RGBAF)
 	return image
 
-## The render, tone mapped (ACES approximation) and sRGB encoded (with
-## straight alpha, as the background is black when transparent)
-func get_image(exposure : float = 1.0) -> Image:
+## The render, tone mapped (clamped if linear, else with an approximation of
+## ACES) and sRGB encoded, with straight alpha (colors of partly transparent
+## pixels are divided by their coverage)
+func get_image(exposure : float = 1.0, linear : bool = false) -> Image:
 	var hdr : Image = await get_hdr_image()
 	var data : PackedFloat32Array = hdr.get_data().to_float32_array()
 	var out : PackedByteArray = PackedByteArray()
 	out.resize(data.size())
 	for i in range(0, data.size(), 4):
+		var alpha : float = clampf(data[i+3], 0.0, 1.0)
+		var scale : float = exposure/alpha if alpha > 0.0 else 0.0
 		for c in 3:
-			var x : float = data[i+c]*exposure
-			x = clampf((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0)
+			var x : float = data[i+c]*scale
+			if linear:
+				x = clampf(x, 0.0, 1.0)
+			else:
+				x = clampf((x*(2.51*x+0.03))/(x*(2.43*x+0.59)+0.14), 0.0, 1.0)
 			x = 1.055*pow(x, 1.0/2.4)-0.055 if x > 0.0031308 else 12.92*x
 			out[i+c] = int(clampf(x, 0.0, 1.0)*255.0+0.5)
-		out[i+3] = int(clampf(data[i+3], 0.0, 1.0)*255.0+0.5)
+		out[i+3] = int(alpha*255.0+0.5)
 	return Image.create_from_data(hdr.get_width(), hdr.get_height(), false, Image.FORMAT_RGBA8, out)

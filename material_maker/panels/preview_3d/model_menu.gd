@@ -91,7 +91,9 @@ func _on_model_item_selected(index : int, custom_model_path : String = "") -> vo
 		index = objects_count-1
 	if await preview3D.set_model(index, custom_model_path):
 		mm_globals.set_config(SETTING_3D_PREVIEW_MODEL, index)
-		get_node("../../ExportMenu").visible = ( Model.get_item_text(index) == "Custom" )
+		# Renders are available for all models, map generation for custom ones
+		get_node("../../ExportMenu").visible = true
+		get_node("../../ExportMenu/ExportMenuPanel").set_map_generation_visible(Model.get_item_text(index) == "Custom")
 		custom_model_path = preview3D.get_current_model_path()
 		if custom_model_path != "":
 			while true:

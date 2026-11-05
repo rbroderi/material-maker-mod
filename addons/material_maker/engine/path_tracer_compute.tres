@@ -10,7 +10,9 @@ text = "#version 450
 // invocation traces one sample per pixel and averages it with the previous
 // ones (accumulation). Surfaces use an approximation of OpenPBR: a coat over
 // fuzz over the base (GGX specular, metal or dielectric, and diffuse), lit by
-// the environment.
+// the environment and the sun. Transmissive surfaces are glass-like solids
+// that refract light, or thin walls that let a part of the diffuse light
+// through. Subsurface scattering is a random walk inside the object.
 
 layout(local_size_x = @LOCAL_SIZE, local_size_y = 1, local_size_z = 1) in;
 
@@ -229,11 +231,12 @@ float intersects_bvh(vec3 ray_start, vec3 ray_dir, out int hit_face, out vec2 hi
 // ---------- Environment ----------
 
 vec3 environment(vec3 dir) {
-	// Equirectangular panorama, rotated around the vertical axis
+	// Equirectangular panorama, rotated around the vertical axis, mapped as
+	// Godot's panorama skies (-Z at the left edge and the center is +Z)
 	float c = cos(env_rotation);
 	float s = sin(env_rotation);
 	dir = vec3(c*dir.x-s*dir.z, dir.y, s*dir.x+c*dir.z);
-	vec2 uv = vec2(atan(dir.x, -dir.z)/TAU+0.5, acos(clamp(dir.y, -1.0, 1.0))/PI);
+	vec2 uv = vec2(fract(atan(dir.x, -dir.z)/TAU), acos(clamp(dir.y, -1.0, 1.0))/PI);
 	return env_energy*textureLod(env_texture, uv, 0.0).rgb;
 }
 
@@ -292,25 +295,25 @@ vec3 ggx_bounce(inout vec3 dir, vec3 n, vec3 v, float a, vec3 f0) {
 	return f*smith_g1(NdotV, a)*smith_g1(NdotL, a)*VdotH/(NdotH*NdotV);
 }
 
-// The BSDF (times the cosine) for a light direction l, used for the sun
+// The BSDF times the cosine for a light direction l (used for the sun), as
+// sampled in main(). transmission is the part of the diffuse light that is
+// not reflected at this point: it goes through thin walls, and light refracted
+// by solids is not sampled directly.
 vec3 evaluate_bsdf(vec3 n, vec3 v, vec3 l, vec3 albedo, float metallic, float roughness, float coat, float coat_roughness, float fuzz, float transmission) {
 	float NdotV = max(dot(n, v), 0.0001);
 	float NdotL = dot(n, l);
 	float cNdotL = abs(NdotL);
+	float fresnel = pow(1.0-NdotV, 5.0);
+	float below_coat = 1.0-coat*(0.04+0.96*fresnel);
+	float below_fuzz = 1.0-0.5*fuzz;
+	vec3 diffuse = albedo*(1.0-metallic)*(1.0-(0.04+0.96*fresnel))/PI;
+	if (NdotL <= 0.0) {
+		// Light from behind only goes through thin walls
+		return thin_walled != 0 ? below_coat*below_fuzz*transmission*diffuse*cNdotL : vec3(0.0);
+	}
 	vec3 h = normalize(v+l);
 	float NdotH = max(dot(n, h), 0.0001);
 	float VdotH = max(dot(v, h), 0.0001);
-	float fresnel = pow(1.0-NdotV, 5.0);
-	float coat_fresnel = 0.04+0.96*fresnel;
-	float below_coat = 1.0-coat*coat_fresnel;
-	float below_fuzz = 1.0-0.5*fuzz;
-	float base_fresnel = 0.04+0.96*fresnel;
-	vec3 diffuse = albedo*(1.0-metallic)*(1.0-base_fresnel)/PI;
-	if (NdotL <= 0.0) {
-		// Thin walled transmission, light from behind (light refracted by
-		// solids is not sampled directly)
-		return thin_walled != 0 ? below_coat*below_fuzz*transmission*diffuse*cNdotL : vec3(0.0);
-	}
 	float a = roughness*roughness;
 	vec3 f0 = mix(vec3(0.04), albedo, metallic);
 	vec3 f = f0+(vec3(1.0)-f0)*pow(1.0-VdotH, 5.0);
@@ -415,6 +418,8 @@ void main() {
 		if (face < 0 || t >= 65536.0) {
 			if (bounce == 0 && transparent_background != 0) {
 				alpha = 0.0;
+			} else if (bounce == 0 && background_color.a > 0.0) {
+				radiance += background_color.rgb;
 			} else {
 				radiance += throughput*environment(dir);
 			}
@@ -438,10 +443,11 @@ void main() {
 		}
 		vec3 binormal = cross(geometric_normal, tangent)*(t0.w < 0.0 ? -1.0 : 1.0);
 		uv = fract(uv*uv_scale);
-		// Normal map (OpenGL convention, as Godot's NORMAL_MAP)
-		vec3 nm = textureLod(normal_tex, uv, 0.0).rgb*2.0-vec3(1.0);
-		nm.xy *= normal_strength;
-		vec3 n = normalize(tangent*nm.x+binormal*nm.y+geometric_normal*max(nm.z, 0.001));
+		// Normal map (OpenGL convention), as Godot's NORMAL_MAP and
+		// NORMAL_MAP_DEPTH: z is rebuilt from x and y
+		vec3 nm = vec3(textureLod(normal_tex, uv, 0.0).rg*2.0-vec2(1.0), 0.0);
+		nm.z = sqrt(max(0.0, 1.0-dot(nm.xy, nm.xy)));
+		vec3 n = normalize(mix(geometric_normal, tangent*nm.x+binormal*nm.y+geometric_normal*nm.z, normal_strength));
 		if (dot(n, -dir) <= 0.0) {
 			n = geometric_normal;
 		}
@@ -456,7 +462,9 @@ void main() {
 		float coat_roughness = clamp(coat_roughness_value*extra.g, 0.02, 1.0);
 		float fuzz = clamp(sheen_value*extra.a, 0.0, 1.0);
 		float transmission = clamp(transmission_value*textureLod(transmission_tex, uv, 0.0).r, 0.0, 1.0);
-		float subsurface = clamp(sss_value*textureLod(sss_tex, uv, 0.0).r, 0.0, 1.0);
+		// Subsurface scattering enters solids from the outside (thin walls
+		// have no volume)
+		float subsurface = (front && thin_walled == 0) ? clamp(sss_value*textureLod(sss_tex, uv, 0.0).r, 0.0, 1.0) : 0.0;
 		radiance += throughput*emission_energy*srgb_to_linear(textureLod(emission_tex, uv, 0.0).rgb);
 		vec3 next_dir = dir;
 		vec3 weight;
@@ -468,7 +476,13 @@ void main() {
 			vec2 shadow_bary;
 			intersects_bvh(shadow_origin, l, shadow_face, shadow_bary);
 			if (shadow_face < 0) {
-				radiance += throughput*sun_color*(PI*sun_energy)*evaluate_bsdf(n, v, l, albedo, metallic, roughness, coat, coat_roughness, fuzz, transmission);
+				// The subsurface scattered part of the diffuse light is lit where
+				// the random walk leaves the object
+				float sun_transmission = transmission;
+				if (subsurface > 0.0) {
+					sun_transmission = 1.0-(1.0-transmission)*(1.0-subsurface);
+				}
+				radiance += throughput*sun_color*(PI*sun_energy)*evaluate_bsdf(n, v, l, albedo, metallic, roughness, coat, coat_roughness, fuzz, sun_transmission);
 			}
 		}
 		float NdotV = max(dot(n, v), 0.0001);
@@ -484,34 +498,52 @@ void main() {
 				next_dir = sample_cosine(n);
 				weight = vec3(1.0);
 			} else {
-				vec3 f0 = mix(vec3(0.04), albedo, metallic);
 				float base_fresnel = 0.04+0.96*pow(1.0-NdotV, 5.0);
-				if (thin_walled == 0 && rand() < transmission*(1.0-metallic)) {
+				// Solid transmission replaces the diffuse and specular layers of
+				// the dielectric part of the base
+				float p_transmission = thin_walled == 0 ? transmission*(1.0-metallic) : 0.0;
+				if (p_transmission > 0.0 && rand() < p_transmission) {
 					// Refraction in a solid dielectric (IOR 1.5), tinted by the
-					// albedo when the ray goes through the surface
+					// albedo each time the ray goes through the surface
 					weight = dielectric_bounce(next_dir, n, v, roughness*roughness, front ? 1.0/1.5 : 1.5);
 					if (dot(next_dir, geometric_normal) < 0.0) {
 						weight *= sqrt(albedo);
 					}
 				} else {
-					float p_specular = mix(base_fresnel, 1.0, metallic);
+					// The other layers: metal, and the opaque part of the dielectric
+					float base_metallic = metallic;
+					if (p_transmission > 0.0) {
+						base_metallic = min(metallic/max(1.0-p_transmission, 0.0001), 1.0);
+					}
+					vec3 f0 = mix(vec3(0.04), albedo, base_metallic);
+					float p_specular = mix(base_fresnel, 1.0, base_metallic);
 					if (rand() < p_specular) {
 						weight = ggx_bounce(next_dir, n, v, roughness*roughness, f0)/p_specular;
-					} else if (rand() < subsurface && front) {
-						// Subsurface scattering: a random walk in the volume,
-						// from below the surface to where the path comes out
-						weight = (1.0-metallic)/(1.0-p_specular)*(1.0-base_fresnel)*vec3(1.0);
+					} else if (subsurface > 0.0 && rand() < subsurface) {
+						// Subsurface scattering: a random walk in the volume, from
+						// below the surface to where the path comes out
+						weight = vec3(1.0);
 						vec3 scattering = single_scattering_albedo(albedo);
 						float mean_free_path = sss_radius*scene_scale;
 						vec3 p = position-geometric_normal*0.0005*scene_scale;
 						vec3 d = -sample_cosine(geometric_normal);
 						bool exited = false;
-						for (int step = 0; step < 64; ++step) {
-							float distance = -log(max(1.0-rand(), 0.000001))*mean_free_path;
+						// Light albedos need long walks (64 steps lose 4% of the
+						// light of an albedo of 0.8, 256 steps less than 0.1%)
+						for (int walk_step = 0; walk_step < 256; ++walk_step) {
+							float free_path = -log(max(1.0-rand(), 0.000001))*mean_free_path;
 							int walk_face;
 							vec2 walk_bary;
 							float walk_t = intersects_bvh(p, d, walk_face, walk_bary);
-							if (walk_face >= 0 && walk_t < distance) {
+							if (walk_face < 0) {
+								// Open meshes: the walk leaves the object
+								next_dir = d;
+								position = p;
+								geometric_normal = d;
+								exited = true;
+								break;
+							}
+							if (walk_t < free_path) {
 								// Out of the volume, diffusely
 								vec3 out_normal = face_normal(walk_face, walk_bary);
 								if (dot(out_normal, d) < 0.0) {
@@ -521,17 +553,22 @@ void main() {
 								geometric_normal = out_normal;
 								next_dir = sample_cosine(out_normal);
 								exited = true;
+								// Direct light from the sun where the path comes out
+								if (sun_energy > 0.0) {
+									vec3 l = sample_sun();
+									float NdotL = dot(out_normal, l);
+									if (NdotL > 0.0) {
+										int shadow_face;
+										vec2 shadow_bary;
+										intersects_bvh(position+out_normal*0.0005*scene_scale, l, shadow_face, shadow_bary);
+										if (shadow_face < 0) {
+											radiance += throughput*weight*sun_color*sun_energy*NdotL;
+										}
+									}
+								}
 								break;
 							}
-							if (walk_face < 0) {
-								// Open meshes: the walk leaves the object
-								next_dir = d;
-								position = p;
-								geometric_normal = d;
-								exited = true;
-								break;
-							}
-							p += distance*d;
+							p += free_path*d;
 							weight *= scattering;
 							d = sample_sphere();
 						}
@@ -540,11 +577,11 @@ void main() {
 						}
 					} else {
 						next_dir = sample_cosine(n);
-						if (thin_walled != 0 && rand() < transmission) {
+						if (thin_walled != 0 && transmission > 0.0 && rand() < transmission) {
 							// Thin walled transmission: through the surface
 							next_dir = -next_dir;
 						}
-						weight = albedo*(1.0-metallic)/(1.0-p_specular)*(1.0-base_fresnel);
+						weight = albedo*(1.0-base_metallic)/(1.0-p_specular)*(1.0-base_fresnel);
 					}
 				}
 			}

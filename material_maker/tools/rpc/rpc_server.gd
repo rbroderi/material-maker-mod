@@ -607,7 +607,7 @@ func api_render_path_traced(params : Dictionary):
 	if preview == null:
 		return null
 	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
-	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), samples, bool(params.get("transparent", false)), Callable(), bool(params.get("thin_walled", false)))
+	var error : String = await preview.render_path_traced(params.path, Vector2i(size, size), samples, bool(params.get("transparent", false)), Callable(), bool(params.get("displacement", true)), bool(params.get("thin_walled", false)))
 	return fail(error) if error != "" else params.path
 
 ## Turntable of the 3D preview's object, as a sprite sheet or a PNG sequence

@@ -7,6 +7,7 @@ const SETTING_GENERATE_MAP_RESOLUTION := "3D_generate_map_resolution"
 const SETTING_RENDER_SIZE := "3D_render_size"
 const SETTING_RENDER_SAMPLES := "3D_render_samples"
 const SETTING_RENDER_TRANSPARENT := "3D_render_transparent"
+const SETTING_RENDER_DISPLACEMENT := "3D_render_displacement"
 const SETTING_RENDER_THIN_WALLED := "3D_render_thin_walled"
 const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 
@@ -18,9 +19,11 @@ const SETTING_TURNTABLE_FRAMES := "3D_turntable_frames"
 @onready var MapExportFileResultLabel := %MapExportFileResultLabel
 @onready var MapResolution := %MapResolution
 
+var render_separator : HSeparator
 var render_size : SpinBox
 var render_samples : SpinBox
 var render_transparent : CheckBox
+var render_displacement : CheckBox
 var render_thin_walled : CheckBox
 var render_button : Button
 var turntable_frames : SpinBox
@@ -29,6 +32,13 @@ var turntable_button : Button
 
 func _ready() -> void:
 	add_render_options()
+
+## Map generation is only available for custom meshes
+func set_map_generation_visible(v : bool) -> void:
+	for n in [ "GenerateMapLabel", "GenerateMapsSection", "GenerateMapButton" ]:
+		$VBoxContainer.get_node(n).visible = v
+	render_separator.visible = v
+	size = Vector2()
 
 func add_spin_box(parent : Control, label : String, minimum : float, maximum : float, setting : String, default : float) -> SpinBox:
 	var l : Label = Label.new()
@@ -43,11 +53,11 @@ func add_spin_box(parent : Control, label : String, minimum : float, maximum : f
 	return spin_box
 
 ## A check box saved in a setting
-func add_check_box(parent : Control, text : String, tooltip : String, setting : String) -> CheckBox:
+func add_check_box(parent : Control, text : String, tooltip : String, setting : String, default : bool = false) -> CheckBox:
 	var check_box : CheckBox = CheckBox.new()
 	check_box.text = text
 	check_box.tooltip_text = tooltip
-	check_box.button_pressed = mm_globals.get_config_or(setting, false)
+	check_box.button_pressed = mm_globals.get_config_or(setting, default)
 	check_box.toggled.connect(func(v): mm_globals.set_config(setting, v))
 	parent.add_child(check_box)
 	return check_box
@@ -55,7 +65,8 @@ func add_check_box(parent : Control, text : String, tooltip : String, setting : 
 ## Path traced renders and turntables of the preview
 func add_render_options() -> void:
 	var box : VBoxContainer = $VBoxContainer
-	box.add_child(HSeparator.new())
+	render_separator = HSeparator.new()
+	box.add_child(render_separator)
 	var title : Label = Label.new()
 	title.text = "Render"
 	box.add_child(title)
@@ -65,7 +76,8 @@ func add_render_options() -> void:
 	render_size = add_spin_box(grid, "Size", 64, 8192, SETTING_RENDER_SIZE, 1024)
 	render_samples = add_spin_box(grid, "Samples", 1, 65536, SETTING_RENDER_SAMPLES, 256)
 	render_transparent = add_check_box(box, "Transparent background", "", SETTING_RENDER_TRANSPARENT)
-	render_thin_walled = add_check_box(box, "Thin walled", "Transmissive surfaces are thin sheets instead of refractive solids", SETTING_RENDER_THIN_WALLED)
+	render_displacement = add_check_box(box, "Displacement", "The mesh is subdivided and displaced by the material's depth", SETTING_RENDER_DISPLACEMENT, true)
+	render_thin_walled = add_check_box(box, "Thin walled", "Transmissive surfaces are thin sheets that let diffuse light through (leaves, paper, fabric)", SETTING_RENDER_THIN_WALLED)
 	render_button = Button.new()
 	render_button.text = "Path traced render..."
 	render_button.tooltip_text = "Renders the object from the current view with a path tracer (PNG or linear EXR)"
@@ -102,8 +114,9 @@ func _on_render_button_pressed() -> void:
 		return
 	var size_value : int = int(render_size.value)
 	render_button.disabled = true
+	var progress : Callable = func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ]
 	var error : String = await preview3D.render_path_traced(file_name, Vector2i(size_value, size_value), int(render_samples.value), render_transparent.button_pressed,
-		func(done, total): render_button.text = "Rendering %d/%d" % [ done, total ], render_thin_walled.button_pressed)
+		progress, render_displacement.button_pressed, render_thin_walled.button_pressed)
 	render_button.text = "Path traced render..."
 	render_button.disabled = false
 	if error != "":
