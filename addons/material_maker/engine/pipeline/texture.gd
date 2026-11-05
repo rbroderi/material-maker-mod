@@ -447,7 +447,11 @@ func set_texture(new_texture : ImageTexture) -> void:
 			#Image.FORMAT_RGBA8:
 			#	format = RenderingDevice.DATA_FORMAT_R8G8B8A8_UNORM
 			_:
-				print("Unsupported texture format "+str(image.get_format()))
+				# Other formats are converted to 16 bit floats. This is expected
+				# for 8 bit images (Image nodes loading PNG or JPG files, Text
+				# nodes), so only report the others
+				if not image.get_format() in [ Image.FORMAT_L8, Image.FORMAT_LA8, Image.FORMAT_R8, Image.FORMAT_RG8, Image.FORMAT_RGB8, Image.FORMAT_RGBA8 ]:
+					print("Unsupported texture format "+str(image.get_format()))
 				image.convert(Image.FORMAT_RGBAH)
 				new_texture.set_image(image)
 				format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
