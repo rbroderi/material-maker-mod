@@ -4,7 +4,9 @@ extends RefCounted
 # TX files: tiled TIFF files with a mip level per directory, as written by
 # OpenImageIO's maketx and read by renderers that cache textures (Arnold,
 # RenderMan's OpenImageIO path, Cycles, ...). Tiles are 64x64 and compressed
-# with Deflate (zlib), 8 bits, half float or float components.
+# with Deflate (zlib), 8 bits, half float or float components. Like maketx,
+# sRGB images are marked with the Exif color space tag (OpenImageIO reads it
+# as oiio:ColorSpace), and the TIFF limit of 4 GiB applies (no BigTIFF).
 
 
 const TILE_SIZE : int = 64
@@ -25,14 +27,23 @@ const TILE_OFFSETS : int = 324
 const TILE_BYTE_COUNTS : int = 325
 const EXTRA_SAMPLES : int = 338
 const SAMPLE_FORMAT : int = 339
-# Pixar's tags, that OpenImageIO reads as textureformat and wrapmodes
+# Pixar's tags, that OpenImageIO reads as textureformat, wrapmodes and fovcot
 const TEXTURE_FORMAT : int = 33302
 const WRAP_MODES : int = 33303
+const FOV_COT : int = 33304
+const EXIF_IFD : int = 34665
+# Exif tags
+const EXIF_COLOR_SPACE : int = 40961
+const EXIF_COLOR_SPACE_SRGB : int = 1
 
 # TIFF types
 const TYPE_ASCII : int = 2
 const TYPE_SHORT : int = 3
 const TYPE_LONG : int = 4
+const TYPE_FLOAT : int = 11
+
+## Largest offset of a (non BigTIFF) TIFF file
+const MAX_OFFSET : int = 0xFFFFFFFF
 
 const COMPRESSION_NONE : int = 1
 const COMPRESSION_DEFLATE : int = 8
@@ -47,10 +58,13 @@ const IMAGE_FORMATS : Dictionary = {
 
 ## Saves an image as a TX file. Options: grayscale (one channel) and alpha
 ## (RGBA, else RGB; by default, the image's channels), bits (8, 16 or 32, by
-## default those of the image), normal_map (renormalized mipmaps), compress
-## (default true) and wrap (OpenImageIO's wrap mode, default periodic since
-## Material Maker's textures tile)
+## default those of the image), srgb (sRGB encoded colors, stored as they are
+## and marked as sRGB, also with 16 or 32 bits as maketx does), normal_map
+## (renormalized mipmaps), compress (default true) and wrap (OpenImageIO's
+## wrap mode, default periodic since Material Maker's textures tile)
 static func save_image(image : Image, file_name : String, options : Dictionary = {}) -> Error:
+	if image == null or image.is_empty():
+		return ERR_INVALID_PARAMETER
 	var channels : int = MMTexture.image_channels(image.get_format())
 	if channels == 2:
 		channels = 3
@@ -84,8 +98,8 @@ static func save_image(image : Image, file_name : String, options : Dictionary =
 		var end : int = converted.get_mipmap_offset(level+1) if level+1 < level_count else data.size()
 		var level_image : Image = Image.create_from_data(level_size.x, level_size.y, false, format, data.slice(converted.get_mipmap_offset(level), end))
 		# Tiles (edge tiles are padded with zeros)
-		var tile_offsets : PackedInt32Array = PackedInt32Array()
-		var tile_byte_counts : PackedInt32Array = PackedInt32Array()
+		var tile_offsets : PackedInt64Array = PackedInt64Array()
+		var tile_byte_counts : PackedInt64Array = PackedInt64Array()
 		var tile : Image = Image.create_empty(TILE_SIZE, TILE_SIZE, false, format)
 		for ty in ceili(float(level_size.y)/TILE_SIZE):
 			for tx in ceili(float(level_size.x)/TILE_SIZE):
@@ -121,7 +135,25 @@ static func save_image(image : Image, file_name : String, options : Dictionary =
 		# Directories start on a word boundary
 		if file.get_position()%2 != 0:
 			file.store_8(0)
+		if level == 0:
+			tags.append([ FOV_COT, TYPE_FLOAT, [ float(level_size.x)/float(level_size.y) ] ])
+			if options.get("srgb", false):
+				# Exif directory with the sRGB color space
+				tags.append([ EXIF_IFD, TYPE_LONG, [ file.get_position() ] ])
+				file.store_16(1)
+				file.store_16(EXIF_COLOR_SPACE)
+				file.store_16(TYPE_SHORT)
+				file.store_32(1)
+				file.store_16(EXIF_COLOR_SPACE_SRGB)
+				file.store_16(0)
+				file.store_32(0)
 		var directory_offset : int = file.get_position()
+		# Offsets (tiles, directories and their values) are 32 bits
+		if directory_offset+12*tags.size()+8*tile_offsets.size()+256 > MAX_OFFSET:
+			file.close()
+			DirAccess.remove_absolute(file_name)
+			push_error("Cannot save %s: TX files are limited to 4 GiB" % file_name)
+			return ERR_FILE_CANT_WRITE
 		file.seek(next_offset_position)
 		file.store_32(directory_offset)
 		file.seek(directory_offset)
@@ -153,6 +185,12 @@ static func write_directory(file : FileAccess, tags : Array) -> int:
 				for v in t[2]:
 					longs.put_u32(v)
 				values = longs.data_array
+				count = t[2].size()
+			TYPE_FLOAT:
+				var floats : StreamPeerBuffer = StreamPeerBuffer.new()
+				for v in t[2]:
+					floats.put_float(v)
+				values = floats.data_array
 				count = t[2].size()
 		entries.put_u16(t[0])
 		entries.put_u16(t[1])
