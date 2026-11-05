@@ -3,7 +3,7 @@
 	"files": [
 		{
 			"conditions": "$(connected:albedo_tex) or $(connected:opacity_tex)",
-			"expression": "rgba=vec4(mix(pow(($albedo_tex($uv)*$albedo_color.rgb+vec3(0.055))/1.055, vec3(2.4)), ($albedo_tex($uv)*$albedo_color.rgb)/12.92, lessThan($albedo_tex($uv)*$albedo_color.rgb, vec3(0.04045))), $opacity_tex($uv))",
+			"expression": "rgba=vec4(mix(pow(($albedo_tex($uv)+vec3(0.055))/1.055, vec3(2.4)), $albedo_tex($uv)/12.92, lessThan($albedo_tex($uv), vec3(0.04045)))*mix(pow(($albedo_color.rgb+vec3(0.055))/1.055, vec3(2.4)), $albedo_color.rgb/12.92, lessThan($albedo_color.rgb, vec3(0.04045))), $opacity_tex($uv))",
 			"file_name": "$(path_prefix).exr",
 			"layer": "albedo",
 			"options": {
@@ -43,7 +43,7 @@
 		},
 		{
 			"conditions": "$(connected:emission_tex)",
-			"expression": "rgb=mix(pow(($emission_tex($uv)*$emission_energy+vec3(0.055))/1.055, vec3(2.4)), ($emission_tex($uv)*$emission_energy)/12.92, lessThan($emission_tex($uv)*$emission_energy, vec3(0.04045)))",
+			"expression": "rgb=mix(pow(($emission_tex($uv)+vec3(0.055))/1.055, vec3(2.4)), $emission_tex($uv)/12.92, lessThan($emission_tex($uv), vec3(0.04045)))*$emission_energy",
 			"file_name": "$(path_prefix).exr",
 			"layer": "emission",
 			"options": {
