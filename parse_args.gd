@@ -145,9 +145,13 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 ## words with it (the most similar name if several do). A target with another
 ## version number ("Godot 3" for "Godot 4") never matches. Returns an empty
 ## string if no target shares a word other than a version number with target.
+## Materials that do not have the default target ("Godot/Godot 4 Standard")
+## but have a Godot 4 3D target ("Godot 4/Spatial", Unlit) use it instead.
 static func find_export_target(target : String, export_profiles : Array) -> String:
 	if export_profiles.has(target):
 		return target
+	if target == "Godot/Godot 4 Standard" and export_profiles.has("Godot 4/Spatial"):
+		return "Godot 4/Spatial"
 	for p : String in export_profiles:
 		if p.to_lower() == target.to_lower():
 			return p
