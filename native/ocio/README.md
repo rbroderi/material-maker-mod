@@ -12,8 +12,9 @@ management. Material Maker works without it; when it is built:
 The config is OCIO's built-in ACES studio config by default
 (`ocio://studio-config-latest`). The `ocio_config` setting (Material Maker's
 configuration file) can point to another config file, and `ocio_working_space`
-is the color space of Material Maker's values (`sRGB - Texture` by default,
-since Material Maker works with sRGB encoded colors).
+is the color space of Material Maker's values (`sRGB Encoded Rec.709 (sRGB)`
+by default, since Material Maker works with sRGB encoded colors; `sRGB - Texture`
+is its alias in the ACES configs).
 
 ## Building
 
@@ -38,6 +39,11 @@ and copies the extension, OpenColorIO's library and `mm_ocio.gdextension` to
 `addons/material_maker/ocio` (not versioned). Then run Material Maker's
 import once (`godot --headless --path . --import`, or open the project in the
 editor) so Godot registers the extension.
+
+To remove the extension, delete `addons/material_maker/ocio/bin` and
+`addons/material_maker/ocio/mm_ocio.gdextension`, then delete
+`.godot/extension_list.cfg` and run the import again (Godot keeps listing a
+deleted extension there, and reports an error at every start).
 
 ## API
 

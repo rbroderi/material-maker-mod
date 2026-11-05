@@ -21,7 +21,10 @@ const SHAPER_STOPS : float = 4.0
 const SCENE_LINEAR_NAMES : Array[String] = [ "Linear Rec.709 (sRGB)", "lin_rec709_srgb", "Utility - Linear - sRGB", "lin_srgb", "Linear" ]
 
 static var ocio = null
+## The config ocio was created for (it is not reloaded until the setting
+## changes, even if it failed to load)
 static var ocio_config : String = ""
+static var ocio_created : bool = false
 static var view_luts : Dictionary = {}
 
 
@@ -33,12 +36,14 @@ static func get_ocio():
 	if not is_available():
 		return null
 	var config : String = mm_globals.get_config("ocio_config")
-	if ocio == null or config != ocio_config:
-		ocio = ClassDB.instantiate("MMOCIO")
+	if not ocio_created or config != ocio_config:
+		ocio_created = true
 		ocio_config = config
 		view_luts.clear()
+		ocio = ClassDB.instantiate("MMOCIO")
 		if not ocio.load_config(config):
 			push_error("Cannot load OCIO config '%s': %s" % [ config, ocio.get_error() ])
+			# Fall back to the built-in config
 			if config == "" or not ocio.load_config(""):
 				ocio = null
 	return ocio

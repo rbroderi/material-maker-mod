@@ -117,7 +117,11 @@ OCIO::ConstCPUProcessorRcPtr MMOCIO::get_processor(const std::string &key, const
 	}
 	try {
 		OCIO::ConstProcessorRcPtr processor = config->getProcessor(create_transform());
-		OCIO::ConstCPUProcessorRcPtr cpu = processor->getDefaultCPUProcessor();
+		// Without the fast pow/log/exp approximations of the default
+		// optimization (errors up to 2.4e-5 on the sRGB curve): the results
+		// end up in textures and exported files
+		const OCIO::OptimizationFlags flags = OCIO::OptimizationFlags(OCIO::OPTIMIZATION_DEFAULT & ~OCIO::OPTIMIZATION_FAST_LOG_EXP_POW);
+		OCIO::ConstCPUProcessorRcPtr cpu = processor->getOptimizedCPUProcessor(flags);
 		processors[key] = cpu;
 		error = "";
 		return cpu;
@@ -179,6 +183,11 @@ Ref<Image> MMOCIO::convert_image(const Ref<Image> &image, const String &source, 
 		return Ref<Image>();
 	}
 	Ref<Image> copy = image->duplicate();
+	// Only the first level is converted (the data must hold width*height pixels)
+	if (copy->is_compressed()) {
+		copy->decompress();
+	}
+	copy->clear_mipmaps();
 	copy->convert(Image::FORMAT_RGBAF);
 	PackedByteArray data = copy->get_data();
 	PackedFloat32Array pixels = data.to_float32_array();

@@ -11,7 +11,7 @@ const DEFAULT_CONFIG : Dictionary = {
 	# OpenColorIO (when the extension is available): config file ("" is the
 	# built-in ACES studio config), and the color space of Material Maker's values
 	ocio_config = "",
-	ocio_working_space = "sRGB - Texture",
+	ocio_working_space = "sRGB Encoded Rec.709 (sRGB)",
 	ocio_export_space = "",
 	confirm_quit = true,
 	confirm_close_project = true,
