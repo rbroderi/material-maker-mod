@@ -47,8 +47,8 @@ loop can use *$iteration*: 0 for the initialization, then 1 to the number of ite
 Iterate Buffer with several states
 ++++++++++++++++++++++++++++++++++
 
-Graphs can also use iterate buffers with several states (type **iterate_buffer_v2**), for
-example an image and a running mean. Inputs 1 to n initialize the states, and inputs n+1 to 2n
+The **Iterate Buffer (States)** node (in the Miscellaneous section of the library, saved as type
+**iterate_buffer_v2**) iterates several states together, for example an image and a running mean. Inputs 1 to n initialize the states, and inputs n+1 to 2n
 are the loop inputs. Outputs 1 to n are the final states, and outputs n+1 to 2n the current
 states, that are connected to the loop. All states are rendered by a single shader in each
 iteration, so the loop always reads the states of the previous iteration. Its parameters are:
