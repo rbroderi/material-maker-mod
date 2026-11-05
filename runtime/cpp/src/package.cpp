@@ -118,15 +118,21 @@ uint32_t Package::output_size() const {
 }
 
 bool Package::set_output_size(uint32_t size, std::string &error) {
-	uint32_t current = output_size();
-	if (size == 0 || current == 0) {
+	if (size == 0 || output_size() == 0) {
 		error = "invalid output size";
 		return false;
 	}
-	double scale = double(size) / double(current);
+	// Only output passes are resized, as with Material Maker's export size:
+	// buffers keep their size (it is a parameter of their Buffer node, and
+	// the shaders that read them depend on it)
 	for (Pass &pass : passes) {
-		pass.width = std::max<uint32_t>(1, uint32_t(std::lround(pass.width * scale)));
-		pass.height = std::max<uint32_t>(1, uint32_t(std::lround(pass.height * scale)));
+		bool is_output = std::any_of(outputs.begin(), outputs.end(), [&](const auto &o) { return o.second == pass.name; });
+		if (!is_output) {
+			continue;
+		}
+		double largest = double(std::max(pass.width, pass.height));
+		pass.width = std::max<uint32_t>(1, uint32_t(std::lround(pass.width * size / largest)));
+		pass.height = std::max<uint32_t>(1, uint32_t(std::lround(pass.height * size / largest)));
 	}
 	return true;
 }
@@ -164,18 +170,23 @@ bool Package::load_manifest(const std::string &path, std::string &error) {
 		return false;
 	}
 	name = manifest.value("name", "");
+	if (!manifest["passes"].is_array() || !manifest["outputs"].is_object()) {
+		error = "invalid manifest";
+		return false;
+	}
 	for (const auto &p : manifest["passes"]) {
 		Pass pass;
-		pass.name = p["name"].get<std::string>();
-		pass.format = p["format"].get<std::string>();
-		pass.width = p["size"][0].get<uint32_t>();
-		pass.height = p["size"][1].get<uint32_t>();
+		pass.name = p.at("name").get<std::string>();
+		pass.format = p.at("format").get<std::string>();
+		pass.width = p.at("size").at(0).get<uint32_t>();
+		pass.height = p.at("size").at(1).get<uint32_t>();
 		pass.local_size = p.value("local_size", 32u);
-		for (const auto &[key, layout] : p["parameters"].items()) {
-			pass.parameters[key] = ParameterLayout{ layout["type"].get<std::string>(), layout["offset"].get<uint32_t>(), layout.value("array_size", 0u) };
+		const nlohmann::json layouts = p.value("parameters", nlohmann::json::object());
+		for (const auto &[key, layout] : layouts.items()) {
+			pass.parameters[key] = ParameterLayout{ layout.at("type").get<std::string>(), layout.at("offset").get<uint32_t>(), layout.value("array_size", 0u) };
 		}
 		pass.parameter_data = base64_decode(p.value("parameter_data", ""));
-		for (const auto &i : p["inputs"]) {
+		for (const auto &i : p.value("inputs", nlohmann::json::array())) {
 			PassInput input;
 			input.name = i.value("name", "");
 			input.pass = i.value("pass", "");
@@ -193,7 +204,7 @@ bool Package::load_manifest(const std::string &path, std::string &error) {
 		}
 		std::vector<uint8_t> spirv;
 		if (!zip.read("shaders/" + pass.name + ".spv", spirv) || spirv.size() % 4 != 0) {
-			error = "pass " + pass.name + " has no SPIR-V shader (export the package again with a newer Material Maker)";
+			error = "pass " + pass.name + " has no SPIR-V shader (shaders/" + pass.name + ".spv)";
 			return false;
 		}
 		pass.spirv.resize(spirv.size() / 4);
@@ -202,35 +213,39 @@ bool Package::load_manifest(const std::string &path, std::string &error) {
 	}
 	for (const auto &[channel, pass_name] : manifest["outputs"].items()) {
 		outputs[channel] = pass_name.get<std::string>();
+		if (find_pass(outputs[channel]) == nullptr) {
+			error = "output " + channel + " uses an unknown pass";
+			return false;
+		}
 	}
-	for (const auto &p : manifest["parameters"]) {
+	for (const auto &p : manifest.value("parameters", nlohmann::json::array())) {
 		Parameter parameter;
-		parameter.name = p["name"].get<std::string>();
+		parameter.name = p.at("name").get<std::string>();
 		parameter.label = p.value("label", "");
 		parameter.type = p.value("type", "float");
-		parameter.default_value = to_floats(p["default"]);
+		parameter.default_value = to_floats(p.value("default", nlohmann::json()));
 		parameter.min = p.value("min", 0.0f);
 		parameter.max = p.value("max", 1.0f);
 		parameter.step = p.value("step", 0.0f);
-		for (const auto &t : p["targets"]) {
-			ParameterTarget target{ t["pass"].get<std::string>(), t["parameter"].get<std::string>(), {} };
+		for (const auto &t : p.value("targets", nlohmann::json::array())) {
+			ParameterTarget target{ t.at("pass").get<std::string>(), t.at("parameter").get<std::string>(), {} };
 			if (t.contains("terms")) {
 				for (const auto &term : t["terms"]) {
-					target.seed_terms.push_back(SeedTerm{ term[0].get<float>(), term[1].get<bool>() });
+					target.seed_terms.push_back(SeedTerm{ term.at(0).get<double>(), term.at(1).get<bool>() });
 				}
 			}
 			parameter.targets.push_back(std::move(target));
 		}
 		parameters.push_back(std::move(parameter));
 	}
-	if (manifest.contains("presets")) {
+	if (manifest["presets"].is_object()) {
 		for (const auto &[preset_name, values] : manifest["presets"].items()) {
 			for (const auto &[parameter, value] : values.items()) {
 				presets[preset_name][parameter] = to_floats(value);
 			}
 		}
 	}
-	material_json = manifest.value("material", nlohmann::json::object()).dump();
+	material_json = manifest["material"].is_object() ? manifest["material"].dump() : "{}";
 	return true;
 }
 

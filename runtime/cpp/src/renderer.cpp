@@ -148,6 +148,8 @@ struct Renderer::Impl {
 	Package package;
 	std::vector<PassState> passes;
 	std::map<std::string, size_t> pass_index;
+	/// Parameter buffers of the package (with its seeds), by pass index
+	std::vector<std::vector<uint8_t>> exported_parameter_data;
 	std::map<std::string, GpuImage> textures;
 	size_t rendered = 0;
 
@@ -189,6 +191,14 @@ struct Renderer::Impl {
 	}
 
 	void release_package() {
+		release_passes();
+		for (auto &[name, image] : textures) {
+			release_image(image);
+		}
+		textures.clear();
+	}
+
+	void release_passes() {
 		for (PassState &p : passes) {
 			vkDestroyPipeline(device, p.pipeline, nullptr);
 			vkDestroyPipelineLayout(device, p.pipeline_layout, nullptr);
@@ -205,10 +215,6 @@ struct Renderer::Impl {
 		}
 		passes.clear();
 		pass_index.clear();
-		for (auto &[name, image] : textures) {
-			release_image(image);
-		}
-		textures.clear();
 	}
 
 	bool find_memory_type(uint32_t bits, VkMemoryPropertyFlags flags, uint32_t &index) {
@@ -626,11 +632,20 @@ struct Renderer::Impl {
 		}
 		release_package();
 		package = p;
+		exported_parameter_data.clear();
+		for (const Pass &pass : package.passes) {
+			exported_parameter_data.push_back(pass.parameter_data);
+		}
 		for (const auto &[name, image] : package.textures) {
 			if (!upload_texture(name, image, error)) {
 				return false;
 			}
 		}
+		return create_passes(error);
+	}
+
+	/// Creates the passes at their current size, all of them to be rendered
+	bool create_passes(std::string &error) {
 		passes.resize(package.passes.size());
 		for (size_t i = 0; i < package.passes.size(); i++) {
 			passes[i].pass = &package.passes[i];
@@ -681,18 +696,46 @@ struct Renderer::Impl {
 			}
 			uint8_t *destination = (uint8_t *)state.parameters.mapped + layout->second.offset;
 			if (parameter->type == "seed") {
-				double seed = value.empty() ? 0.0 : value[0];
-				double sum = 0.0;
-				for (const SeedTerm &term : target.seed_terms) {
-					sum += term.locked ? term.value : std::fmod(term.value + SEED_OFFSET * seed, 1.0);
+				int seed = value.empty() ? 0 : int(value[0]);
+				if (seed == 0) {
+					// The seeds of the package (the sum of the terms can differ from
+					// them by rounding)
+					const std::vector<uint8_t> &exported = exported_parameter_data[it->second];
+					if (layout->second.offset + 4 <= exported.size()) {
+						memcpy(destination, exported.data() + layout->second.offset, 4);
+					}
+				} else {
+					double sum = 0.0;
+					for (const SeedTerm &term : target.seed_terms) {
+						sum += term.locked ? term.value : std::fmod(term.value + SEED_OFFSET * seed, 1.0);
+					}
+					encode_value(destination, layout->second.type, { float(sum) });
 				}
-				encode_value(destination, layout->second.type, { float(sum) });
 			} else {
 				encode_value(destination, layout->second.type, value);
 			}
 			mark_dirty(it->second);
 		}
 		return true;
+	}
+
+	bool set_output_size(uint32_t size, std::string &error) {
+		if (passes.empty()) {
+			error = "no package is loaded";
+			return false;
+		}
+		// Parameter values are kept (the new parameter buffers are
+		// initialized from the package)
+		for (size_t i = 0; i < passes.size(); i++) {
+			Pass &pass = package.passes[i];
+			memcpy(pass.parameter_data.data(), passes[i].parameters.mapped, pass.parameter_data.size());
+		}
+		if (!package.set_output_size(size, error)) {
+			return false;
+		}
+		vkDeviceWaitIdle(device);
+		release_passes();
+		return create_passes(error);
 	}
 
 	bool render(std::string &error) {
@@ -768,6 +811,8 @@ Renderer::~Renderer() = default;
 bool Renderer::init(std::string &error, int device_index) { return impl->init(error, device_index); }
 bool Renderer::load(const Package &package, std::string &error) { return impl->load(package, error); }
 bool Renderer::set_parameter(const std::string &name, const std::vector<float> &value, std::string &error) { return impl->set_parameter(name, value, error); }
+bool Renderer::set_output_size(uint32_t size, std::string &error) { return impl->set_output_size(size, error); }
+uint32_t Renderer::output_size() const { return impl->package.output_size(); }
 bool Renderer::render(std::string &error) { return impl->render(error); }
 bool Renderer::read_image(const std::string &output, Image &image, std::string &error) { return impl->read_image(output, image, error); }
 std::string Renderer::device_name() const { return impl->device_name; }

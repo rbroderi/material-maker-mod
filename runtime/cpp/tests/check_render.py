@@ -1,6 +1,7 @@
 """Checks mmr_render on a test package (for CI, where it can run on a software
 Vulkan driver such as lavapipe): the outputs are written with the package's
-size, and changing the seed changes the albedo.
+size or with --size, changing the seed changes the albedo, and seed 0 gives
+the exported seeds back.
 
     python runtime/cpp/tests/check_render.py <mmr_render executable>
 """
@@ -38,9 +39,11 @@ def main():
     with tempfile.TemporaryDirectory() as base:
         default = os.path.join(base, "default")
         seeded = os.path.join(base, "seed3")
+        seed0 = os.path.join(base, "seed0")
         half = os.path.join(base, "half")
         render(executable, default)
         render(executable, seeded, "--set", "seed=3")
+        render(executable, seed0, "--set", "seed=0")
         render(executable, half, "--size", "128")
         for o in OUTPUTS:
             path = os.path.join(default, o + ".png")
@@ -51,9 +54,13 @@ def main():
             half_path = os.path.join(half, o + ".png")
             if not os.path.exists(half_path) or png_size(half_path) != (128, 128):
                 failures.append("--size 128: %s is missing or not 128x128" % o)
-        with open(os.path.join(default, "albedo.png"), "rb") as a, open(os.path.join(seeded, "albedo.png"), "rb") as b:
-            if a.read() == b.read():
-                failures.append("the seed does not change the albedo")
+        def read(directory):
+            with open(os.path.join(directory, "albedo.png"), "rb") as f:
+                return f.read()
+        if read(default) == read(seeded):
+            failures.append("the seed does not change the albedo")
+        if read(default) != read(seed0):
+            failures.append("seed 0 is not the exported seed")
     for f in failures:
         print("FAIL", f)
     print("OK" if not failures else "FAILED")

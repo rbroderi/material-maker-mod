@@ -3,8 +3,9 @@
 //   mmr_render <package.mmr> [-o <dir>] [--preset name] [--set name=value ...] [--size n] [--exr] [--list] [--device n]
 //
 // Values are numbers, or comma separated lists for colors (r,g,b,a). --size
-// renders the outputs at n x n pixels (all passes are scaled), and packages
-// with random nodes have a "seed" parameter (--set seed=3).
+// renders the outputs at n x n pixels (buffers keep their size, as with
+// Material Maker's export size), and packages with random nodes have a
+// "seed" parameter (--set seed=3, 0 is the exported seed).
 
 #include "mmr/mmr.h"
 

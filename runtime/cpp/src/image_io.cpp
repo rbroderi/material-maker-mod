@@ -209,8 +209,42 @@ bool write_png(const std::string &path, const Image &image) {
 }
 
 bool write_exr(const std::string &path, const Image &image, std::string &error) {
+	// Channels are stored in alphabetical order (A, B, G, R). Single channel
+	// images are written as R (tinyexr's SaveEXR would write them as A).
+	static const char *names[4] = { "A", "B", "G", "R" };
+	int channels = image.channels == 1 ? 1 : 4;
+	size_t pixel_count = (size_t)image.width * image.height;
+	std::vector<std::vector<float>> planes(channels, std::vector<float>(pixel_count));
+	for (size_t i = 0; i < pixel_count; i++) {
+		for (int c = 0; c < channels; c++) {
+			// Plane c holds names[c] (R is the last plane, or the only one)
+			int source = channels == 1 ? 0 : 3 - c;
+			planes[c][i] = source < image.channels ? image.pixels[i * image.channels + source] : 1.0f;
+		}
+	}
+	std::vector<unsigned char *> plane_pointers;
+	EXRHeader header;
+	InitEXRHeader(&header);
+	std::vector<EXRChannelInfo> channel_infos(channels);
+	std::vector<int> pixel_types(channels, TINYEXR_PIXELTYPE_FLOAT);
+	for (int c = 0; c < channels; c++) {
+		memset(&channel_infos[c], 0, sizeof(EXRChannelInfo));
+		strcpy(channel_infos[c].name, channels == 1 ? "R" : names[c]);
+		plane_pointers.push_back((unsigned char *)planes[c].data());
+	}
+	header.num_channels = channels;
+	header.channels = channel_infos.data();
+	header.pixel_types = pixel_types.data();
+	header.requested_pixel_types = pixel_types.data();
+	header.compression_type = TINYEXR_COMPRESSIONTYPE_ZIP;
+	EXRImage exr;
+	InitEXRImage(&exr);
+	exr.num_channels = channels;
+	exr.images = plane_pointers.data();
+	exr.width = image.width;
+	exr.height = image.height;
 	const char *message = nullptr;
-	if (SaveEXR(image.pixels.data(), image.width, image.height, image.channels, 0, path.c_str(), &message) != TINYEXR_SUCCESS) {
+	if (SaveEXRImageToFile(&exr, &header, path.c_str(), &message) != TINYEXR_SUCCESS) {
 		error = message ? message : "cannot write EXR";
 		FreeEXRErrorMessage(message);
 		return false;

@@ -1,5 +1,6 @@
 // Material Maker runtime: loads runtime packages (.mmr) and renders them with
-// Vulkan compute shaders. See design/runtime_packages.md.
+// Vulkan compute shaders. Packages are written by Material Maker's runtime
+// export plugin (File > Export runtime package, or --export-mmr).
 
 #pragma once
 
@@ -21,7 +22,7 @@ struct Image {
 
 /// A term of a seed uniform: a node's seed, and whether it is locked
 struct SeedTerm {
-	float value = 0.0f;
+	double value = 0.0;
 	bool locked = false;
 };
 
@@ -29,7 +30,8 @@ struct ParameterTarget {
 	std::string pass;
 	std::string parameter;
 	/// For "seed" parameters: the uniform is the sum of these seeds, each
-	/// (unless locked) offset by 0.6180339887*seed modulo 1
+	/// (unless locked) offset by 0.6180339887*seed modulo 1. Seed 0 is the
+	/// value stored in the package.
 	std::vector<SeedTerm> seed_terms;
 };
 
@@ -79,8 +81,10 @@ public:
 	const Pass *find_pass(const std::string &name) const;
 	/// Finds a parameter by name or label
 	const Parameter *find_parameter(const std::string &name) const;
-	/// Scales all passes so the outputs are size x size pixels (call it before
-	/// Renderer::load). Outputs and buffers keep their relative sizes.
+	/// Resizes the output passes so their largest side is size pixels, as
+	/// Material Maker's export size does. Buffers keep their own size (the
+	/// shaders that read them depend on it). Renderer::set_output_size()
+	/// resizes a loaded package.
 	bool set_output_size(uint32_t size, std::string &error);
 	/// Size of the outputs (the largest output pass)
 	uint32_t output_size() const;
@@ -112,9 +116,16 @@ public:
 	bool init(std::string &error, int device_index = -1);
 	/// Uploads a package's textures and creates its pipelines
 	bool load(const Package &package, std::string &error);
-	/// Sets a parameter (by name or label): 1 value for floats, 4 for colors.
-	/// Passes that depend on it are rendered by the next render() call.
+	/// Sets a parameter (by name or label): 1 value for floats, 4 for colors,
+	/// an integer for the seed (0 is the package's seeds). Passes that depend
+	/// on it are rendered by the next render() call.
 	bool set_parameter(const std::string &name, const std::vector<float> &value, std::string &error);
+	/// Resizes the outputs of the loaded package (see Package::set_output_size),
+	/// keeping the parameter values. All passes are rendered by the next
+	/// render() call.
+	bool set_output_size(uint32_t size, std::string &error);
+	/// Size of the outputs of the loaded package
+	uint32_t output_size() const;
 	/// Renders the passes that need it
 	bool render(std::string &error);
 	/// Reads the content of an output (by channel name) or of a pass
@@ -131,7 +142,7 @@ private:
 
 /// Writes an 8 bits PNG (values are clamped to [0, 1])
 bool write_png(const std::string &path, const Image &image);
-/// Writes a float EXR
+/// Writes a float EXR (R, G, B, A channels, or R for single channel images)
 bool write_exr(const std::string &path, const Image &image, std::string &error);
 
 } // namespace mmr

@@ -53,6 +53,8 @@ add_library(mmr_runtime STATIC
 	src/tinyexr_impl.cpp
 	src/renderer.cpp)
 target_include_directories(mmr_runtime PUBLIC include PRIVATE src ${tinyexr_SOURCE_DIR})
+# Projects that add this directory build with C++17 too
+target_compile_features(mmr_runtime PUBLIC cxx_std_17)
 target_link_libraries(mmr_runtime PUBLIC mmr_volk PRIVATE miniz nlohmann_json::nlohmann_json)
 
 add_executable(mmr_render tools/mmr_render.cpp)
