@@ -852,6 +852,9 @@ func get_generated_texture_dependencies(export_profile : Dictionary, export_cont
 ## size x height when height is not 0). With UDIM tiles, textures are exported
 ## for each tile (see export_texture_file).
 func export_material(prefix : String, profile : String, size : int = 0, command_line : bool = false, height : int = 0, tiles : PackedInt32Array = PackedInt32Array()) -> void:
+	if not get_export(profile).has("files"):
+		push_error("%s has no export target named %s" % [get_type_name(), profile])
+		return
 	mm_deps.set_exporting(true)
 	# Buffers sized relatively to the material follow an explicit export size
 	set_export_size_override(size)
