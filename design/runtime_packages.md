@@ -116,7 +116,7 @@ Values are encoded as in `MMPipeline.set_parameter_value_to_buffer`:
 
 1. For each material output, build the output shader code as
    `render_output_to_texture` does, compile it with `MMComputeShader`, and
-   capture the preprocessed source (`MMPipeline.compiled_sources`).
+   capture the preprocessed source (`MMPipeline.get_compiled_source()`, kept compressed).
 2. For each input texture of a pass: if it is the texture of a Buffer node
    (including value buffers), export that buffer's compute shader as a pass
    (recursively); otherwise, save the texture's current content as an

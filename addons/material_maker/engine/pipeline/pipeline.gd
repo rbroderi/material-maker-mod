@@ -190,9 +190,38 @@ var time_current_time : int = 0
 var output_parameters : Dictionary
 
 ## Preprocessed sources and SPIR-V of the last compiled shader, by stage
-## (used to export runtime packages)
-var compiled_sources : Dictionary = {}
-var compiled_spirv : Dictionary = {}
+## ("compute", "vertex", "fragment"), used to export runtime packages. They
+## are kept compressed (a preprocessed source includes all common shader
+## functions), use get_compiled_source() and get_compiled_spirv() to read them.
+var compiled_shaders : Dictionary = {}
+
+## The preprocessed source of a stage of the last compiled shader, or an
+## empty string
+func get_compiled_source(stage : String) -> String:
+	if not compiled_shaders.has(stage):
+		return ""
+	var data : Dictionary = compiled_shaders[stage]
+	return data.source.decompress(data.source_size, FileAccess.COMPRESSION_ZSTD).get_string_from_utf8()
+
+## The SPIR-V of a stage of the last compiled shader, empty if it did not
+## compile
+func get_compiled_spirv(stage : String) -> PackedByteArray:
+	if not compiled_shaders.has(stage) or compiled_shaders[stage].spirv_size == 0:
+		return PackedByteArray()
+	var data : Dictionary = compiled_shaders[stage]
+	return data.spirv.decompress(data.spirv_size, FileAccess.COMPRESSION_ZSTD)
+
+## Keeps the preprocessed sources and SPIR-V of a compiled shader (when a
+## stage did not compile, only its source is kept)
+func keep_compiled_shader(src : RDShaderSource, spirv : RDShaderSPIRV, stages : Array) -> void:
+	compiled_shaders = {}
+	for k in stages:
+		var source : PackedByteArray = src["source_"+k].to_utf8_buffer()
+		var bytecode : PackedByteArray = spirv["bytecode_"+k] if spirv["compile_error_"+k] == "" else PackedByteArray()
+		compiled_shaders[k] = {
+			source=source.compress(FileAccess.COMPRESSION_ZSTD), source_size=source.size(),
+			spirv=bytecode.compress(FileAccess.COMPRESSION_ZSTD), spirv_size=bytecode.size()
+		}
 
 ## Shaders created from the shader cache's SPIR-V, by rendering device and
 ## cache key: pipelines with the same shader (e.g. the many instances of a
@@ -216,11 +245,12 @@ func clear():
 	output_parameters = {}
 
 func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces : Dictionary) -> RID:
+	# Never keep the previous shader if this one is not kept
+	compiled_shaders = {}
 	var errors : bool = false
 	var src : RDShaderSource = RDShaderSource.new()
 	for k in shader_text.keys():
 		src["source_"+k] = mm_preprocessor.preprocess(shader_text[k], replaces)
-		compiled_sources[k] = src["source_"+k]
 	var stages : Array = shader_text.keys()
 	var cache_key : String = ""
 	if rd != null and MMShaderCache.is_enabled():
@@ -234,15 +264,13 @@ func do_compile_shader(rd : RenderingDevice, shader_text : Dictionary, replaces 
 				if cached_shader.is_valid():
 					shared_shaders[shared_key] = cached_shader
 			if cached_shader.is_valid():
-				for k in stages:
-					compiled_spirv[k] = cached_spirv["bytecode_"+k]
+				keep_compiled_shader(src, cached_spirv, stages)
 				return cached_shader
 			# Should not happen (cache files are checked): compile the shader
 			MMShaderCache.discard(cache_key)
 	var spirv : RDShaderSPIRV = rd.shader_compile_spirv_from_source(src)
 	MMShaderCache.count_compiled()
-	for k in shader_text.keys():
-		compiled_spirv[k] = spirv["bytecode_"+k]
+	keep_compiled_shader(src, spirv, stages)
 	var shader : RID = RID()
 	for k in shader_text.keys():
 		var error : String = spirv["compile_error_"+k]

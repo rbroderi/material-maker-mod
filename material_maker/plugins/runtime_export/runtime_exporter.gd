@@ -97,8 +97,13 @@ func collect_buffers(generator : Node) -> void:
 	for b in MMCliTools.collect_generators(generator, func(g): return g is MMGenBuffer):
 		buffer_by_texture[b.texture] = b
 
-## Adds a pass (after the passes it depends on) and returns its name
+## Adds a pass (after the passes it depends on) and returns its name, or ""
+## (after adding an error) if its shader was not kept
 func add_pass(compute_shader : MMComputeShader, size : Vector2i) -> String:
+	var source : String = compute_shader.get_compiled_source("compute")
+	if source == "":
+		errors.append("the shader of a pass was not kept")
+		return ""
 	var inputs : Array = []
 	for t in compute_shader.input_textures:
 		var input : Dictionary = { name=t.name }
@@ -112,9 +117,10 @@ func add_pass(compute_shader : MMComputeShader, size : Vector2i) -> String:
 		var parameter : MMPipeline.Parameter = compute_shader.parameters[p]
 		parameters[p] = { type=parameter.type, offset=parameter.offset, array_size=parameter.array_size }
 	var pass_name : String = "p%d" % passes.size()
-	shaders[pass_name] = compute_shader.compiled_sources.compute
-	if compute_shader.compiled_spirv.has("compute"):
-		spirv[pass_name] = compute_shader.compiled_spirv.compute
+	shaders[pass_name] = source
+	var bytecode : PackedByteArray = compute_shader.get_compiled_spirv("compute")
+	if not bytecode.is_empty():
+		spirv[pass_name] = bytecode
 	passes.append({
 		name=pass_name,
 		size=[ size.x, size.y ],
@@ -136,7 +142,7 @@ static func get_parameter_data(compute_shader : MMComputeShader) -> PackedByteAr
 func add_buffer_pass(buffer : MMGenBuffer) -> String:
 	if not pass_by_texture.has(buffer.texture):
 		var compute_shader : MMComputeShader = buffer.shader_compute.compute_shader
-		if not compute_shader.compiled_sources.has("compute"):
+		if compute_shader.get_compiled_source("compute") == "":
 			# Not compiled (yet): use its current content
 			return ""
 		pass_by_texture[buffer.texture] = await add_pass(compute_shader, buffer.get_buffer_dimensions())
