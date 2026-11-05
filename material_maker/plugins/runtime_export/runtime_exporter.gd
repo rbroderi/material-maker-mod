@@ -164,7 +164,7 @@ func add_buffer_pass(buffer : MMGenBuffer) -> String:
 	return pass_by_texture[buffer.texture]
 
 ## Saves a texture that is not rendered by an exported pass (EXR for float
-## formats, PNG otherwise)
+## and 16 bits formats, PNG otherwise)
 func embed_texture(texture : MMTexture, uniform_name : String) -> String:
 	if file_by_texture.has(texture):
 		return file_by_texture[texture]
@@ -176,6 +176,11 @@ func embed_texture(texture : MMTexture, uniform_name : String) -> String:
 	if image == null:
 		image = Image.create(1, 1, false, Image.FORMAT_RGBAH)
 		push_warning("Texture %s is empty" % uniform_name)
+	if MMTexture.is_16_bits_integer(image.get_format()):
+		# 16 bits integer images would lose 8 bits as PNG: 32 bits floats keep
+		# all their values
+		image = image.duplicate() as Image
+		image.convert({ Image.FORMAT_R16: Image.FORMAT_RF, Image.FORMAT_RG16: Image.FORMAT_RGF }.get(image.get_format(), Image.FORMAT_RGBAF))
 	var file_name : String
 	if image.get_format() in [ Image.FORMAT_RH, Image.FORMAT_RGBAH, Image.FORMAT_RF, Image.FORMAT_RGBAF, Image.FORMAT_RGH, Image.FORMAT_RGF, Image.FORMAT_RGBH, Image.FORMAT_RGBF ]:
 		file_name = "textures/t%d.exr" % textures.size()
