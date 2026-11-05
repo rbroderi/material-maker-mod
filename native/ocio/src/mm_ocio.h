@@ -40,6 +40,9 @@ public:
 	godot::String get_color_space_family(const godot::String &name) const;
 	/// The aliases of a color space
 	godot::PackedStringArray get_color_space_aliases(const godot::String &name) const;
+	/// True for a linear color space (scene-linear or display-linear: see
+	/// OCIO::Config::isColorSpaceLinear()), false for encoded and data color spaces
+	bool is_color_space_linear(const godot::String &name) const;
 	/// The color space of a role ("scene_linear", "color_picking"...), or ""
 	godot::String get_role(const godot::String &role) const;
 

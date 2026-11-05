@@ -13,6 +13,9 @@ const DEFAULT_CONFIG : Dictionary = {
 	ocio_config = "",
 	ocio_working_space = "sRGB Encoded Rec.709 (sRGB)",
 	ocio_export_space = "",
+	# Bit depth of converted PNG color maps (MMColorManagement.COLOR_DEPTH_*:
+	# 16 bits for linear color spaces, always 16 bits, always 8 bits)
+	ocio_export_color_depth = 0,
 	confirm_quit = true,
 	confirm_close_project = true,
 	vsync = true,

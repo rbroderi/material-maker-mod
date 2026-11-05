@@ -14,6 +14,21 @@ func set_export_color_space(color_space : String) -> bool:
 	MMColorManagement.export_space_override = canonical
 	return true
 
+## Sets the bit depth of converted PNG color maps (--color-map-depth: auto,
+## 8 or 16), false (with an error) for other values
+func set_export_color_depth(depth : String) -> bool:
+	match depth.to_lower():
+		"auto":
+			MMColorManagement.export_color_depth_override = MMColorManagement.COLOR_DEPTH_AUTO
+		"16":
+			MMColorManagement.export_color_depth_override = MMColorManagement.COLOR_DEPTH_16_BITS
+		"8":
+			MMColorManagement.export_color_depth_override = MMColorManagement.COLOR_DEPTH_8_BITS
+		_:
+			show_error("ERROR: incorrect color map depth \"%s\" (auto, 8 or 16)" % depth)
+			return false
+	return true
+
 func show_error(message : String):
 	print(message)
 
@@ -276,6 +291,7 @@ Options (they can also be given after "--"):
   --format <format>          image format of --render (png, exr, jpg or webp), or the format of plugin modes
   --color-space <space>      OpenColorIO color space of exported color maps (albedo, emission), e.g. ACEScg
                              or an alias (needs OpenColorIO support, unknown color spaces are an error)
+  --color-map-depth <depth>  bit depth of converted PNG color maps: auto (16 for linear color spaces), 8 or 16
   --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
   --duration <seconds>       duration of the animation of --frames (default: 1)
   --columns <n>              columns of the sprite sheet of --frames (default: square sheet)
@@ -402,7 +418,7 @@ func _ready():
 				i += 1
 			i += 1
 			continue
-		if arg in [ "--size", "--set", "--color-space", "--maps" ] and not has_value:
+		if arg in [ "--size", "--set", "--color-space", "--color-map-depth", "--maps" ] and not has_value:
 			show_error("ERROR: missing value for %s" % arg)
 			get_tree().quit(1)
 			return
@@ -424,6 +440,11 @@ func _ready():
 				i += 1
 			"--color-space":
 				if not set_export_color_space(value):
+					get_tree().quit(1)
+					return
+				i += 1
+			"--color-map-depth":
+				if not set_export_color_depth(value):
 					get_tree().quit(1)
 					return
 				i += 1

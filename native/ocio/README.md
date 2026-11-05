@@ -58,7 +58,9 @@ deleted extension there, and reports an error at every start).
 - `get_color_spaces()`, `get_displays()`, `get_views(display)`,
   `get_default_display()`, `get_default_view(display)`, `get_role(role)`
 - `get_canonical_name(name)` (the listed name of a color space, alias or role),
-  `get_color_space_family(name)`, `get_color_space_aliases(name)`
+  `get_color_space_family(name)`, `get_color_space_aliases(name)`,
+  `is_color_space_linear(name)` (scene-linear or display-linear, see
+  `OCIO::Config::isColorSpaceLinear()`)
 - `convert(rgba, source, destination)` and `display_view(rgba, source, display, view)`
   on RGBA float arrays, `convert_image(image, source, destination)`
 - `bake_display_view_lut(source, display, view, size)`: a 3D LUT for previews

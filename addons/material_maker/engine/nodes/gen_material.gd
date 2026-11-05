@@ -1008,6 +1008,9 @@ func export_texture_file(f : Dictionary, export_context : Dictionary, image_size
 		# Color maps are converted from the working space (OCIO)
 		image = MMColorManagement.convert_image_to((await result.get_texture()).get_image(), export_space)
 		options.srgb = false
+		if not f.has("layer") and file_name.get_extension().to_lower() == "png" and MMColorManagement.is_export_16_bits(export_space):
+			# 16 bits PNG files (8 bits band in dark areas in linear color spaces)
+			return MMColorManagement.save_png_16(image, file_name)
 	if f.has("layer"):
 		if image == null:
 			image = (await result.get_texture()).get_image()

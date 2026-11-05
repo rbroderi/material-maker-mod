@@ -232,6 +232,11 @@ tab of the preferences (**Exported color maps**; *No conversion* exports sRGB te
 as usual), or with the **--color-space** command line option. Other maps (normal, roughness,
 metallic, occlusion, height...) are data and are never converted.
 
+Converted PNG color maps are written with 16 bits per channel for linear color spaces such
+as ACEScg (8 bits show banding in dark areas there) and 8 bits for the other ones. The
+**Converted PNG color maps** option of the **Color** tab (*Auto*, *Always 16 bits* or *Always
+8 bits*) and the **--color-map-depth** command line option change this.
+
 The **Color** tab also sets the OpenColorIO config (a config file, or the built-in ACES
 studio config) and Material Maker's working color space. Color spaces are picked from the
 lists of the config being edited, grouped by family (aliases are shown in the tooltips).

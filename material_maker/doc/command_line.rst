@@ -98,6 +98,11 @@ Options
   of the one set in the Preferences dialog. It needs OpenColorIO support, and Material Maker
   exits with an error (and lists the color spaces of the config by family) if the color space
   is not in the config
+* **--color-map-depth <auto|8|16>** sets the bit depth of the converted PNG color maps instead
+  of the **Converted PNG color maps** option of the Preferences dialog: *auto* writes 16 bit PNG
+  files for linear color spaces (such as ACEScg) and 8 bit PNG files for the other ones, *8* and
+  *16* always write 8 or 16 bit PNG files. It has no effect on maps that are not converted, and
+  Material Maker exits with an error for other values
 * **--frames <n>** makes **--render** render n frames of an animated material ($time going
   from 0 to the duration, frame i being rendered at duration*i/n so the animation loops) in a
   sprite sheet, rows being filled first, with **--duration <seconds>** (the default is 1) and
