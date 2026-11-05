@@ -368,6 +368,9 @@ func on_config_changed() -> void:
 
 	MMShaderCache.update_config()
 
+	# OpenColorIO config and working space
+	MMColorManagement.settings_changed()
+
 	if OS.get_name() == "Windows":
 		match mm_globals.get_config("win_tablet_driver"):
 			WinTabletDriver.WININK:

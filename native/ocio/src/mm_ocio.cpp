@@ -23,6 +23,9 @@ void MMOCIO::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_default_display"), &MMOCIO::get_default_display);
 	ClassDB::bind_method(D_METHOD("get_default_view", "display"), &MMOCIO::get_default_view);
 	ClassDB::bind_method(D_METHOD("get_role", "role"), &MMOCIO::get_role);
+	ClassDB::bind_method(D_METHOD("get_canonical_name", "name"), &MMOCIO::get_canonical_name);
+	ClassDB::bind_method(D_METHOD("get_color_space_family", "name"), &MMOCIO::get_color_space_family);
+	ClassDB::bind_method(D_METHOD("get_color_space_aliases", "name"), &MMOCIO::get_color_space_aliases);
 	ClassDB::bind_method(D_METHOD("convert", "rgba", "source", "destination"), &MMOCIO::convert);
 	ClassDB::bind_method(D_METHOD("display_view", "rgba", "source", "display", "view"), &MMOCIO::display_view);
 	ClassDB::bind_method(D_METHOD("convert_image", "image", "source", "destination"), &MMOCIO::convert_image);
@@ -102,6 +105,36 @@ String MMOCIO::get_role(const String &role) const {
 	}
 	OCIO::ConstColorSpaceRcPtr color_space = config->getColorSpace(to_std(role).c_str());
 	return color_space ? String::utf8(color_space->getName()) : String();
+}
+
+String MMOCIO::get_canonical_name(const String &name) const {
+	if (!config || name.is_empty()) {
+		return String();
+	}
+	// Color space names, aliases and roles
+	OCIO::ConstColorSpaceRcPtr color_space = config->getColorSpace(to_std(name).c_str());
+	return color_space ? String::utf8(color_space->getName()) : String();
+}
+
+String MMOCIO::get_color_space_family(const String &name) const {
+	if (!config) {
+		return String();
+	}
+	OCIO::ConstColorSpaceRcPtr color_space = config->getColorSpace(to_std(name).c_str());
+	return color_space ? String::utf8(color_space->getFamily()) : String();
+}
+
+PackedStringArray MMOCIO::get_color_space_aliases(const String &name) const {
+	PackedStringArray result;
+	if (config) {
+		OCIO::ConstColorSpaceRcPtr color_space = config->getColorSpace(to_std(name).c_str());
+		if (color_space) {
+			for (size_t i = 0; i < color_space->getNumAliases(); i++) {
+				result.push_back(String::utf8(color_space->getAlias(i)));
+			}
+		}
+	}
+	return result;
 }
 
 OCIO::ConstCPUProcessorRcPtr MMOCIO::get_processor(const std::string &key, const std::function<OCIO::ConstTransformRcPtr()> &create_transform) {

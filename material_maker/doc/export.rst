@@ -228,10 +228,16 @@ Color spaces
 When OpenColorIO support is built (see the **native/ocio** directory of the source
 repository), color maps (albedo and emission) can be converted to another color space when
 exporting, for example *ACEScg* for an ACES pipeline. The color space is set in the **Color**
-tab of the preferences (**Color space of exported color maps**; empty exports sRGB textures
-as usual), or with
-the **--color-space** command line option. Other maps (normal, roughness, metallic, occlusion,
-height...) are data and are never converted.
+tab of the preferences (**Exported color maps**; *No conversion* exports sRGB textures
+as usual), or with the **--color-space** command line option. Other maps (normal, roughness,
+metallic, occlusion, height...) are data and are never converted.
+
+The **Color** tab also sets the OpenColorIO config (a config file, or the built-in ACES
+studio config) and Material Maker's working color space. Color spaces are picked from the
+lists of the config being edited, grouped by family (aliases are shown in the tooltips).
+When the config or the working space changes, Image nodes in OCIO mode convert their image
+again, and 2D previews bake their view transform again (or remove it if the new config does
+not have it).
 
 Runtime packages
 ----------------

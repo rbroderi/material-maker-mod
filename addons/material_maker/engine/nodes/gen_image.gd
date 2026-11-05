@@ -16,6 +16,7 @@ func _ready() -> void:
 	timer.wait_time = 2
 	timer.start()
 	timer.connect("timeout", Callable(self, "_on_timeout"))
+	add_to_group(MMColorManagement.UPDATE_GROUP)
 
 func get_type() -> String:
 	return "image"
@@ -33,30 +34,40 @@ func get_parameter_defs() -> Array:
 			values=[ { name="As is", value="as_is" }, { name="Linear", value="linear" }, { name="Auto", value="auto" }, { name="OCIO", value="ocio" } ],
 			longdesc="Material Maker works with sRGB encoded colors. As is uses the image's values (sRGB images and data such as normal maps), Linear converts linear colors to sRGB, Auto does it for EXR and HDR images, and OCIO converts from the OCIO color space below (when OpenColorIO support is built)" },
 		{ name="ocio_space", type="string", label="OCIO color space", default="ACEScg",
-			longdesc="The color space of the image in the OpenColorIO config (e.g. ACEScg, Linear Rec.709 (sRGB), sRGB - Texture), used by the OCIO color space mode" }
+			longdesc="The color space of the image in the OpenColorIO config (e.g. ACEScg, Linear Rec.709 (sRGB), sRGB Encoded Rec.709 (sRGB), or an alias such as sRGB - Texture), used by the OCIO color space mode" }
 	]
 
 const COLOR_SPACE_OCIO : int = 3
 
-## The OCIO color space the loaded image was converted from ("" if none)
-var loaded_ocio_space : String = ""
+## The OCIO conversion of the loaded image ("" if none, see get_conversion)
+var loaded_conversion : String = ""
 
 ## The OCIO color space the image must be converted from ("" if none)
 func get_ocio_space() -> String:
 	if int(get_parameter("color_space")) != COLOR_SPACE_OCIO:
 		return ""
-	return get_parameter("ocio_space")
+	# Aliases (e.g. "sRGB - Texture") are resolved to the config's name
+	return MMColorManagement.resolve_color_space(get_parameter("ocio_space"))
+
+## The OCIO conversion the image needs: its color space, the config and the
+## working space ("" if none, or without OpenColorIO support)
+func get_conversion() -> String:
+	var ocio_space : String = get_ocio_space()
+	if ocio_space == "" or not MMColorManagement.is_available():
+		return ""
+	return "%s|%s" % [ ocio_space, MMColorManagement.get_settings_key() ]
 
 ## Converts a loaded image to the working space in OCIO mode (when
 ## OpenColorIO support is built, the image is unchanged otherwise)
 func convert_color_space(image : Image) -> Image:
-	loaded_ocio_space = get_ocio_space()
-	if loaded_ocio_space == "" or image.is_empty():
+	loaded_conversion = get_conversion()
+	var ocio_space : String = get_ocio_space()
+	if ocio_space == "" or image.is_empty():
 		return image
 	if not MMColorManagement.is_available():
 		push_warning("OCIO color spaces need the OpenColorIO extension (native/ocio)")
 		return image
-	return MMColorManagement.convert_image(image, loaded_ocio_space)
+	return MMColorManagement.convert_image(image, ocio_space)
 
 ## Whether the image holds linear colors that must be converted to sRGB
 func is_linear() -> bool:
@@ -108,8 +119,13 @@ func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
 	if n == "image":
 		load_image()
-	elif n in [ "color_space", "ocio_space" ] and get_ocio_space() != loaded_ocio_space and parameters.has("image"):
+	elif n in [ "color_space", "ocio_space" ] and get_conversion() != loaded_conversion and parameters.has("image"):
 		# Load the image again with the new conversion
+		load_image()
+
+## Loads the image again when the OCIO config or the working space changed
+func on_color_management_changed() -> void:
+	if get_conversion() != loaded_conversion and parameters.has("image"):
 		load_image()
 
 ## The UDIM tile loaded in UDIM exports (0 otherwise)

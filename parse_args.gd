@@ -1,5 +1,19 @@
 extends Node
 
+## Sets the color space of exported color maps (--color-space), false (with
+## an error) if it is not a color space of the OpenColorIO config (aliases
+## and roles are accepted) or without OpenColorIO support
+func set_export_color_space(color_space : String) -> bool:
+	if not MMColorManagement.is_available():
+		show_error("ERROR: --color-space needs OpenColorIO support (native/ocio)")
+		return false
+	var canonical : String = MMColorManagement.get_canonical_name(color_space)
+	if canonical == "":
+		show_error("ERROR: unknown color space \"%s\", the color spaces are:\n%s" % [ color_space, MMColorManagement.get_color_space_list() ])
+		return false
+	MMColorManagement.export_space_override = canonical
+	return true
+
 func show_error(message : String):
 	print(message)
 
@@ -260,7 +274,8 @@ Options (they can also be given after "--"):
   --seed <n>                 change the seeds of all nodes that are not locked
   --variations <n>           render n variations with different seeds (files are suffixed with _v<i>)
   --format <format>          image format of --render (png, exr, jpg or webp), or the format of plugin modes
-  --color-space <space>      OCIO color space of exported color maps (albedo, emission), e.g. ACEScg
+  --color-space <space>      OpenColorIO color space of exported color maps (albedo, emission), e.g. ACEScg
+                             or an alias (needs OpenColorIO support, unknown color spaces are an error)
   --frames <n>               --render renders n animation frames ($time from 0 to the duration) in a sprite sheet
   --duration <seconds>       duration of the animation of --frames (default: 1)
   --columns <n>              columns of the sprite sheet of --frames (default: square sheet)
@@ -408,7 +423,9 @@ func _ready():
 				options.set.append(value)
 				i += 1
 			"--color-space":
-				MMColorManagement.export_space_override = value
+				if not set_export_color_space(value):
+					get_tree().quit(1)
+					return
 				i += 1
 			"--maps":
 				options.maps = Array(value.split(",", false))

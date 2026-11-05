@@ -94,7 +94,10 @@ Options
 * **--format <format>** is the image format of **--render** (png, exr, jpg or webp, png by default,
   or a format added by a plugin)
 * **--color-space <space>** converts exported color maps (albedo and emission) to an
-  OpenColorIO color space (for example ACEScg), when OpenColorIO support is built
+  OpenColorIO color space (for example ACEScg, or an alias such as *sRGB - Texture*) instead
+  of the one set in the Preferences dialog. It needs OpenColorIO support, and Material Maker
+  exits with an error (and lists the color spaces of the config by family) if the color space
+  is not in the config
 * **--frames <n>** makes **--render** render n frames of an animated material ($time going
   from 0 to the duration, frame i being rendered at duration*i/n so the animation loops) in a
   sprite sheet, rows being filled first, with **--duration <seconds>** (the default is 1) and

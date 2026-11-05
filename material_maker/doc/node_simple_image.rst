@@ -39,7 +39,9 @@ The **Image** node has the following parameters:
   **Linear** converts linear colors (such as most EXR and HDR images) to sRGB, and **Auto**
   converts EXR and HDR images only. When OpenColorIO support is built (see the
   **native/ocio** directory of the source repository), **OCIO** converts the image from the
-  **OCIO color space** parameter (for example *ACEScg* or *Linear Rec.709 (sRGB)*) to
-  Material Maker's working space.
+  **OCIO color space** parameter (for example *ACEScg* or *Linear Rec.709 (sRGB)*, or an alias
+  such as *sRGB - Texture*) to Material Maker's working space. The color space is picked from
+  the config's list (grouped by family), and the image is converted again when the config or
+  the working space changes.
 
 The supported formats are BMP, EXR, HDR, JPEG, PNG, SVG, TGA, WebP and DDS.

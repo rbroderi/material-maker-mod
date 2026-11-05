@@ -73,7 +73,8 @@ func _open() -> void:
 	%ViewMode.selected = owner.view_mode
 	%PostProcessing.selected = owner.view_filter
 	if ocio_view != null:
-		MMColorManagement.select_view(ocio_view, owner.view_transform)
+		# The views of the current config
+		MMColorManagement.fill_view_picker(ocio_view, owner.view_transform)
 		ocio_view.tooltip_text = owner.view_transform
 
 	%Guides.selected = owner.get_node("Guides").style
