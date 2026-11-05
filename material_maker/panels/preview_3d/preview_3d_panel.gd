@@ -15,6 +15,8 @@ func on_right_click():
 	var hide_texture : ImageTexture = ImageTexture.new()
 	hide_texture.set_image($MaterialPreview.get_texture().get_image())
 	$TextureRect.texture = hide_texture
+	# With the OpenColorIO view transform, if any
+	$TextureRect.material = material
 	$TextureRect.size = size
 	$TextureRect.visible = true
 	# Setup local position rendering

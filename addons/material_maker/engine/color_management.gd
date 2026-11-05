@@ -347,12 +347,12 @@ static func shaper_inverse(t : float, scene_linear : bool = false) -> float:
 	return pow(2.0, (t-SHAPER_KNEE)/(1.0-SHAPER_KNEE)*SHAPER_STOPS)
 
 ## A 3D texture that applies a display/view transform ("display / view") to
-## values of a color space (by default the working space), with a shaped
-## input (see get_view_shader_code), or null
-static func get_view_lut(view_name : String, source : String = "") -> ImageTexture3D:
+## values of a color space (by default the working space), or null. Its input
+## is shaped as get_view_shader_code() does (with the same scene_linear).
+static func get_view_lut(view_name : String, source : String = "", scene_linear : bool = false) -> ImageTexture3D:
 	if source == "":
 		source = get_working_space()
-	var key : String = view_name+"|"+source
+	var key : String = "%s|%s|%s" % [ view_name, source, scene_linear ]
 	if view_luts.has(key):
 		return view_luts[key]
 	var o = get_ocio()
@@ -360,7 +360,6 @@ static func get_view_lut(view_name : String, source : String = "") -> ImageTextu
 	if o == null or parts.size() != 2 or source == "":
 		return null
 	var grid : PackedFloat32Array = PackedFloat32Array()
-	var scene_linear : bool = source != get_working_space() and source == get_scene_linear_space()
 	for i in LUT_SIZE:
 		grid.append(shaper_inverse(float(i)/(LUT_SIZE-1), scene_linear))
 	var lattice : PackedFloat32Array = PackedFloat32Array()
@@ -375,7 +374,7 @@ static func get_view_lut(view_name : String, source : String = "") -> ImageTextu
 				lattice[index+3] = 1.0
 				index += 4
 	var data : PackedFloat32Array = o.display_view(lattice, source, parts[0], parts[1])
-	if data.is_empty():
+	if data.size() != lattice.size():
 		push_error("OCIO: %s" % o.get_error())
 		return null
 	var slices : Array[Image] = []
@@ -388,7 +387,9 @@ static func get_view_lut(view_name : String, source : String = "") -> ImageTextu
 	return texture
 
 ## Shader code that applies a view LUT (mm_ocio_lut) to a color, for a LUT
-## baked from the working space or (scene_linear) from get_scene_linear_space()
+## baked with the same scene_linear (values of get_scene_linear_space(), or of
+## the working space). Negative values are clamped to 0, and values above
+## 2^SHAPER_STOPS to 2^SHAPER_STOPS.
 static func get_view_shader_code(scene_linear : bool = false) -> String:
 	# Samples at texel centers: [0, 1] maps to [0.5/size, 1-0.5/size]
 	var scale : float = float(LUT_SIZE-1)/LUT_SIZE

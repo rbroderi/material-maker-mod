@@ -167,13 +167,15 @@ func get_materials() -> Array:
 
 
 ## Applies an OpenColorIO display/view transform ("display / view") to the
-## 3D view, or removes it (empty view). The viewport then renders in HDR
-## (linear, unclamped), and the transform is applied when drawing it.
-## Returns true if a transform is applied.
+## 3D view, or removes it ("" or a view that is not in the config). The
+## viewport then renders in HDR (linear Rec.709 values, not clamped), and
+## the transform is applied when it is drawn. Returns true if a transform is
+## applied.
 func set_ocio_view(view : String) -> bool:
 	var lut : ImageTexture3D = null
-	if view != "":
-		lut = MMColorManagement.get_view_lut(view, MMColorManagement.get_scene_linear_space())
+	var scene_linear_space : String = MMColorManagement.get_scene_linear_space()
+	if view != "" and scene_linear_space != "":
+		lut = MMColorManagement.get_view_lut(view, scene_linear_space, true)
 	if lut == null:
 		material = null
 		$MaterialPreview.use_hdr_2d = false
