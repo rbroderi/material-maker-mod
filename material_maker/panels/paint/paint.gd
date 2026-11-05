@@ -687,6 +687,8 @@ func paint(pos : Vector2, pressure : float = 1.0, tilt : Vector2 = Vector2(0, 0)
 
 ## Ends the current stroke without painting (when it ends off the mesh)
 func end_stroke() -> void:
+	# A paint order recorded during the last dab must not be replayed after the stroke
+	next_paint_to = null
 	if layers.selected_layer == null or layers.selected_layer.get_layer_type() == MMLayer.LAYER_PROC:
 		return
 	await painter.end_stroke(layers.selected_layer.get_layer_type() == MMLayer.LAYER_MASK)
@@ -697,7 +699,11 @@ var next_paint_to = null
 var next_pressure = null
 
 func do_paint(pos : Vector2, pressure : float = 1.0, tilt : Vector2 = Vector2(0, 0), painting_mode : int = PAINTING_MODE_VIEW, end_of_stroke : bool = false, on_mask : bool = false):
-	if !end_of_stroke and painting:
+	if end_of_stroke:
+		# The end of stroke dab paints up to the release position: drop the
+		# recorded paint order, it would be replayed after the stroke is committed
+		next_paint_to = null
+	elif painting:
 		# if not available for painting, record a paint order
 		next_paint_to = pos
 		next_pressure = pressure
