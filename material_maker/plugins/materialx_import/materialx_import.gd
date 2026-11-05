@@ -43,7 +43,7 @@ const CHANNELS : Array[Dictionary] = [
 		names={ standard_surface="metalness", open_pbr_surface="base_metalness", UsdPreviewSurface="metallic", gltf_pbr="metallic" } },
 	{ input="roughness_tex", parameter="roughness",
 		names={ standard_surface="specular_roughness", open_pbr_surface="specular_roughness", UsdPreviewSurface="roughness", gltf_pbr="roughness" } },
-	{ input="emission_tex", parameter="emission_energy",
+	{ input="emission_tex", parameter="emission_energy", color=true,
 		names={ standard_surface="emission_color", open_pbr_surface="emission_color", UsdPreviewSurface="emissiveColor", gltf_pbr="emissive" } },
 	{ input="normal_tex", parameter="normal",
 		names={ standard_surface="normal", open_pbr_surface="geometry_normal", UsdPreviewSurface="normal", gltf_pbr="normal" } },
@@ -110,13 +110,23 @@ func do_import(path : String, material_name : String) -> Dictionary:
 		if input == null:
 			continue
 		import_channel(channel, input, parameters, shader_type)
-	# Emission strength
-	var emission_weight : Element = shader.get_input({ standard_surface="emission", open_pbr_surface="emission_luminance" }.get(shader_type, ""))
-	if emission_weight != null and emission_weight.attributes.has("value") and not is_connected_input(emission_weight):
-		var weight : float = float(emission_weight.get_attribute("value"))
-		if shader_type == "open_pbr_surface":
-			weight /= 1000.0
-		parameters.emission_energy = parameters.get("emission_energy", 1.0)*weight
+	# Emission strength (emission_luminance is used 1:1, as in MaterialX's
+	# standard_surface_to_open_pbr translation). Both weights default to 0,
+	# and a weight of 0 means no emission
+	var weight_name : String = { standard_surface="emission", open_pbr_surface="emission_luminance" }.get(shader_type, "")
+	if weight_name != "" and parameters.has("emission_energy"):
+		var weight : float = 0.0
+		var emission_weight : Element = shader.get_input(weight_name)
+		if emission_weight != null:
+			var w : Dictionary = evaluate(emission_weight)
+			if w.has("value") and not w.value is Array:
+				weight = w.value
+			else:
+				warnings.append("%s: not imported (only constant weights are supported)" % weight_name)
+		parameters.emission_energy *= weight
+		if weight == 0.0:
+			disconnect_input("emission_tex")
+			parameters.erase("emission_energy")
 	# The material's size is the size of its largest texture (2048 if there is
 	# no texture), so maps are not resampled
 	var largest : int = 0
@@ -125,22 +135,26 @@ func do_import(path : String, material_name : String) -> Dictionary:
 		if image != null:
 			largest = max(largest, image.get_width(), image.get_height())
 	if largest > 0:
-		parameters.size = clampi(roundi(log(largest)/log(2.0)), 4, 14)
+		parameters.size = clampi(roundi(log(largest)/log(2.0)), 6, 13)
 	nodes.push_front({ name="Material", type="material", node_position={ x=0, y=0 }, parameters=parameters })
 	return { nodes=nodes, connections=connections, warnings=warnings, label=material.get_attribute("name") }
 
 ## Imports a shader input: a value (Material parameter) or a connection to
 ## images (Material input, and the parameter as a scale)
 func import_channel(channel : Dictionary, input : Element, parameters : Dictionary, shader_type : String) -> void:
-	if input.attributes.has("value") and not is_connected_input(input):
-		set_channel_value(channel, parse_value(input.get_attribute("value")), parameters, false)
-		return
 	var source : Dictionary = evaluate(input)
 	if source.is_empty():
 		warnings.append("%s: unsupported nodes, the input is not imported" % channel.input)
 		return
 	if source.has("value"):
-		set_channel_value(channel, source.value, parameters, false)
+		if channel.input == "emission_tex":
+			# Constant emission colors are uniform nodes (the emission energy
+			# parameter only scales the emission input)
+			if not is_zero(source.value):
+				connect_constant(channel, source.value)
+				parameters.emission_energy = 1.0
+		else:
+			set_channel_value(channel, source.value, parameters, false)
 		return
 	var from : Dictionary = output_of(source, channel)
 	if from.is_empty():
@@ -153,36 +167,56 @@ func import_channel(channel : Dictionary, input : Element, parameters : Dictiona
 		from = { node=convert_name, port=0 }
 		if source.has("scale"):
 			parameters.normal = source.scale
-	elif source.has("color_scale") and channel.get("color", false):
+	elif source.has("color_scale") and channel.parameter == "albedo_color":
 		set_channel_value(channel, source.color_scale, parameters, true)
-	elif source.has("scale"):
-		set_channel_value(channel, source.scale, parameters, true)
+	else:
+		# A connected input is scaled by its parameter, set it even when it
+		# is 1 (the Material node's defaults are not all 1)
+		set_channel_value(channel, source.get("scale", 1.0), parameters, true)
 	connections.append({ from=from.node, from_port=from.port, to="Material", to_port=MATERIAL_INPUTS.find(channel.input) })
 
 ## Sets the parameter of a channel: its value when the input is not connected,
 ## or the scale of the connected input
-func set_channel_value(channel : Dictionary, value, parameters : Dictionary, connected : bool) -> void:
+func set_channel_value(channel : Dictionary, value, parameters : Dictionary, _connected : bool) -> void:
 	if channel.parameter == "":
 		return
-	if channel.get("color", false):
+	if channel.parameter == "albedo_color":
 		var c : Array = value if value is Array else [ value, value, value ]
 		parameters[channel.parameter] = { type="Color", r=c[0], g=c[1], b=c[2], a=1.0 }
 	elif channel.input == "normal_tex":
 		return
 	else:
-		var v : float = value[0] if value is Array else value
-		if channel.input == "metallic_tex" and not connected:
-			# The Material node's metallic input defaults to the metallic
-			# parameter, so an unconnected metallic is the parameter squared
-			v = sqrt(max(v, 0.0))
-		parameters[channel.parameter] = v
+		parameters[channel.parameter] = value[0] if value is Array else value
+
+## Connects a uniform node that holds a constant color to a Material input
+func connect_constant(channel : Dictionary, value) -> void:
+	var node_name : String = "%s_value" % channel.input.trim_suffix("_tex")
+	var c : Array = value if value is Array else [ value, value, value ]
+	nodes.append({ name=node_name, type="uniform", node_position={ x=-300, y=-300+100*nodes.size() },
+		parameters={ color={ type="Color", r=c[0], g=c[1], b=c[2], a=1.0 } } })
+	connections.append({ from=node_name, from_port=0, to="Material", to_port=MATERIAL_INPUTS.find(channel.input) })
+
+## Removes the connection to a Material input (and its uniform node)
+func disconnect_input(input_name : String) -> void:
+	var port : int = MATERIAL_INPUTS.find(input_name)
+	connections = connections.filter(func(c): return c.to != "Material" or c.to_port != port)
+	var constant_name : String = "%s_value" % input_name.trim_suffix("_tex")
+	nodes = nodes.filter(func(n): return n.name != constant_name)
+
+static func is_zero(value) -> bool:
+	for v in (value if value is Array else [ value ]):
+		if not is_zero_approx(v):
+			return false
+	return true
 
 ## The node output that provides a source to a channel: an Image node, or a
 ## channel of it (decompose)
 func output_of(source : Dictionary, channel : Dictionary) -> Dictionary:
 	if not source.has("image"):
 		return {}
-	var image_node : String = get_image_node(source.image, source.get("linear", false))
+	# Colors are sRGB encoded in Material Maker, other channels are linear
+	var linear : bool = source.get("linear", false) and channel.get("color", false)
+	var image_node : String = get_image_node(source.image, linear)
 	var single : bool = MATERIAL_INPUTS.find(channel.input) != -1 and channel.input not in [ "albedo_tex", "emission_tex", "normal_tex" ]
 	if source.get("channel", -1) >= 0 and (single or source.channel == 3):
 		return { node=get_decompose_node(image_node), port=source.channel }
@@ -240,8 +274,11 @@ func evaluate_image(node : Element, output_name : String) -> Dictionary:
 	var path : String = (prefix+file) if prefix != "" else file
 	if path.is_relative_path():
 		path = base_dir.path_join(path)
-	var color_space : String = file_input.get_attribute("colorspace", get_color_space(file_input)).to_lower()
-	var rv : Dictionary = { image=path.simplify_path(), channel=-1, linear=color_space in LINEAR_SPACES }
+	# Color spaces only apply to color images
+	var linear : bool = false
+	if node.get_attribute("type") in [ "color3", "color4", "multioutput" ]:
+		linear = get_color_space(file_input).to_lower() in LINEAR_SPACES
+	var rv : Dictionary = { image=path.simplify_path(), channel=-1, linear=linear }
 	match output_name:
 		"r":
 			rv.channel = 0
@@ -251,11 +288,20 @@ func evaluate_image(node : Element, output_name : String) -> Dictionary:
 			rv.channel = 2
 		"a":
 			rv.channel = 3
-	# Images can be scaled (UsdUVTexture) by a constant factor
-	var scale_input : Element = node.get_input("scale")
-	if scale_input != null and scale_input.attributes.has("value"):
-		var s = parse_value(scale_input.get_attribute("value"))
+	# Constant factors of USD and glTF images (the scale of glTF images is a
+	# texture coordinates scale)
+	var factor_input : Element = node.get_input({ UsdUVTexture="scale", gltf_image="factor" }.get(node.tag, ""))
+	if factor_input != null and factor_input.attributes.has("value") and not is_connected_input(factor_input):
+		var s = parse_value(factor_input.get_attribute("value"))
 		rv.scale = s[0] if s is Array else s
+	if node.tag == "gltf_image":
+		var scale_input : Element = node.get_input("scale")
+		if scale_input != null and scale_input.attributes.has("value"):
+			var s = parse_value(scale_input.get_attribute("value"))
+			for c in (s if s is Array else [ s ]):
+				if not is_equal_approx(c, 1.0):
+					warnings.append("%s: the texture coordinates scale is ignored" % node.get_attribute("name"))
+					break
 	return rv
 
 func evaluate_constant(node : Element, _output_name : String) -> Dictionary:
