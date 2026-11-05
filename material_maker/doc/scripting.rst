@@ -89,8 +89,10 @@ graph (and in **list_nodes**).
 * **export_mmr(path, size, height)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
   SDF output as a volume (.vdb, .dds or .ktx2)
-* **render_path_traced(path, size, samples, transparent, thin_walled)** and **render_turntable(path, frames, size)**
-  render the 3D preview (with the user interface only, see the 3D preview panel)
+* **render_path_traced(path, size, samples, transparent, displacement, thin_walled, sss_radius, sss_color)**
+  and **render_turntable(path, frames, size)** render the 3D preview (with the user interface
+  only, see the 3D preview panel; **sss_radius** is relative to the object's size, 0.03 by
+  default, and **sss_color**, as [r, g, b], scales it for each color)
 * **undo()** and **redo()** (with the user interface only)
 * **quit()** (without user interface only)
 

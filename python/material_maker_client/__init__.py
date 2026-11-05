@@ -243,11 +243,15 @@ class MaterialMaker:
         return self.call("export_volume", node=node, path=_path(path), output=output,
                          resolution=resolution, extent=extent, texel_format=texel_format)
 
-    def render_path_traced(self, path, size=512, samples=64, transparent=False, thin_walled=False):
+    def render_path_traced(self, path, size=512, samples=64, transparent=False, displacement=False,
+                           thin_walled=False, sss_radius=None, sss_color=None):
         """Path traced render of the 3D preview's object from the current view
-        (GUI only), saved as a tone mapped PNG or a linear EXR"""
+        (GUI only), saved as a tone mapped PNG or a linear EXR. sss_radius is
+        the subsurface scattering radius relative to the object's size (0.03
+        by default), and sss_color ([r, g, b]) scales it for each color"""
         return self.call("render_path_traced", path=_path(path), size=size, samples=samples,
-                         transparent=transparent, thin_walled=thin_walled)
+                         transparent=transparent, displacement=displacement, thin_walled=thin_walled,
+                         **_given(sss_radius=sss_radius, sss_color=sss_color))
 
     def render_turntable(self, path, frames=36, size=256):
         """Full turn of the 3D preview's object (GUI only), saved as a sprite
