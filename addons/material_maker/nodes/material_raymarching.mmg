@@ -291,7 +291,7 @@
 						"type": "buffer_templates"
 					}
 				],
-				"name": "Godot/Godot 3"
+				"name": "Godot/Godot 4"
 			},
 			"Unity": {
 				"export_extension": "mat",
@@ -806,7 +806,7 @@
 						"type": "template"
 					}
 				],
-				"name": "Unreal/Unreal Engine 4"
+				"name": "Unreal/Unreal Engine 5"
 			}
 		},
 		"global": "",

@@ -182,7 +182,7 @@
 						"type": "buffer_templates"
 					}
 				],
-				"name": "Godot/Godot 3"
+				"name": "Godot/Godot 4"
 			},
 			"Unity": {
 				"export_extension": "mat",
