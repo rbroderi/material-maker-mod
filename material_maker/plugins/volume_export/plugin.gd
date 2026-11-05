@@ -77,18 +77,29 @@ class VolumeSection:
 		export_menu.export_notification("Exported to "+path if error == "" else "Error: "+error)
 
 ## material_maker --export-volume --node <node[:output]> [options] <files>
-func export_mode(cli : Node, files : Array, options : Dictionary) -> void:
+func export_mode(cli : Node, files : Array, options : Dictionary):
+	# --format is png (the default image format of --render) when not given
+	var extension : String = "vdb" if options.format == "png" else options.format
+	var resolution : int = options.get("resolution", 128)
+	var extent : float = options.get("extent", 1.0)
+	var texel_format : String = options.get("texel_format", "")
+	var option_error : String = VolumeExport.check_options(extension, resolution, extent, texel_format)
+	if option_error == "" and options.node == "":
+		option_error = "--export-volume requires --node <node[:output]>"
+	if option_error != "":
+		cli.show_error("ERROR: "+option_error)
+		return 1
+	# Failed exports set the exit code process_graph_files quits with
 	await cli.process_graph_files(cli.expand_files(files), options, func(suffix : String, gen : MMGenBase, f : String, variation_options : Dictionary):
 		await MMCliTools.wait_for_renders(cli.get_tree())
 		var resolved : Dictionary = MMCliTools.resolve_node_output(gen, variation_options.node)
 		if resolved.has("error"):
-			cli.show_error("ERROR: %s: %s" % [ f.get_file(), resolved.error ])
+			cli.show_file_error("ERROR: %s: %s" % [ f.get_file(), resolved.error ])
 			return
-		var extension : String = variation_options.format if variation_options.format in VolumeExport.FORMATS else "vdb"
 		var file_name : String = variation_options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), MMCliTools.spec_to_file_part(variation_options.node), suffix, extension ])
-		var error : String = await VolumeExport.export_volume(resolved.generator, resolved.output, file_name, variation_options.get("resolution", 128), variation_options.get("extent", 1.0), variation_options.get("texel_format", ""))
+		var error : String = await VolumeExport.export_volume(resolved.generator, resolved.output, file_name, resolution, extent, texel_format)
 		if error != "":
-			cli.show_error("ERROR: %s: %s" % [ f.get_file(), error ])
+			cli.show_file_error("ERROR: %s: %s" % [ f.get_file(), error ])
 		else:
 			print("Exported %s" % file_name), "--export-volume")
 
@@ -96,9 +107,21 @@ func export_mode(cli : Node, files : Array, options : Dictionary) -> void:
 func export_rpc(params : Dictionary, rpc : Node):
 	if not rpc.require(params, [ "node", "path" ]):
 		return null
+	for n in [ "output", "resolution", "extent" ]:
+		if params.has(n) and not (params[n] is int or params[n] is float):
+			return rpc.fail("parameter '%s' must be a number" % n)
+	if params.has("texel_format") and not params.texel_format is String:
+		return rpc.fail("parameter 'texel_format' must be a string")
+	var output : int = int(params.get("output", 0))
+	var resolution : int = int(params.get("resolution", 128))
+	var extent : float = float(params.get("extent", 1.0))
+	var texel_format : String = params.get("texel_format", "")
+	var option_error : String = VolumeExport.check_options(params.path.get_extension().to_lower(), resolution, extent, texel_format)
+	if option_error != "":
+		return rpc.fail(option_error)
 	var generator : MMGenBase = rpc.get_generator(await rpc.get_graph(), params.node)
 	if generator == null:
 		return null
 	await MMCliTools.wait_for_renders(rpc.get_tree())
-	var error : String = await VolumeExport.export_volume(generator, int(params.get("output", 0)), params.path, int(params.get("resolution", 128)), float(params.get("extent", 1.0)), params.get("texel_format", ""))
+	var error : String = await VolumeExport.export_volume(generator, output, params.path, resolution, extent, texel_format)
 	return rpc.fail(error) if error != "" else params.path

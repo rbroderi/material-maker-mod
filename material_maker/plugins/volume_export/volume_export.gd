@@ -20,6 +20,10 @@ const TEXEL_FORMATS : Dictionary = {
 	r16f={ image=Image.FORMAT_RH, size=2, dxgi=54 },
 	r32f={ image=Image.FORMAT_RF, size=4, dxgi=41 },
 }
+const MIN_RESOLUTION : int = 8
+## All slices are rendered at once, in a 32 bits float atlas (4096x4096 for
+## 256³ voxels; 512³ voxels would need 2.2 GB)
+const MAX_RESOLUTION : int = 256
 
 
 ## A sampled volume: z slices in an atlas of columns x columns tiles
@@ -61,7 +65,7 @@ static func render_volume(generator : MMGenBase, output_index : int, resolution 
 	if not is_volume_output(generator, output_index):
 		return null
 	var type : String = generator.get_output_defs()[output_index].type
-	resolution = clampi(resolution, 8, 512)
+	resolution = clampi(resolution, MIN_RESOLUTION, MAX_RESOLUTION)
 	var columns : int = int(ceil(sqrt(float(resolution))))
 	# Buffers used by the output must be rendered first
 	generator.get_shader_code("vec4(0.0)" if type.begins_with("tex3d") else "vec3(0.0)", output_index, MMGenContext.new())
@@ -104,21 +108,35 @@ static func render_volume(generator : MMGenBase, output_index : int, resolution 
 		volume.atlas.convert(Image.FORMAT_RGBAF)
 	return volume
 
+## Checks the options of an export: returns an error message, or ""
+static func check_options(extension : String, resolution : int, extent : float, texel_format : String) -> String:
+	if not extension in FORMATS:
+		return "unknown volume format '%s' (use vdb, dds or ktx2)" % extension
+	if resolution < MIN_RESOLUTION or resolution > MAX_RESOLUTION:
+		return "incorrect resolution %d (voxels in each direction, from %d to %d)" % [ resolution, MIN_RESOLUTION, MAX_RESOLUTION ]
+	if not extent > 0.0 or is_inf(extent):
+		return "incorrect extent %s (the size of the sampled box must be positive)" % str(extent)
+	if texel_format != "" and not TEXEL_FORMATS.has(texel_format):
+		return "unknown texel format '%s' (use %s)" % [ texel_format, ", ".join(TEXEL_FORMATS.keys()) ]
+	return ""
+
 ## Renders and saves a volume, the format being chosen by the file extension
 static func export_volume(generator : MMGenBase, output_index : int, file_name : String, resolution : int, extent : float = 1.0, texel_format : String = "") -> String:
+	var extension : String = file_name.get_extension().to_lower()
+	var option_error : String = check_options(extension, resolution, extent, texel_format)
+	if option_error != "":
+		return option_error
 	var volume : Volume = await render_volume(generator, output_index, resolution, extent)
 	if volume == null:
 		return "the output is not a 3D texture or SDF, or could not be rendered"
 	var error : Error
-	match file_name.get_extension().to_lower():
+	match extension:
 		"vdb":
 			error = write_vdb(file_name, volume)
 		"dds":
 			error = write_dds(file_name, volume, texel_format if texel_format != "" else default_texel_format(volume))
 		"ktx2":
 			error = write_ktx2(file_name, volume, texel_format if texel_format != "" else default_texel_format(volume))
-		_:
-			return "unknown volume format '%s' (use .vdb, .dds or .ktx2)" % file_name.get_extension()
 	return "" if error == OK else "cannot write '%s' (%s)" % [ file_name, error_string(error) ]
 
 static func default_texel_format(volume : Volume) -> String:
