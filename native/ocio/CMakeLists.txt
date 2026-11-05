@@ -28,11 +28,8 @@ elseif(APPLE)
 else()
 	set(MM_OCIO_PLATFORM linux)
 endif()
-if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64|ARM64")
-	set(MM_OCIO_ARCH arm64)
-else()
-	set(MM_OCIO_ARCH x86_64)
-endif()
+# Godot's name of the architecture (x86_64, arm64...), as godot-cpp computes it
+get_target_property(MM_OCIO_ARCH godot-cpp GODOTCPP_ARCH)
 set_target_properties(mm_ocio PROPERTIES
 	OUTPUT_NAME "mm_ocio.${MM_OCIO_PLATFORM}.${MM_OCIO_ARCH}"
 	PREFIX "")
