@@ -55,6 +55,9 @@ DIELECTRIC_F0 = 0.04
 # Car paint flake atlas: the flake BTF lookup table's cells (theta I rows,
 # theta F columns)
 CAR_PAINT_INPUTS = ["color_table", "flakes", "ambient"]
+# Size of the Car Paint node's color table (its shader reads 64x64 texel
+# centers)
+COLOR_TABLE_SIZE = 64
 
 
 # ---------------------------------------------------------------- AxF reading
@@ -158,7 +161,6 @@ def find_operands(group):
 
 def walk_models(group):
     """All the models (leaves) of a representation tree, with their filters"""
-    t = axf_type(group)
     children = find_operands(group)
     if not children:
         return [group]
@@ -332,7 +334,6 @@ def convert_svbrdf(axf, out, warnings):
     models = walk_models(rep)
     coat = axf_type(rep) == "com.xrite.ClearCoatFilter"
     diffuse = specular = normal = alphas = fresnel = None
-    spec_model = None
     for m in models:
         t = axf_type(m)
         if "Diffuse" in t:
@@ -341,7 +342,6 @@ def convert_svbrdf(axf, out, warnings):
             for loc in resource_locations(m, "Normal"):
                 normal = axf.resource(loc)
         elif "Specular" in t:
-            spec_model = m
             for loc in resource_locations(m, "Color"):
                 specular = axf.resource(loc)
             for loc in resource_locations(m, "Lobes"):
@@ -429,6 +429,32 @@ def fresnel_dielectric(cos_i, ior):
     return 0.5 * (rs * rs + rp * rp)
 
 
+def table_lookup(table, theta_h, theta_d):
+    """Bilinear lookup in a color table (theta D rows, theta H columns, from
+    0 to 90 degrees on the first to last rows and columns)"""
+    n_d, n_h = table.shape[:2]
+    x = np.clip(theta_h / (0.5 * np.pi), 0, 1) * (n_h - 1)
+    y = np.clip(theta_d / (0.5 * np.pi), 0, 1) * (n_d - 1)
+    x0 = np.floor(x).astype(int)
+    y0 = np.floor(y).astype(int)
+    x1 = np.minimum(x0 + 1, n_h - 1)
+    y1 = np.minimum(y0 + 1, n_d - 1)
+    fx = (x - x0)[..., None]
+    fy = (y - y0)[..., None]
+    t = table
+    return (t[y0, x0] * (1 - fx) + t[y0, x1] * fx) * (1 - fy) + (t[y1, x0] * (1 - fx) + t[y1, x1] * fx) * fy
+
+
+def resample_color_table(table, size=None):
+    """A color table resampled to the Car Paint node's table size: the node
+    reads theta H and theta D from 0 to 90 degrees on its first to last
+    texel centers, so its texture lookups then interpolate the table as
+    table_lookup interpolates the measured one"""
+    size = size or COLOR_TABLE_SIZE
+    angles = np.linspace(0.0, 0.5 * np.pi, size)
+    return table_lookup(table, angles[None, :], angles[:, None])
+
+
 class CarPaint:
     """The CarPaint2 model, evaluated as the Car Paint node's shader does"""
 
@@ -440,17 +466,7 @@ class CarPaint:
         self.refraction = refraction
 
     def table_lookup(self, theta_h, theta_d):
-        n_d, n_h = self.table.shape[:2]
-        x = np.clip(theta_h / (0.5 * np.pi), 0, 1) * (n_h - 1)
-        y = np.clip(theta_d / (0.5 * np.pi), 0, 1) * (n_d - 1)
-        x0 = np.floor(x).astype(int)
-        y0 = np.floor(y).astype(int)
-        x1 = np.minimum(x0 + 1, n_h - 1)
-        y1 = np.minimum(y0 + 1, n_d - 1)
-        fx = (x - x0)[..., None]
-        fy = (y - y0)[..., None]
-        t = self.table
-        return (t[y0, x0] * (1 - fx) + t[y0, x1] * fx) * (1 - fy) + (t[y1, x0] * (1 - fx) + t[y1, x1] * fx) * fy
+        return table_lookup(self.table, theta_h, theta_d)
 
     def refract_cos(self, cos_theta):
         if not self.refraction:
@@ -524,8 +540,6 @@ def encode_flakes(data, scale):
 
 def convert_car_paint(axf, out, warnings):
     rep = axf.representation()
-    res = axf.resources
-    cp = res["CarPaint2"]
     ior_location = resource_locations(rep, "IOR")
     ior = float(np.ravel(axf.resource(ior_location[0]).data)[0]) if ior_location else 1.5
     refraction = not bool(np.asarray(rep["NoRefraction"][()])) if "NoRefraction" in rep else True
@@ -545,7 +559,9 @@ def convert_car_paint(axf, out, warnings):
     if table_resource is None:
         raise ValueError("no BRDF color table")
     table = np.einsum("ij,yxj->yxi", axf.color_matrix(table_resource.color_spec), table_resource.data[..., :3])
-    table = np.maximum(table, 0.0)
+    # The node reads a 64x64 table: the ambient reflectance and the PBR
+    # approximation are computed from it too, so they match the rendering
+    table = resample_color_table(np.maximum(table, 0.0))
     paint = CarPaint(diffuse, lobes, table, ior, refraction)
 
     # Color table: theta D rows, theta H columns, stored as sRGB divided by its scale

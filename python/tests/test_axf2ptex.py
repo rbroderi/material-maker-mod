@@ -129,7 +129,7 @@ class TestSvbrdf(unittest.TestCase):
 
 @unittest.skipIf(np is None, "numpy and h5py are needed")
 class TestCarPaint(unittest.TestCase):
-    def make(self, path, flakes):
+    def make(self, path, flakes, table=None):
         f, m = new_axf(path, "paint")
         res = m.create_group("com.xrite.Resources")
         cp = res.create_group("CarPaint2")
@@ -141,8 +141,9 @@ class TestCarPaint(unittest.TestCase):
             g = cp.create_group("SpecularModel/Lobes/%d" % i)
             set_type(g, "com.xrite.Uniform")
             g.create_dataset("Data", data=np.array(l, dtype=np.float32))
-        table = np.ones((16, 16, 3), dtype=np.float32)
-        table[..., 1] = np.linspace(0.5, 1.5, 16)[None, :]
+        if table is None:
+            table = np.ones((16, 16, 3), dtype=np.float32)
+            table[..., 1] = np.linspace(0.5, 1.5, 16)[None, :]
         g = cp.create_group("TabulatedBrdf/Data")
         g.create_dataset("Data", data=table)
         ior = res.create_group("ClearCoat/IOR")
@@ -209,6 +210,74 @@ class TestCarPaint(unittest.TestCase):
             self.assertTrue(np.all(np.abs(atlas[16:, 16:].astype(int) - 128) <= 1))
             self.assertGreater(int(atlas[:16, :16].max()), 200)
             self.assertEqual(sorted(c["to_port"] for c in graph["connections"]), [0, 1, 2])
+
+    def read_color_table(self, d, scale):
+        """The written color table, in linear values"""
+        path = os.path.join(d, "paint_textures", "color_table.png")
+        width, height = png_size(path)
+        srgb = np.frombuffer(zlib_decode(path), dtype=np.uint8).reshape(height, width, 3) / 255.0
+        return np.where(srgb <= 0.04045, srgb / 12.92, ((srgb + 0.055) / 1.055) ** 2.4) * scale
+
+    def test_color_table_size(self):
+        """Color tables of any size are written as the node's 64x64 table,
+        that the node's lookups (texel centers at 0 to 90 degrees)
+        interpolate as the measured table"""
+        rng = np.random.default_rng(1)
+        for shape in ((16, 16), (8, 20), (64, 64), (90, 90)):
+            if shape[0] <= 64:
+                table = rng.uniform(0.2, 1.0, shape + (3,)).astype(np.float32)
+            else:
+                # Larger tables are downsampled: a smooth one (measured
+                # tables are) is kept
+                d, h = np.meshgrid(np.linspace(0, 1, shape[0]), np.linspace(0, 1, shape[1]), indexing="ij")
+                table = np.stack([0.6 + 0.3 * np.sin(3 * h), 0.5 + 0.4 * d * h, 0.8 - 0.3 * d * d], axis=-1).astype(np.float32)
+            with tempfile.TemporaryDirectory() as d:
+                path = os.path.join(d, "paint.axf")
+                self.make(path, flakes=False, table=table)
+                axf2ptex.convert(path, options(d))
+                with open(os.path.join(d, "paint.ptex")) as f:
+                    scale = json.load(f)["nodes"][0]["parameters"]["color_table_scale"]
+                written = self.read_color_table(d, scale)
+                self.assertEqual(written.shape, (64, 64, 3), shape)
+                # The node's lookups at its texel centers and in between
+                # (GPU bilinear filtering) against the measured table
+                theta_h, theta_d = np.meshgrid(np.linspace(0, 0.5 * np.pi, 127), np.linspace(0, 0.5 * np.pi, 127))
+                reference = axf2ptex.table_lookup(table.astype(np.float64), theta_h, theta_d)
+                rendered = gpu_lookup(written, theta_h, theta_d)
+                if shape[0] <= 64 and shape[1] <= 64:
+                    # Texel centers sample the measured table exactly (up to
+                    # 8-bit quantization)
+                    centers = slice(0, None, 2)
+                    np.testing.assert_allclose(rendered[centers, centers], reference[centers, centers], atol=0.01, err_msg=str(shape))
+                    # Between texel centers, only the interpolation differs
+                    np.testing.assert_allclose(rendered, reference, atol=0.2, err_msg=str(shape))
+                    self.assertLess(float(np.mean(np.abs(rendered - reference))), 0.05, shape)
+                else:
+                    np.testing.assert_allclose(rendered, reference, atol=0.01, err_msg=str(shape))
+
+    def test_smooth_color_table(self):
+        """A table that varies linearly with the angles is rendered exactly
+        at every angle"""
+        n_d, n_h = 12, 30
+        table = np.ones((n_d, n_h, 3), dtype=np.float32)
+        table[..., 0] = np.linspace(0.2, 1.0, n_h)[None, :]
+        table[..., 2] = np.linspace(1.0, 0.4, n_d)[:, None]
+        with tempfile.TemporaryDirectory() as d:
+            path = os.path.join(d, "paint.axf")
+            self.make(path, flakes=False, table=table)
+            axf2ptex.convert(path, options(d))
+            written = self.read_color_table(d, 1.0)
+            rng = np.random.default_rng(2)
+            theta_h, theta_d = rng.uniform(0, 0.5 * np.pi, (2, 500))
+            reference = axf2ptex.table_lookup(table.astype(np.float64), theta_h, theta_d)
+            np.testing.assert_allclose(gpu_lookup(written, theta_h, theta_d), reference, atol=0.01)
+
+    def test_resample_color_table(self):
+        table = np.random.default_rng(3).uniform(0, 1, (64, 64, 3))
+        np.testing.assert_allclose(axf2ptex.resample_color_table(table), table, atol=1e-12)
+        small = axf2ptex.resample_color_table(np.ones((5, 7, 3)) * [0.1, 0.2, 0.3])
+        self.assertEqual(small.shape, (64, 64, 3))
+        np.testing.assert_allclose(small, np.ones((64, 64, 3)) * [0.1, 0.2, 0.3], atol=1e-12)
 
     def test_energy(self):
         """The car paint model reflects less than it receives"""
@@ -285,6 +354,31 @@ class TestBtf(unittest.TestCase):
             normal = read("normal", 3).mean(axis=0) * 2 - 1
             np.testing.assert_allclose(normal / np.linalg.norm(normal), np.array([0.2, 0, 1]) / np.linalg.norm([0.2, 0, 1]), atol=0.03)
 
+
+def gpu_lookup(texture, theta_h, theta_d):
+    """The Car Paint node's color table lookup: uv from the angles as in its
+    shader, then a bilinear texture fetch (clamped, texel centers at
+    (i + 0.5) / size)"""
+    size_v, size_u = texture.shape[:2]
+    uv = np.stack([theta_h, theta_d], axis=-1) / (0.5 * np.pi)
+    uv = np.clip(uv, 0.0, 1.0) * (63.0 / 64.0) + 0.5 / 64.0
+    x = np.clip(uv[..., 0] * size_u - 0.5, 0, size_u - 1)
+    y = np.clip(uv[..., 1] * size_v - 0.5, 0, size_v - 1)
+    x0 = np.minimum(np.floor(x).astype(int), size_u - 1)
+    y0 = np.minimum(np.floor(y).astype(int), size_v - 1)
+    x1 = np.minimum(x0 + 1, size_u - 1)
+    y1 = np.minimum(y0 + 1, size_v - 1)
+    fx = (x - x0)[..., None]
+    fy = (y - y0)[..., None]
+    t = texture
+    return (t[y0, x0] * (1 - fx) + t[y0, x1] * fx) * (1 - fy) + (t[y1, x0] * (1 - fx) + t[y1, x1] * fx) * fy
+
+
+def png_size(path):
+    import struct
+    with open(path, "rb") as f:
+        data = f.read(24)
+    return struct.unpack(">II", data[16:24])
 
 def zlib_decode(path):
     """Pixels of an 8-bit PNG written by axf2ptex (filter 0 rows)"""

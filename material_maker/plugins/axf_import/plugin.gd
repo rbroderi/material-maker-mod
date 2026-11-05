@@ -19,15 +19,24 @@ static func find_converter() -> String:
 			return path
 	return ""
 
+## The Python interpreter: MATERIAL_MAKER_PYTHON, or python (python3 on Linux
+## and macOS)
 static func python_command() -> String:
 	var python : String = OS.get_environment("MATERIAL_MAKER_PYTHON")
 	if python != "":
 		return python
 	return "python" if OS.get_name() == "Windows" else "python3"
 
+static func python_hint() -> String:
+	if OS.get_environment("MATERIAL_MAKER_PYTHON") != "":
+		return "MATERIAL_MAKER_PYTHON must be a Python 3 with numpy and h5py"
+	return "install Python 3 with numpy and h5py, or set MATERIAL_MAKER_PYTHON to one"
+
 ## Converts an AxF file without blocking (the converter runs in its own
-## process), returns { files } (the written graphs, and warnings) or { error }
+## process), returns { files, warnings } (the written graphs) or { error }
 static func convert_axf(axf_path : String, output_dir : String = "") -> Dictionary:
+	if not FileAccess.file_exists(axf_path):
+		return { error="%s was not found" % axf_path }
 	var converter : String = find_converter()
 	if converter == "":
 		return { error="the AxF converter (python/axf2ptex.py) was not found" }
@@ -35,18 +44,23 @@ static func convert_axf(axf_path : String, output_dir : String = "") -> Dictiona
 	var arguments : PackedStringArray = PackedStringArray([ converter, axf_path, "--report", report_path ])
 	if output_dir != "":
 		arguments.append_array([ "-o", output_dir ])
-	var pid : int = OS.create_process(python_command(), arguments)
+	var python : String = python_command()
+	var pid : int = OS.create_process(python, arguments)
 	if pid <= 0:
-		return { error="cannot run %s (set MATERIAL_MAKER_PYTHON to a Python 3 with numpy and h5py)" % python_command() }
+		return { error="cannot run %s: %s" % [ python, python_hint() ] }
 	while OS.is_process_running(pid):
 		await Engine.get_main_loop().process_frame
 	var report = JSON.parse_string(FileAccess.get_file_as_string(report_path)) if FileAccess.file_exists(report_path) else null
 	DirAccess.remove_absolute(report_path)
 	if not report is Dictionary:
-		return { error="the AxF converter failed (exit code %d)" % OS.get_process_exit_code(pid) }
-	if not report.errors.is_empty() or report.files.is_empty():
-		return { error="
-".join(report.errors) if not report.errors.is_empty() else "nothing was imported" }
+		return { error="the AxF converter failed (%s exited with code %d): %s" % [ python, OS.get_process_exit_code(pid), python_hint() ] }
+	if not report.errors.is_empty():
+		var error : String = "\n".join(report.errors)
+		if error.contains("numpy"):
+			error += " (with %s)" % python
+		return { error=error }
+	if report.files.is_empty():
+		return { error="nothing was imported" + ("\n" + "\n".join(report.warnings) if not report.warnings.is_empty() else "") }
 	return { files=PackedStringArray(report.files), warnings=PackedStringArray(report.warnings) }
 
 func import_from_menu() -> void:
@@ -61,13 +75,17 @@ func import_from_menu() -> void:
 	mm_globals.set_tip_text("Importing %s..." % files[0].get_file())
 	var result : Dictionary = await convert_axf(files[0])
 	if result.has("error"):
+		mm_globals.set_tip_text("")
 		mm_globals.main_window.accept_dialog("AxF import failed:\n"+result.error)
 		return
 	for f in result.files:
 		# The PBR approximations of car paints are written but not opened
 		if not f.ends_with("_pbr.ptex"):
 			await mm_globals.main_window.do_load_material(f)
-	mm_globals.set_tip_text("Imported %s" % ", ".join(Array(result.files).map(func(f): return f.get_file())), 5)
+	var message : String = "Imported %s" % ", ".join(Array(result.files).map(func(f): return f.get_file()))
+	if not result.warnings.is_empty():
+		mm_globals.main_window.accept_dialog(message+"\n\n"+"\n".join(result.warnings), false, true)
+	mm_globals.set_tip_text(message, 5)
 
 ## material_maker --plugin axf_import <file.axf> [output directory]
 func import_command(arguments : PackedStringArray) -> int:
@@ -76,7 +94,7 @@ func import_command(arguments : PackedStringArray) -> int:
 		return 1
 	var result : Dictionary = await convert_axf(arguments[0], arguments[1] if arguments.size() > 1 else "")
 	if result.has("error"):
-		print("ERROR: ", result.error)
+		printerr("ERROR: ", result.error)
 		return 1
 	for w in result.warnings:
 		print("warning: ", w)
@@ -84,9 +102,13 @@ func import_command(arguments : PackedStringArray) -> int:
 		print("Wrote ", f)
 	return 0
 
-## RPC: { path, output } -> the written graphs
-func import_rpc(params : Dictionary):
-	if not params.has("path"):
-		return { error="missing path" }
+## RPC: { path, output (optional) } -> { files (the written graphs), warnings }
+func import_rpc(params : Dictionary, server) -> Variant:
+	if not server.require(params, [ "path" ]):
+		return null
+	if params.has("output") and not params.output is String:
+		return server.fail("parameter 'output' must be a string")
 	var result : Dictionary = await convert_axf(params.path, params.get("output", ""))
-	return result.get("files", result)
+	if result.has("error"):
+		return server.fail(result.error)
+	return { files=Array(result.files), warnings=Array(result.warnings) }
