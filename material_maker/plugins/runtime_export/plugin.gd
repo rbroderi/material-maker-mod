@@ -47,17 +47,25 @@ func export_mode(cli : Node, files : Array, options : Dictionary) -> void:
 		await MMCliTools.wait_for_renders(cli.get_tree())
 		var file_name : String = variation_options.output_dir.path_join(f.get_file().get_basename()+suffix+".mmr")
 		var size : int = variation_options.size if variation_options.get("size_given", false) else 0
-		for e in await export_package(gen, file_name, size, cli.output_height):
+		var errors : PackedStringArray = await export_package(gen, file_name, size, cli.output_height)
+		for e in errors:
 			cli.show_error("ERROR: %s: %s" % [ f.get_file(), e ])
-		print("Exported %s" % file_name))
+		if errors.is_empty():
+			print("Exported %s" % file_name))
 
 ## RPC: { path, size, height } -> the package's path (size 0 is the material's
 ## size)
 func export_rpc(params : Dictionary, rpc : Node):
 	if not rpc.require(params, [ "path" ]):
 		return null
+	var size : int = rpc.get_int(params, "size", 0)
+	var height : int = rpc.get_int(params, "height", 0)
+	if rpc.method_error != "":
+		return null
+	if size < 0 or height < 0:
+		return rpc.fail("incorrect size %dx%d" % [ size, height ])
 	var top : MMGenGraph = MMCliTools.get_top_graph(await rpc.get_graph())
 	DirAccess.make_dir_recursive_absolute(params.path.get_base_dir())
 	await MMCliTools.wait_for_renders(rpc.get_tree())
-	var errors : PackedStringArray = await export_package(top, params.path, int(params.get("size", 0)), int(params.get("height", 0)))
+	var errors : PackedStringArray = await export_package(top, params.path, size, height)
 	return rpc.fail(", ".join(errors)) if not errors.is_empty() else params.path

@@ -54,10 +54,19 @@ func do_export(graph : MMGenGraph, path : String, size : int = 0, height : int =
 		if compute_shader == null:
 			errors.append("cannot compile the %s output" % channel.name)
 			continue
-		outputs[channel.name] = await add_pass(compute_shader, Vector2i(size, height if height > 0 else size))
+		var pass_name : String = await add_pass(compute_shader, Vector2i(size, height if height > 0 else size))
+		if pass_name != "":
+			outputs[channel.name] = pass_name
+	if outputs.is_empty() and errors.is_empty():
+		errors.append("the material node has no connected albedo, orm, emission, normal or height input")
+	# No package is written when there are errors
+	if not errors.is_empty():
+		return errors
 	var material_parameters : Dictionary = {}
 	for p in MATERIAL_PARAMETERS:
-		material_parameters[p] = to_json_value(material.get_parameter(p))
+		# (older graphs and other material types may not have all of them)
+		if material.parameters.has(p) or material.get_parameter_def(p).has("default"):
+			material_parameters[p] = to_json_value(material.get_parameter(p))
 	var parameter_info : Dictionary = get_runtime_parameters(graph)
 	var manifest : Dictionary = {
 		format="mmr",
@@ -107,9 +116,13 @@ func add_pass(compute_shader : MMComputeShader, size : Vector2i) -> String:
 	var inputs : Array = []
 	for t in compute_shader.input_textures:
 		var input : Dictionary = { name=t.name }
+		var input_pass : String = ""
 		if buffer_by_texture.has(t.texture):
-			input["pass"] = await add_buffer_pass(buffer_by_texture[t.texture])
+			input_pass = await add_buffer_pass(buffer_by_texture[t.texture])
+		if input_pass != "":
+			input["pass"] = input_pass
 		else:
+			# Textures and buffers whose shader is not compiled are embedded
 			input.texture = await embed_texture(t.texture, t.name)
 		inputs.append(input)
 	var parameters : Dictionary = {}
@@ -139,6 +152,8 @@ static func get_parameter_data(compute_shader : MMComputeShader) -> PackedByteAr
 		data.encode_float(compute_shader.parameters.elapsed_time.offset, 0.0)
 	return data
 
+## The pass of a buffer, or "" if its shader is not compiled (its texture
+## is then embedded)
 func add_buffer_pass(buffer : MMGenBuffer) -> String:
 	if not pass_by_texture.has(buffer.texture):
 		var compute_shader : MMComputeShader = buffer.shader_compute.compute_shader
