@@ -60,7 +60,9 @@ func fix() -> void:
 		var updated_linked_widgets : Array = []
 		for l in w.linked_widgets:
 			var linked_widget : MMGenBase = parent.get_node(NodePath(l.node))
-			if linked_widget != null and linked_widget.get_parameter_def(l.widget).size() > 0:
+			# The parameters of placeholders for unknown node types are not
+			# known: keep links to them so they are saved unchanged
+			if linked_widget != null and (linked_widget is MMGenMissing or linked_widget.get_parameter_def(l.widget).size() > 0):
 				updated_linked_widgets.push_back(l)
 		if updated_linked_widgets.size() == 0:
 			removed_widgets = true
@@ -100,8 +102,9 @@ func get_parameter_defs() -> Array:
 					for c in configurations:
 						p.values.push_back({ name=c, value=c })
 			"linked_control":
-				if ! w.linked_widgets.is_empty():
-					var linked = w.linked_widgets[0]
+				# Use the first linked parameter whose definition is known
+				# (placeholders for unknown node types have none)
+				for linked in w.linked_widgets:
 					if linked != null and is_inside_tree():
 						var gen = get_parent().get_node(NodePath(linked.node))
 						if gen != null:
@@ -110,6 +113,8 @@ func get_parameter_defs() -> Array:
 								if pd.name == linked.widget:
 									p = pd.duplicate(true)
 									break
+					if ! p.is_empty():
+						break
 				p.name = w.name
 				p.label = w.label
 			"named_parameter":
@@ -237,10 +242,11 @@ func can_link_parameter(widget_name : String, generator : MMGenBase, param : Str
 				return false
 		# Check the parameter type
 		if widget.type == "linked_control":
-			var linked : Dictionary = widget.linked_widgets[0]
-			var linked_generator : MMGenBase = get_parent().get_node(NodePath(linked.node))
-			var linked_parameter : Dictionary = linked_generator.get_parameter_def(linked.widget)
+			# Definition of the first linked parameter that has one
+			var linked_parameter : Dictionary = get_parameter_def(widget_name)
 			var parameter : Dictionary = generator.get_parameter_def(param)
+			if not linked_parameter.has("type") or not parameter.has("type"):
+				return true
 			if parameter.type != linked_parameter.type:
 				return false
 			match parameter.type:
