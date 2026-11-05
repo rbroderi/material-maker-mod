@@ -10,8 +10,8 @@ class_name MMRMaterial
 #	mmr.set_parameter("Hue", 0.3)
 #
 # The textures can be rendered at another size than the exported one
-# (load_material("res://bricks.mmr", 512)), and materials with random nodes
-# have a "seed" parameter.
+# (load_material("res://bricks.mmr", 512), or set_output_size(512)), and
+# materials with random nodes have a "seed" parameter.
 
 
 var package : MMRPackage
@@ -48,29 +48,27 @@ func setup_material() -> void:
 	var outputs : Dictionary = package.manifest.outputs
 	var c : Array = values.get("albedo_color", [ 1, 1, 1, 1 ])
 	material.albedo_color = Color(c[0], c[1], c[2], c[3])
-	if values.get("flags_transparent", false):
-		material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_DEPTH_PRE_PASS
+	material.metallic = values.get("metallic", 0.0 if not outputs.has("orm") else 1.0)
+	material.roughness = values.get("roughness", 1.0)
 	if outputs.has("orm"):
-		material.metallic = values.get("metallic", 1.0)
-		material.roughness = values.get("roughness", 1.0)
 		material.metallic_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_BLUE
 		material.roughness_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_GREEN
 		material.ao_enabled = true
 		material.ao_texture_channel = BaseMaterial3D.TEXTURE_CHANNEL_RED
 		material.ao_light_affect = values.get("ao", 1.0)
-	else:
-		material.metallic = 0.0
-		material.roughness = values.get("roughness", 1.0)
 	if outputs.has("normal"):
 		material.normal_enabled = true
 		material.normal_scale = values.get("normal", 1.0)
 	if outputs.has("emission"):
 		material.emission_enabled = true
+		material.emission = Color(0, 0, 0)
 		material.emission_energy_multiplier = values.get("emission_energy", 1.0)
 	if outputs.has("height"):
 		material.heightmap_enabled = true
 		material.heightmap_scale = 25.0*values.get("depth_scale", 0.5)
 		material.heightmap_deep_parallax = true
+		material.heightmap_min_layers = 8
+		material.heightmap_max_layers = 32
 
 ## Sets a runtime parameter (by name or label) and updates the textures
 func set_parameter(parameter_name : String, value) -> bool:
@@ -81,15 +79,14 @@ func set_parameter(parameter_name : String, value) -> bool:
 
 ## Names of the presets of the package
 func get_preset_names() -> PackedStringArray:
-	return PackedStringArray(package.manifest.get("presets", {}).keys())
+	return PackedStringArray(package.manifest.presets.keys())
 
 ## Applies a preset (saved parameter values) of the package
 func apply_preset(preset_name : String) -> bool:
-	var presets : Dictionary = package.manifest.get("presets", {})
-	if not presets.has(preset_name):
+	if not package.manifest.presets.has(preset_name):
 		push_error("Unknown preset %s" % preset_name)
 		return false
-	return set_parameters(presets[preset_name])
+	return set_parameters(package.manifest.presets[preset_name])
 
 func set_parameters(values : Dictionary) -> bool:
 	if not is_valid():
@@ -100,19 +97,37 @@ func set_parameters(values : Dictionary) -> bool:
 	update()
 	return true
 
+## Renders the textures at another size (size x size pixels), keeping the
+## current parameter values
+func set_output_size(size : int) -> void:
+	if not is_valid():
+		return
+	renderer.set_output_size(size)
+	update()
+
 ## Renders the passes that changed and updates the material's textures
 func update() -> void:
 	if not renderer.render():
 		return
 	for output in package.manifest.outputs.keys():
 		var image : Image = renderer.get_image(output)
+		if output in [ "albedo", "emission" ]:
+			# Color textures are sRGB (as in Material Maker's exports), the
+			# material converts them to linear when they are 8 bit
+			image.convert(Image.FORMAT_RGBA8)
 		if textures.has(output):
-			textures[output].update(image)
+			if textures[output].get_size() == Vector2(image.get_size()):
+				textures[output].update(image)
+			else:
+				textures[output].set_image(image)
 		else:
 			textures[output] = ImageTexture.create_from_image(image)
 			match output:
 				"albedo":
 					material.albedo_texture = textures[output]
+					# Transparent if the material is and its opacity is used
+					if package.manifest.material.get("flags_transparent", false) and image.detect_alpha() != Image.ALPHA_NONE:
+						material.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 				"orm":
 					material.metallic_texture = textures[output]
 					material.roughness_texture = textures[output]

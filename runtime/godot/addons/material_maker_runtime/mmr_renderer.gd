@@ -3,7 +3,10 @@ class_name MMRRenderer
 
 
 # Renders the passes of a runtime package on a local rendering device, and
-# re-renders the passes affected by parameter changes.
+# re-renders the passes affected by parameter changes. Passes use the same
+# bindings as Material Maker's compute shaders (set 0: output image, set 1:
+# parameters, set 2: inputs, set 3: first row of the chunk), so they render
+# the same textures.
 
 
 ## Unlocked seeds are offset by the golden ratio times the seed (modulo 1),
@@ -29,8 +32,10 @@ var shaders : Dictionary = {}
 var output_textures : Dictionary = {}
 var input_textures : Dictionary = {}
 var parameter_data : Dictionary = {}
-## GPU state of each pass, created once: { pipeline, parameters (buffer),
-## sets (0 to 2), chunks ({ buffer, set, y, rows }) }
+## Parameter buffers of the package, by pass name
+var exported_parameter_data : Dictionary = {}
+## GPU state of each pass: { pipeline, parameters (buffer), sets (0 to 2),
+## chunks ({ buffer, set, y, rows }) }
 var pass_states : Dictionary = {}
 ## Passes that must be rendered
 var dirty : Dictionary = {}
@@ -51,39 +56,62 @@ func _init(new_package : MMRPackage) -> void:
 	sampler_state.repeat_v = RenderingDevice.SAMPLER_REPEAT_MODE_REPEAT
 	sampler = rd.sampler_create(sampler_state)
 	for p in package.manifest.passes:
+		if not FORMATS.has(p.format):
+			error_message = "pass %s: unsupported format %s" % [ p.name, p.format ]
+			return
 		if not compile_pass(p):
 			return
-		dirty[p.name] = true
+		exported_parameter_data[p.name] = Marshalls.base64_to_raw(p.parameter_data)
+		parameter_data[p.name] = exported_parameter_data[p.name].duplicate()
 	for file_name in package.images.keys():
 		input_textures[file_name] = create_input_texture(package.images[file_name])
-	for p in package.manifest.passes:
-		pass_states[p.name] = create_pass_state(p)
+	create_pass_states()
 
 func is_valid() -> bool:
 	return error_message == ""
 
-## The local rendering device is freed with the renderer
+## The local rendering device is freed with the renderer (methods of the
+## renderer cannot be called when it is deleted, static functions can)
 func _notification(what : int) -> void:
-	if what == NOTIFICATION_PREDELETE:
-		free_resources()
+	if what == NOTIFICATION_PREDELETE and rd != null:
+		free_rids(rd, get_pass_rids(pass_states, output_textures)+shaders.values()+input_textures.values()+[ sampler ])
+		rd.free()
+		rd = null
 
+## Frees the GPU resources and the local rendering device
 func free_resources() -> void:
 	if rd == null:
 		return
-	# Uniform sets are freed before the buffers, pipelines and textures they use
+	free_pass_states()
+	free_rids(rd, shaders.values()+input_textures.values()+[ sampler ])
+	shaders.clear()
+	input_textures.clear()
+	rd.free()
+	rd = null
+
+## Frees the textures of the passes and the GPU objects that use them
+func free_pass_states() -> void:
+	free_rids(rd, get_pass_rids(pass_states, output_textures))
+	pass_states.clear()
+	output_textures.clear()
+
+## The GPU objects of the passes, uniform sets first (they must be freed
+## before the buffers, pipelines and textures they use)
+static func get_pass_rids(states : Dictionary, textures : Dictionary) -> Array:
 	var sets : Array = []
 	var others : Array = []
-	for state in pass_states.values():
+	for state in states.values():
 		sets.append_array(state.sets)
 		others.append_array([ state.pipeline, state.parameters ])
 		for c in state.chunks:
 			sets.append(c.set)
 			others.append(c.buffer)
-	for rid in sets+others+shaders.values()+output_textures.values()+input_textures.values()+[ sampler ]:
+	return sets+others+textures.values()
+
+static func free_rids(device : RenderingDevice, rids : Array) -> void:
+	for rid in rids:
 		if rid.is_valid():
-			rd.free_rid(rid)
-	rd.free()
-	rd = null
+			device.free_rid(rid)
 
 func compile_pass(p : Dictionary) -> bool:
 	var source : RDShaderSource = RDShaderSource.new()
@@ -93,13 +121,6 @@ func compile_pass(p : Dictionary) -> bool:
 		error_message = "pass %s: %s" % [ p.name, spirv.compile_error_compute ]
 		return false
 	shaders[p.name] = rd.shader_create_from_spirv(spirv)
-	var format : RDTextureFormat = RDTextureFormat.new()
-	format.width = int(p.size[0])
-	format.height = int(p.size[1])
-	format.format = FORMATS[p.format].data
-	format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
-	output_textures[p.name] = rd.texture_create(format, RDTextureView.new())
-	parameter_data[p.name] = Marshalls.base64_to_raw(p.parameter_data)
 	return true
 
 func create_input_texture(image : Image) -> RID:
@@ -111,6 +132,33 @@ func create_input_texture(image : Image) -> RID:
 	format.format = RenderingDevice.DATA_FORMAT_R32G32B32A32_SFLOAT
 	format.usage_bits = RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_UPDATE_BIT
 	return rd.texture_create(format, RDTextureView.new(), [ image.get_data() ])
+
+## Creates the textures of the passes (at their current size) and the GPU
+## state of each pass, and marks all passes to be rendered
+func create_pass_states() -> void:
+	for p in package.manifest.passes:
+		var format : RDTextureFormat = RDTextureFormat.new()
+		format.width = int(p.size[0])
+		format.height = int(p.size[1])
+		format.format = FORMATS[p.format].data
+		format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+		output_textures[p.name] = rd.texture_create(format, RDTextureView.new())
+	for p in package.manifest.passes:
+		pass_states[p.name] = create_pass_state(p)
+		dirty[p.name] = true
+
+## Applies the pass sizes of the package (after MMRPackage.set_output_size())
+func update_sizes() -> void:
+	if not is_valid():
+		return
+	free_pass_states()
+	create_pass_states()
+
+## Sets the size of the outputs (buffers keep their size), see
+## MMRPackage.set_output_size()
+func set_output_size(size : int) -> void:
+	package.set_output_size(size)
+	update_sizes()
 
 ## Sets a runtime parameter (by name or label) and marks the passes that
 ## depend on it. Colors can be Color or [ r, g, b, a ].
@@ -125,9 +173,14 @@ func set_parameter(parameter_name : String, value) -> bool:
 		if layout == null:
 			continue
 		if parameter.type == "seed":
-			var sum : float = 0.0
-			for term in target.terms:
-				sum += float(term[0]) if term[1] else fmod(float(term[0])+SEED_OFFSET*float(value), 1.0)
+			var sum : float = exported_parameter_data[p.name].decode_float(int(layout.offset))
+			# Seed 0 is the package's seeds, others change them as
+			# Material Maker's --seed does
+			if int(value) != 0:
+				sum = 0.0
+				for term in target.terms:
+					# Terms are [ seed, locked ]
+					sum += float(term[0]) if term[1] else fmod(float(term[0])+SEED_OFFSET*int(value), 1.0)
 			encode_value(parameter_data[p.name], int(layout.offset), layout.type, sum)
 		else:
 			encode_value(parameter_data[p.name], int(layout.offset), layout.type, value)
@@ -229,7 +282,7 @@ func create_buffer_set(shader : RID, set_index : int, buffer : RID) -> RID:
 func get_image(name : String) -> Image:
 	var pass_name : String = package.manifest.outputs.get(name, name)
 	var p : Dictionary = package.get_pass(pass_name)
-	if p.is_empty():
+	if p.is_empty() or not output_textures.has(pass_name):
 		return null
 	var data : PackedByteArray = rd.texture_get_data(output_textures[pass_name], 0)
 	return Image.create_from_data(int(p.size[0]), int(p.size[1]), false, FORMATS[p.format].image, data)
