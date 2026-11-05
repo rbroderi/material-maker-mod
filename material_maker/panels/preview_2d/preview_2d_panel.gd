@@ -146,7 +146,11 @@ func _ready():
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_size"):
 		checker_size = mm_globals.get_config("preview"+config_var_suffix+"_checker_size")
 	if mm_globals.has_config("preview"+config_var_suffix+"_ocio_view") and MMColorManagement.is_available():
-		view_transform = mm_globals.get_config("preview"+config_var_suffix+"_ocio_view")
+		# Views of another OpenColorIO config are not restored (each update
+		# would report an error)
+		var view : String = mm_globals.get_config("preview"+config_var_suffix+"_ocio_view")
+		if view in MMColorManagement.get_views():
+			view_transform = view
 	if mm_globals.has_config("preview"+config_var_suffix+"_checker_brightness"):
 		checker_brightness = mm_globals.get_config("preview"+config_var_suffix+"_checker_brightness")
 

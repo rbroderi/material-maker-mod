@@ -38,6 +38,26 @@ func get_parameter_defs() -> Array:
 
 const COLOR_SPACE_OCIO : int = 3
 
+## The OCIO color space the loaded image was converted from ("" if none)
+var loaded_ocio_space : String = ""
+
+## The OCIO color space the image must be converted from ("" if none)
+func get_ocio_space() -> String:
+	if int(get_parameter("color_space")) != COLOR_SPACE_OCIO:
+		return ""
+	return get_parameter("ocio_space")
+
+## Converts a loaded image to the working space in OCIO mode (when
+## OpenColorIO support is built, the image is unchanged otherwise)
+func convert_color_space(image : Image) -> Image:
+	loaded_ocio_space = get_ocio_space()
+	if loaded_ocio_space == "" or image.is_empty():
+		return image
+	if not MMColorManagement.is_available():
+		push_warning("OCIO color spaces need the OpenColorIO extension (native/ocio)")
+		return image
+	return MMColorManagement.convert_image(image, loaded_ocio_space)
+
 ## Whether the image holds linear colors that must be converted to sRGB
 func is_linear() -> bool:
 	match int(get_parameter("color_space")):
@@ -86,7 +106,10 @@ func get_adjusted_uv(uv : String) -> String:
 
 func set_parameter(n : String, v) -> void:
 	super.set_parameter(n, v)
-	if n == "image" or (n in [ "color_space", "ocio_space" ] and int(get_parameter("color_space")) == COLOR_SPACE_OCIO) or (n == "color_space" and parameters.has("image")):
+	if n == "image":
+		load_image()
+	elif n in [ "color_space", "ocio_space" ] and get_ocio_space() != loaded_ocio_space and parameters.has("image"):
+		# Load the image again with the new conversion
 		load_image()
 
 ## The UDIM tile loaded in UDIM exports (0 otherwise)
@@ -176,12 +199,7 @@ func load_image() -> void:
 		image = Image.load_from_file(file_path)
 	if image == null:
 		return
-	if int(get_parameter("color_space")) == COLOR_SPACE_OCIO:
-		if MMColorManagement.is_available():
-			image = MMColorManagement.convert_image(image, get_parameter("ocio_space"))
-		else:
-			push_warning("OCIO color spaces need the OpenColorIO extension (native/ocio)")
-	texture.set_texture(ImageTexture.create_from_image(image))
+	texture.set_texture(ImageTexture.create_from_image(convert_color_space(image)))
 	mm_deps.dependency_update("o%d_tex" % get_instance_id(), texture)
 
 func _on_timeout() -> void:
@@ -196,6 +214,12 @@ func _serialize_data(data: Dictionary) -> Dictionary:
 	return data
 
 func _deserialize(data : Dictionary) -> void:
+	# When loading, the color space is set before the image so the image is
+	# loaded (and converted) once
+	if data.has("parameters") and not is_inside_tree():
+		for p in [ "color_space", "ocio_space" ]:
+			if data.parameters.has(p):
+				parameters[p] = MMType.deserialize_value(data.parameters[p])
 	if data.has("parameters") and data.parameters.has("image"):
 		data.parameters.image = data.parameters.image.replace("%PROJECT_PATH%", mm_loader.current_project_path)
 		data.parameters.image = data.parameters.image.replace("%USER_DATA_PATH%", OS.get_user_data_dir())

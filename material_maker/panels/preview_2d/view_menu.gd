@@ -14,7 +14,18 @@ func _ready() -> void:
 		return
 	var label : Label = Label.new()
 	label.text = "View transform (OCIO)"
-	ocio_view = MMColorManagement.create_view_picker(owner.view_transform, func(view : String): owner.view_transform = view)
+	label.tooltip_text = "OpenColorIO display/view transform, applied to the preview only"
+	label.mouse_filter = Control.MOUSE_FILTER_PASS
+	label.theme_type_variation = "MM_PanelMenuSubPanelLabel"
+	ocio_view = MMColorManagement.create_view_picker(owner.view_transform, func(view : String):
+		owner.view_transform = view
+		ocio_view.tooltip_text = view)
+	# View names are long ("display / view"), they are clipped and shown in the tooltip
+	ocio_view.theme_type_variation = "MM_NodeOptionEdit"
+	ocio_view.get_popup().theme_type_variation = "MM_NodeOptionEditPopup"
+	ocio_view.fit_to_longest_item = false
+	ocio_view.clip_text = true
+	ocio_view.custom_minimum_size.x = 160
 	var vbox : Node = %PostProcessing.get_parent()
 	vbox.add_child(label)
 	vbox.move_child(label, %PostProcessing.get_index()+1)
@@ -63,6 +74,7 @@ func _open() -> void:
 	%PostProcessing.selected = owner.view_filter
 	if ocio_view != null:
 		MMColorManagement.select_view(ocio_view, owner.view_transform)
+		ocio_view.tooltip_text = owner.view_transform
 
 	%Guides.selected = owner.get_node("Guides").style
 	%CustomGridSize.visible = %Guides.selected == GUIDES_GRID
