@@ -972,7 +972,7 @@ func export_material(export_prefix, profile, tiles : PackedInt32Array = PackedIn
 		# its UDIM tiles would also forget them for Export again)
 		if node.has_method("export_material") and node != material_node:
 			exports.append(node)
-		stack.append_array(node.get_children())
+		stack.append_array(node.get_children().filter(func(n : Node): return n is MMGenBase))
 
 	# Show progress for additional exports (export nodes)
 	var dim_color_rect = ColorRect.new()

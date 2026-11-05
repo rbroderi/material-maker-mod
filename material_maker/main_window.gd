@@ -522,7 +522,7 @@ func quick_export() -> void:
 				exports.append(node)
 			else:
 				has_unconnected_exports = true
-		stack.append_array(node.get_children())
+		stack.append_array(node.get_children().filter(func(n : Node): return n is MMGenBase))
 
 	# No export nodes
 	if not exports.size():
