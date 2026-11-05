@@ -86,10 +86,12 @@
 			"additionalProperties": { "$ref": "#/$defs/parameter_value" }
 		},
 		"parameter_value": {
-			"description": "Numbers (floats, enum indexes, sizes as powers of 2), booleans, strings (file paths, expressions, text) or typed values",
+			"description": "Numbers (floats, enum indexes, sizes as powers of 2), booleans, strings (file paths, expressions, text) or typed values. Older files also have colors without a type and gradients as arrays of points",
 			"anyOf": [
 				{ "type": [ "number", "string", "boolean", "null" ] },
-				{ "$ref": "#/$defs/typed_value" }
+				{ "$ref": "#/$defs/typed_value" },
+				{ "$ref": "#/$defs/color" },
+				{ "$ref": "#/$defs/gradient_points" }
 			]
 		},
 		"color": {
@@ -100,6 +102,20 @@
 				"g": { "type": "number" },
 				"b": { "type": "number" },
 				"a": { "type": "number" }
+			}
+		},
+		"gradient_points": {
+			"type": "array",
+			"items": {
+				"type": "object",
+				"required": [ "pos", "r", "g", "b" ],
+				"properties": {
+					"pos": { "type": "number" },
+					"r": { "type": "number" },
+					"g": { "type": "number" },
+					"b": { "type": "number" },
+					"a": { "type": "number", "description": "1 if missing" }
+				}
 			}
 		},
 		"typed_value": {
@@ -119,14 +135,7 @@
 						"required": [ "points" ],
 						"properties": {
 							"interpolation": { "type": "integer", "minimum": 0 },
-							"points": {
-								"type": "array",
-								"items": {
-									"allOf": [ { "$ref": "#/$defs/color" } ],
-									"required": [ "pos" ],
-									"properties": { "pos": { "type": "number" } }
-								}
-							}
+							"points": { "$ref": "#/$defs/gradient_points" }
 						}
 					}
 				},
@@ -139,12 +148,12 @@
 								"type": "array",
 								"items": {
 									"type": "object",
-									"required": [ "x", "y" ],
+									"required": [ "x", "y", "ls", "rs" ],
 									"properties": {
 										"x": { "type": "number" },
 										"y": { "type": "number" },
-										"ls": { "type": "number" },
-										"rs": { "type": "number" }
+										"ls": { "type": "number", "description": "Slope on the left of the point" },
+										"rs": { "type": "number", "description": "Slope on the right of the point" }
 									}
 								}
 							}
@@ -174,19 +183,22 @@
 				{
 					"if": { "properties": { "type": { "const": "Pixels" } } },
 					"then": {
+						"required": [ "bpp", "w", "h", "pl", "px" ],
 						"properties": {
 							"bpp": { "type": "integer", "minimum": 1 },
 							"w": { "type": "integer", "minimum": 1 },
 							"h": { "type": "integer", "minimum": 1 },
-							"pl": { "type": "array", "items": { "$ref": "#/$defs/color" } }
+							"pl": { "type": "array", "items": { "$ref": "#/$defs/color" }, "description": "Palette" },
+							"px": { "type": "array", "items": { "type": "integer" }, "description": "Palette indexes, packed in integers" }
 						}
 					}
 				},
 				{
 					"if": { "properties": { "type": { "const": "Lattice" } } },
 					"then": {
-						"required": [ "points" ],
+						"required": [ "size", "points" ],
 						"properties": {
+							"size": { "$ref": "#/$defs/position" },
 							"points": { "type": "array", "items": { "$ref": "#/$defs/position" } }
 						}
 					}
@@ -263,11 +275,58 @@
 									"properties": { "name": { "type": "string" }, "value": { "type": "string" } }
 								}
 							}
-						}
+						},
+						"$ref": "#/$defs/parameter_default"
 					}
 				}
 			}
 		},
+		"parameter_default": {
+			"description": "The default value of a parameter has the type of its values (parameters of other types are not checked)",
+			"allOf": [
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "float" } } },
+					"then": { "properties": { "default": { "type": [ "number", "string" ], "description": "A string is an expression" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "enum": [ "size", "enum" ] } } },
+					"then": { "properties": { "default": { "type": "number", "description": "A power of 2, or the index of a value" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "boolean" } } },
+					"then": { "properties": { "default": { "type": "boolean" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "color" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/color" } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "gradient" } } },
+					"then": { "properties": { "default": { "anyOf": [ { "$ref": "#/$defs/typed_gradient" }, { "$ref": "#/$defs/gradient_points" } ] } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "curve" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Curve" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "enum": [ "polygon", "polyline" ] } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Polygon" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "splines" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Splines" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "pixels" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Pixels" } } } } }
+				},
+				{
+					"if": { "required": [ "type", "default" ], "properties": { "type": { "const": "lattice" } } },
+					"then": { "properties": { "default": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Lattice" } } } } }
+				}
+			]
+		},
+		"typed_gradient": { "$ref": "#/$defs/typed_value", "properties": { "type": { "const": "Gradient" } } },
 		"widget": {
 			"type": "object",
 			"required": [ "name", "type" ],

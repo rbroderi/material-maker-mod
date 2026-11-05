@@ -2,17 +2,22 @@
 
     python ptex_tools.py normalize <file.ptex>
         prints the graph as canonical JSON (sorted keys, nodes sorted by name,
-        sorted connections), for line based diffs
+        connections sorted by input), for line based diffs. Material Maker
+        loads the output as the same graph
     python ptex_tools.py diff <old.ptex> <new.ptex> [--positions]
         prints the nodes, parameters and connections that changed
     python ptex_tools.py validate <files...>
-        checks graphs (and .mmg node definitions) against ptex.schema.json, and
-        that connections refer to existing nodes; the exit code is 1 if a file
+        checks graphs (and .mmg node definitions) against ptex.schema.json,
+        that node names are unique, that connections refer to existing nodes
+        and that no input has two connections; the exit code is 1 if a file
         is invalid
     python ptex_tools.py merge <base.ptex> <ours.ptex> <theirs.ptex> [-o <out.ptex>]
         three-way merge: nodes are matched by name, connections are sets, and
         subgraphs and parameters are merged recursively. Conflicting changes
-        keep "ours" and are listed; the exit code is 1 if there are conflicts.
+        (including an input connected to different outputs) keep "ours" and
+        are listed; the exit code is 1 if there are conflicts, and the output
+        is always a valid graph (there are no conflict markers). An empty base
+        (a file added on both sides) is an empty graph.
 
 Git setup (from the repository root):
 
@@ -33,6 +38,9 @@ import sys
 # Keys that only affect the layout of the graph editor
 LAYOUT_KEYS = {"node_position", "scroll_offset", "zoom"}
 
+# A key that is not in a dictionary (in three-way merges)
+MISSING = object()
+
 
 def load(path):
     with open(path, encoding="utf-8") as f:
@@ -43,6 +51,17 @@ def connection_key(c):
     return (c.get("from"), c.get("from_port"), c.get("to"), c.get("to_port"))
 
 
+def port_order(port):
+    return (0, port) if isinstance(port, (int, float)) and not isinstance(port, bool) else (1, str(port))
+
+
+def input_order(c):
+    """Connections are sorted by the input they connect to. An input has one
+    connection (when loading, the last connection to an input replaces the
+    others), and sorting is stable, so normalizing never changes the graph"""
+    return (str(c.get("to")), port_order(c.get("to_port")))
+
+
 def normalize(graph):
     """Returns a copy of a graph with nodes and connections in a stable order"""
     if isinstance(graph, dict):
@@ -50,7 +69,7 @@ def normalize(graph):
         if isinstance(result.get("nodes"), list):
             result["nodes"] = sorted(result["nodes"], key=lambda n: str(n.get("name", "")))
         if isinstance(result.get("connections"), list):
-            result["connections"] = sorted(result["connections"], key=lambda c: tuple(str(v) for v in connection_key(c)))
+            result["connections"] = sorted(result["connections"], key=input_order)
         return result
     if isinstance(graph, list):
         return [normalize(v) for v in graph]
@@ -66,13 +85,33 @@ def nodes_by_name(graph):
 
 
 def short(value, limit=60):
+    if value is MISSING:
+        return "(removed)"
     text = json.dumps(value, sort_keys=True, ensure_ascii=False)
     return text if len(text) <= limit else text[:limit - 3] + "..."
+
+
+def diff_keys(o, n, node_path, positions):
+    """Returns the differences between the keys (and parameters) of two nodes"""
+    lines = []
+    for key in sorted(set(o) | set(n)):
+        if key in ("nodes", "connections", "name") or (key in LAYOUT_KEYS and not positions):
+            continue
+        if key == "parameters" and isinstance(o.get(key), dict) and isinstance(n.get(key), dict):
+            for p in sorted(set(o[key]) | set(n[key])):
+                if o[key].get(p, MISSING) != n[key].get(p, MISSING):
+                    lines.append("~ %s:%s %s -> %s" % (node_path, p, short(o[key].get(p, MISSING)), short(n[key].get(p, MISSING))))
+        elif o.get(key, MISSING) != n.get(key, MISSING):
+            lines.append("~ %s.%s %s -> %s" % (node_path, key, short(o.get(key, MISSING)), short(n.get(key, MISSING))))
+    return lines
 
 
 def diff_graphs(old, new, path="", positions=False):
     """Returns the differences between two graphs, as lines of text"""
     lines = []
+    if path == "":
+        # Keys of the top level graph itself (its parameters, label...)
+        lines += diff_keys(old, new, "(graph)", positions)
     old_nodes = nodes_by_name(old)
     new_nodes = nodes_by_name(new)
     for name in sorted(set(old_nodes) | set(new_nodes), key=str):
@@ -84,15 +123,7 @@ def diff_graphs(old, new, path="", positions=False):
             lines.append("+ node %s (%s)" % (node_path, new_nodes[name].get("type")))
             continue
         o, n = old_nodes[name], new_nodes[name]
-        for key in sorted(set(o) | set(n)):
-            if key in ("nodes", "connections", "name") or (key in LAYOUT_KEYS and not positions):
-                continue
-            if key == "parameters" and isinstance(o.get(key), dict) and isinstance(n.get(key), dict):
-                for p in sorted(set(o[key]) | set(n[key])):
-                    if o[key].get(p) != n[key].get(p):
-                        lines.append("~ %s:%s %s -> %s" % (node_path, p, short(o[key].get(p)), short(n[key].get(p))))
-            elif o.get(key) != n.get(key):
-                lines.append("~ %s.%s %s -> %s" % (node_path, key, short(o.get(key)), short(n.get(key))))
+        lines += diff_keys(o, n, node_path, positions)
         if "nodes" in o or "nodes" in n:
             lines += diff_graphs(o, n, node_path + "/", positions)
     old_connections = {connection_key(c) for c in old.get("connections", [])}
@@ -122,17 +153,16 @@ class Merger:
 
     def merge_dict(self, base, ours, theirs, path):
         result = {}
-        missing = object()
         for key in list(ours.keys()) + [k for k in theirs.keys() if k not in ours]:
-            b, o, t = base.get(key, missing), ours.get(key, missing), theirs.get(key, missing)
+            b, o, t = base.get(key, MISSING), ours.get(key, MISSING), theirs.get(key, MISSING)
             key_path = "%s.%s" % (path, key) if path else str(key)
             if key == "nodes" and isinstance(o, list) and isinstance(t, list):
                 result[key] = self.merge_nodes(b if isinstance(b, list) else [], o, t, path)
             elif key == "connections" and isinstance(o, list) and isinstance(t, list):
-                result[key] = self.merge_connections(b if isinstance(b, list) else [], o, t)
+                result[key] = self.merge_connections(b if isinstance(b, list) else [], o, t, path)
             else:
                 value = self.merge_value(b, o, t, key_path)
-                if value is not missing:
+                if value is not MISSING:
                     result[key] = value
         return result
 
@@ -157,12 +187,24 @@ class Merger:
                     self.conflicts.append("%s: removed by ours, changed by theirs (removed)" % node_path)
         return result
 
-    @staticmethod
-    def merge_connections(base, ours, theirs):
+    def merge_connections(self, base, ours, theirs, path):
         b, o, t = ({connection_key(c): c for c in connections} for connections in (base, ours, theirs))
         keys = (set(o) & set(t)) | (set(o) - set(b)) | (set(t) - set(b))
         merged = {**t, **o}
-        return [merged[k] for k in sorted(keys, key=str)]
+        # An input can only have one connection: if both sides connected the
+        # same input to different outputs, keep ours
+        inputs = {}
+        for k in keys:
+            inputs.setdefault(input_order(merged[k]), []).append(k)
+        for same_input in inputs.values():
+            added_by_ours = [k for k in same_input if k in o and k not in t]
+            added_by_theirs = [k for k in same_input if k in t and k not in o]
+            if added_by_ours and added_by_theirs:
+                self.conflicts.append("%s%s:%s: connected to %s by ours, to %s by theirs (kept ours)" % (
+                    path + "/" if path else "", added_by_ours[0][2], added_by_ours[0][3],
+                    ", ".join("%s:%s" % k[:2] for k in added_by_ours), ", ".join("%s:%s" % k[:2] for k in sorted(added_by_theirs, key=str))))
+                keys -= set(added_by_theirs)
+        return [merged[k] for k in sorted(keys, key=lambda k: (input_order(merged[k]), str(k)))]
 
 
 # Validation against ptex.schema.json, with a small validator for the subset
@@ -177,14 +219,26 @@ def format_connection(sign, path, c):
     return "%s connection %s%s:%s -> %s%s:%s" % (sign, path, c[0], c[1], path, c[2], c[3])
 
 
-def load_lenient(path):
-    """Loads JSON, accepting the trailing commas that Godot's parser accepts"""
-    with open(path, encoding="utf-8") as f:
-        text = f.read()
+# A JSON string, or a comma followed by the end of an array or object
+TRAILING_COMMA = re.compile(r'"(?:[^"\\]|\\.)*"|,(\s*[\]}])', re.DOTALL)
+
+
+def read_text(path):
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        return f.read()
+
+
+def loads_lenient(text):
+    """Parses JSON, accepting the trailing commas that Godot's parser accepts"""
     try:
         return json.loads(text)
     except json.JSONDecodeError:
-        return json.loads(re.sub(r",(\s*[\]}])", r"\1", text))
+        # Remove trailing commas, but not in strings (GLSL code, expressions...)
+        return json.loads(TRAILING_COMMA.sub(lambda m: m.group(1) if m.group(1) is not None else m.group(0), text))
+
+
+def load_lenient(path):
+    return loads_lenient(read_text(path))
 
 
 def is_type(value, t):
@@ -250,10 +304,14 @@ def graph_errors(node, path="$"):
     for name in set(names):
         if names.count(name) > 1:
             rv.append("%s: several nodes are named %s" % (path, name))
+    sources = {}
     for c in node.get("connections", []):
         for k in ("from", "to"):
             if c.get(k) not in names:
                 rv.append("%s: connection %s:%s -> %s:%s refers to a missing node %s" % (path, c.get("from"), c.get("from_port"), c.get("to"), c.get("to_port"), c.get(k)))
+        source = sources.setdefault(input_order(c), connection_key(c))
+        if source != connection_key(c):
+            rv.append("%s: the input %s:%s is connected to %s:%s and %s:%s (only the last one is loaded)" % (path, c.get("to"), c.get("to_port"), source[0], source[1], c.get("from"), c.get("from_port")))
     for n in node.get("nodes", []):
         rv += graph_errors(n, "%s.%s" % (path, n.get("name")))
     return rv
@@ -290,13 +348,18 @@ def command_diff(argv):
 
 
 def command_merge(argv):
+    texts = [read_text(path) for path in argv[:3]]
+    # git passes an empty base when both sides added the file
+    base, ours, theirs = (loads_lenient(t) if t.strip() else {} for t in texts)
     merger = Merger()
-    merged = merger.merge_value(load_lenient(argv[0]), load_lenient(argv[1]), load_lenient(argv[2]), "")
+    merged = merger.merge_value(base, ours, theirs, "")
     o = argv.index("-o") if "-o" in argv else -1
     output = argv[o + 1] if 0 <= o < len(argv) - 1 else None
-    text = json.dumps(merged, indent="\t", ensure_ascii=False)
+    # Same layout as Material Maker's own files (sorted keys, tabs), with the
+    # line endings of "ours"
+    text = json.dumps(merged, indent="\t", sort_keys=True, ensure_ascii=False)
     if output:
-        with open(output, "w", encoding="utf-8") as f:
+        with open(output, "w", encoding="utf-8", newline="\r\n" if "\r\n" in texts[1] else "\n") as f:
             f.write(text)
     else:
         sys.stdout.write(text + "\n")
@@ -315,6 +378,11 @@ COMMANDS = {
 
 
 def main(argv):
+    # Graphs contain non-ASCII text (node descriptions), and git reads the
+    # output of textconv through a pipe, whose encoding is not UTF-8 on Windows
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8")
     command = COMMANDS.get(argv[0]) if argv else None
     if command is None or len(argv) - 1 < command[1]:
         print(__doc__)
