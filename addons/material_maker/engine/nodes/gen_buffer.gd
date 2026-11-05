@@ -519,6 +519,21 @@ func _get_shader_code(uv : String, output_index : int, context : MMGenContext) -
 	shader_code.add_uniform("%s_tex_size_y" % genname, "float", float(dimensions.y))
 	return shader_code
 
+## Images of 16 bits integer buffers (2D preview and Export node exports)
+## are rendered as 16 bits integers, so they keep the buffer's precision
+## (and are saved as 16 bits PNG files)
+func render_output_to_texture(output_index : int, size : Vector2i) -> MMTexture:
+	if output_index != 0 or version != VERSION_COMPLEX or get_effective_storage() != MMPipeline.STORAGE_16:
+		return await super.render_output_to_texture(output_index, size)
+	var source : ShaderCode = get_shader_code("uv", output_index, MMGenContext.new())
+	# RGBA, as other exports
+	source.output_type = "rgba"
+	var compute_shader : MMComputeShader = MMComputeShader.new()
+	var texture : MMTexture = MMTexture.new()
+	if await compute_shader.set_shader_from_shadercode_storage(source, MMPipeline.STORAGE_16, false, int(get_parameter("rounding"))):
+		await compute_shader.render_ext([texture], size)
+	return texture
+
 func get_output_attributes(output_index : int) -> Dictionary:
 	var attributes : Dictionary = {}
 	attributes.texture = "o%d_tex" % get_instance_id()
