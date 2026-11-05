@@ -141,22 +141,53 @@ func export_files(files, output_dir, target, target_file, image_size, options : 
 	get_tree().quit(exit_code)
 
 ## Returns the export target of a material that matches target: target itself,
-## the same name in another case, or the most similar target (empty if none
-## is similar at all)
+## the same name in another case, or else the target that shares the most
+## words with it (the most similar name if several do). A target with another
+## version number ("Godot 3" for "Godot 4") never matches. Returns an empty
+## string if no target shares a word other than a version number with target.
 static func find_export_target(target : String, export_profiles : Array) -> String:
 	if export_profiles.has(target):
 		return target
 	for p : String in export_profiles:
 		if p.to_lower() == target.to_lower():
 			return p
+	var target_words : PackedStringArray = export_target_words(target)
+	var target_versions : PackedStringArray = PackedStringArray(Array(target_words).filter(func(w : String): return w.is_valid_int()))
 	var best_target : String = ""
-	var best_similarity : float = 0.0
+	var best_shared_words : int = 0
+	var best_similarity : float = -1.0
 	for p : String in export_profiles:
-		var similarity : float = p.similarity(target)
-		if similarity > best_similarity:
-			best_similarity = similarity
+		var words : PackedStringArray = export_target_words(p)
+		var other_version : bool = false
+		for w : String in words:
+			if w.is_valid_int() and not target_versions.is_empty() and not target_versions.has(w):
+				other_version = true
+		if other_version:
+			continue
+		var shared_words : int = 0
+		var shared_name : bool = false
+		for w : String in target_words:
+			if words.has(w):
+				shared_words += 1
+				if not w.is_valid_int():
+					shared_name = true
+		if not shared_name:
+			continue
+		var similarity : float = p.to_lower().similarity(target.to_lower())
+		if shared_words > best_shared_words or (shared_words == best_shared_words and similarity > best_similarity):
 			best_target = p
+			best_shared_words = shared_words
+			best_similarity = similarity
 	return best_target
+
+## Returns the lower case words of an export target name ("Godot/Godot 4 ORM"
+## gives "godot", "4" and "orm")
+static func export_target_words(target : String) -> PackedStringArray:
+	var words : PackedStringArray = PackedStringArray()
+	for w : String in target.to_lower().replace("/", " ").split(" ", false):
+		if not words.has(w):
+			words.append(w)
+	return words
 
 ## Checks that all materials of a graph have an export target that matches
 ## target, and shows the valid targets if one does not
