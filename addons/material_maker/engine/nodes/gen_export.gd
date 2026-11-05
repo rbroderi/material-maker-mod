@@ -54,7 +54,8 @@ func get_input_defs() -> Array:
 	return [ { name="in", type="rgba" } ]
 
 func get_image_format() -> String:
-	match parameters.format:
+	# Parameters loaded from JSON are floats, and match doesn't convert them
+	match int(parameters.format):
 		ImageFormat.PNG:
 			return "png"
 		ImageFormat.JPG:
