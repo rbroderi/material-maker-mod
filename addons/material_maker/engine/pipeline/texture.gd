@@ -682,13 +682,15 @@ static func load_png_16(file_name : String) -> Image:
 	var channels : int = { 0: 1, 2: 3, 4: 2, 6: 4 }[color_type]
 	var bpp : int = 2*channels
 	var row_size : int = width*bpp
-	# IDAT chunks hold a zlib stream (Godot's deflate mode)
-	var rows : PackedByteArray = idat.decompress_dynamic(-1, FileAccess.COMPRESSION_DEFLATE)
-	idat.clear()
-	if rows.size() < height*(row_size+1):
-		return null
-	var data : PackedByteArray = png_unfilter(rows, width*bpp, height, bpp)
-	rows.clear()
+	var data : PackedByteArray = png_unfilter_natively(idat, width, height, color_type)
+	if data.is_empty():
+		# IDAT chunks hold a zlib stream (Godot's deflate mode)
+		var rows : PackedByteArray = idat.decompress_dynamic(-1, FileAccess.COMPRESSION_DEFLATE)
+		idat.clear()
+		if rows.size() < height*(row_size+1):
+			return null
+		data = png_unfilter(rows, width*bpp, height, bpp)
+		rows.clear()
 	if data.is_empty():
 		return null
 	# Big endian to little endian
@@ -716,6 +718,30 @@ static func load_png_16(file_name : String) -> Image:
 			var alpha : int = (values[i] >> 16) & 0xFFFF
 			rgba[i] = gray | (gray << 16) | (gray << 32) | (alpha << 48)
 	return Image.create_from_data(width, height, false, Image.FORMAT_RGBA16, rgba.to_byte_array())
+
+## The unfiltered big endian data of a 16 bits grayscale (0) or gray+alpha
+## (4) PNG, decoded by Godot's loader (much faster than png_unfilter): their
+## rows have the same bytes, and filters the same byte distance, as 8 bits
+## gray+alpha and RGBA PNG files of the same size, so the IDAT data is
+## loaded with such a header. Returns an empty array for other color types
+## or when Godot's loader does not give the expected 8 bits image.
+static func png_unfilter_natively(idat : PackedByteArray, width : int, height : int, color_type : int) -> PackedByteArray:
+	if not color_type in [ 0, 4 ]:
+		return PackedByteArray()
+	var png : PackedByteArray = PackedByteArray([ 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A ])
+	var header : PackedByteArray = png_u32(width)
+	header.append_array(png_u32(height))
+	header.append_array(PackedByteArray([ 8, 4 if color_type == 0 else 6, 0, 0, 0 ]))
+	png.append_array(png_chunk("IHDR", header))
+	png.append_array(png_chunk("IDAT", idat))
+	png.append_array(png_chunk("IEND", PackedByteArray()))
+	var image : Image = Image.new()
+	if image.load_png_from_buffer(png) != OK:
+		return PackedByteArray()
+	var expected_format : int = Image.FORMAT_LA8 if color_type == 0 else Image.FORMAT_RGBA8
+	if image.get_format() != expected_format or image.get_size() != Vector2i(width, height):
+		return PackedByteArray()
+	return image.get_data()
 
 ## Reverts the PNG filters of decompressed rows (each row starts with its
 ## filter type: none, sub, up, average or Paeth). Returns an empty array for
