@@ -65,7 +65,8 @@ func set_parameter(n : String, v) -> void:
 			# load_from_file does not work with dds, see godot issue #113063
 			image.load_dds_from_buffer(FileAccess.get_file_as_bytes(v))
 		else:
-			image = Image.load_from_file(v)
+			# 16 bits PNG files keep their precision
+			image = MMTexture.load_image_file(v)
 		if image != null:
 			var image_texture : ImageTexture = ImageTexture.create_from_image(image)
 			texture.set_texture(image_texture)
