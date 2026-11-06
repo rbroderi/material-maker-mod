@@ -212,7 +212,8 @@ func load_image() -> void:
 		# load_from_file does not work with dds, see godot issue #113063
 		image.load_dds_from_buffer(FileAccess.get_file_as_bytes(file_path))
 	else:
-		image = Image.load_from_file(file_path)
+		# 16 bits PNG files keep their precision
+		image = MMTexture.load_image_file(file_path)
 	if image == null:
 		return
 	texture.set_texture(ImageTexture.create_from_image(convert_color_space(image)))

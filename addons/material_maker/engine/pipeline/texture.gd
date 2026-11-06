@@ -633,6 +633,138 @@ static func save_png_16(image : Image, file_name : String) -> Error:
 	file.store_buffer(png)
 	return file.get_error()
 
+## Loads an image file. 16 bits non interlaced PNG files are decoded by
+## load_png_16() so they keep their precision (Godot's loader reduces them
+## to 8 bits), other files are loaded by Godot.
+static func load_image_file(file_name : String) -> Image:
+	if file_name.get_extension().to_lower() == "png":
+		var image : Image = load_png_16(file_name)
+		if image != null:
+			return image
+	return Image.load_from_file(file_name)
+
+## Decodes a 16 bits non interlaced PNG file: grayscale files become R16
+## images, other color types (RGB, gray+alpha, RGBA) RGBA16 images. Returns
+## null for other files (8 bits or less, interlaced, invalid), that are left
+## to Godot's loader.
+static func load_png_16(file_name : String) -> Image:
+	var png : PackedByteArray = FileAccess.get_file_as_bytes(file_name)
+	if png.size() < 33 or png.slice(0, 8) != PackedByteArray([ 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A ]):
+		return null
+	var width : int = 0
+	var height : int = 0
+	var color_type : int = -1
+	var idat : PackedByteArray = PackedByteArray()
+	var offset : int = 8
+	while offset+12 <= png.size():
+		var size : int = png_read_u32(png, offset)
+		var type : String = png.slice(offset+4, offset+8).get_string_from_ascii()
+		if offset+12+size > png.size():
+			return null
+		match type:
+			"IHDR":
+				width = png_read_u32(png, offset+8)
+				height = png_read_u32(png, offset+12)
+				# Bit depth 16, compression 0, filter 0, no interlace
+				if png[offset+16] != 16 or png[offset+18] != 0 or png[offset+19] != 0 or png[offset+20] != 0:
+					return null
+				color_type = png[offset+17]
+				if not color_type in [ 0, 2, 4, 6 ]:
+					return null
+			"IDAT":
+				idat.append_array(png.slice(offset+8, offset+8+size))
+			"IEND":
+				break
+		offset += 12+size
+	png.clear()
+	if width <= 0 or height <= 0 or color_type < 0:
+		return null
+	var channels : int = { 0: 1, 2: 3, 4: 2, 6: 4 }[color_type]
+	var bpp : int = 2*channels
+	var row_size : int = width*bpp
+	# IDAT chunks hold a zlib stream (Godot's deflate mode)
+	var rows : PackedByteArray = idat.decompress_dynamic(-1, FileAccess.COMPRESSION_DEFLATE)
+	idat.clear()
+	if rows.size() < height*(row_size+1):
+		return null
+	var data : PackedByteArray = png_unfilter(rows, width*bpp, height, bpp)
+	rows.clear()
+	if data.is_empty():
+		return null
+	# Big endian to little endian
+	data = get_big_endian_data(Image.create_from_data(width*channels, height, false, Image.FORMAT_R16, data))
+	match color_type:
+		0:
+			return Image.create_from_data(width, height, false, Image.FORMAT_R16, data)
+		6:
+			return Image.create_from_data(width, height, false, Image.FORMAT_RGBA16, data)
+	# RGB and gray+alpha are expanded to RGBA
+	var values : PackedInt32Array = PackedInt32Array()
+	var count : int = width*height
+	var rgba : PackedInt64Array = PackedInt64Array()
+	rgba.resize(count)
+	if color_type == 2:
+		for i in count:
+			var r : int = data.decode_u16(6*i)
+			var g : int = data.decode_u16(6*i+2)
+			var b : int = data.decode_u16(6*i+4)
+			rgba[i] = r | (g << 16) | (b << 32) | (0xFFFF << 48)
+	else:
+		values = data.to_int32_array()
+		for i in count:
+			var gray : int = values[i] & 0xFFFF
+			var alpha : int = (values[i] >> 16) & 0xFFFF
+			rgba[i] = gray | (gray << 16) | (gray << 32) | (alpha << 48)
+	return Image.create_from_data(width, height, false, Image.FORMAT_RGBA16, rgba.to_byte_array())
+
+## Reverts the PNG filters of decompressed rows (each row starts with its
+## filter type: none, sub, up, average or Paeth). Returns an empty array for
+## invalid filters.
+static func png_unfilter(rows : PackedByteArray, row_size : int, height : int, bpp : int) -> PackedByteArray:
+	var data : PackedByteArray = PackedByteArray()
+	data.resize(row_size*height)
+	for y in height:
+		var src : int = y*(row_size+1)
+		var filter : int = rows[src]
+		src += 1
+		var dst : int = y*row_size
+		var prev : int = dst-row_size
+		match filter:
+			0:
+				for x in row_size:
+					data[dst+x] = rows[src+x]
+			1:
+				for x in row_size:
+					var a : int = data[dst+x-bpp] if x >= bpp else 0
+					data[dst+x] = (rows[src+x]+a) & 255
+			2:
+				for x in row_size:
+					var b : int = data[prev+x] if y > 0 else 0
+					data[dst+x] = (rows[src+x]+b) & 255
+			3:
+				for x in row_size:
+					var a : int = data[dst+x-bpp] if x >= bpp else 0
+					var b : int = data[prev+x] if y > 0 else 0
+					data[dst+x] = (rows[src+x]+((a+b) >> 1)) & 255
+			4:
+				for x in row_size:
+					var a : int = data[dst+x-bpp] if x >= bpp else 0
+					var b : int = data[prev+x] if y > 0 else 0
+					var c : int = data[prev+x-bpp] if y > 0 and x >= bpp else 0
+					var p : int = a+b-c
+					var pa : int = absi(p-a)
+					var pb : int = absi(p-b)
+					var pc : int = absi(p-c)
+					var predictor : int = a if pa <= pb and pa <= pc else (b if pb <= pc else c)
+					data[dst+x] = (rows[src+x]+predictor) & 255
+			_:
+				return PackedByteArray()
+	return data
+
+## A big endian 32 bits integer read from PNG data
+static func png_read_u32(data : PackedByteArray, offset : int) -> int:
+	return (data[offset] << 24) | (data[offset+1] << 16) | (data[offset+2] << 8) | data[offset+3]
+
 ## The data of a 16 bits integer image with big endian values (for PNG
 ## files). PackedByteArray.reverse() swaps the bytes of each value but also
 ## reverses their order, which flipping an image of one value per pixel
