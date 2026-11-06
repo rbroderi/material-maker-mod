@@ -26,9 +26,20 @@ func test_grayscale_round_trip() -> void:
 	var image : Image = gradient(Image.FORMAT_R16, 1, 37, 23)
 	assert_eq(MMTextureScript.save_png_16(image, file_name), OK)
 	var loaded : Image = MMTextureScript.load_image_file(file_name)
-	assert_eq(loaded.get_format(), Image.FORMAT_R16)
+	# Gray is loaded as RGBA (single channel textures are sampled as red)
+	assert_eq(loaded.get_format(), Image.FORMAT_RGBA16)
 	assert_eq(loaded.get_size(), image.get_size())
-	assert_eq(loaded.get_data(), image.get_data())
+	var gray : PackedByteArray = image.get_data()
+	var rgba : PackedByteArray = loaded.get_data()
+	var mismatches : int = 0
+	for i in image.get_width()*image.get_height():
+		var g : int = gray.decode_u16(2*i)
+		for c in 3:
+			if rgba.decode_u16(8*i+2*c) != g:
+				mismatches += 1
+		if rgba.decode_u16(8*i+6) != 0xFFFF:
+			mismatches += 1
+	assert_eq(mismatches, 0)
 
 func test_rgba_round_trip() -> void:
 	var image : Image = gradient(Image.FORMAT_RGBA16, 4, 19, 11)
@@ -80,13 +91,14 @@ func test_filters_and_color_types() -> void:
 		file.close()
 		var loaded : Image = MMTextureScript.load_png_16(file_name)
 		assert_not_null(loaded, "color type %d" % color_type)
-		var out_channels : int = 1 if color_type == 0 else 4
+		var out_channels : int = 4
 		var data : PackedByteArray = loaded.get_data()
 		for p in width*height:
 			for oc in out_channels:
 				var sc : int
 				match color_type:
-					0, 6: sc = oc
+					0: sc = 0 if oc < 3 else -1
+					6: sc = oc
 					2: sc = oc if oc < 3 else -1
 					4: sc = 0 if oc < 3 else 1
 				var expected : int = 0xFFFF if sc < 0 else (raw[p*bpp+2*sc] << 8) | raw[p*bpp+2*sc+1]

@@ -643,8 +643,8 @@ static func load_image_file(file_name : String) -> Image:
 			return image
 	return Image.load_from_file(file_name)
 
-## Decodes a 16 bits non interlaced PNG file: grayscale files become R16
-## images, other color types (RGB, gray+alpha, RGBA) RGBA16 images. Returns
+## Decodes a 16 bits non interlaced PNG file as an RGBA16 image (gray is
+## copied to red, green and blue, alpha is 1 without alpha channel). Returns
 ## null for other files (8 bits or less, interlaced, invalid), that are left
 ## to Godot's loader.
 static func load_png_16(file_name : String) -> Image:
@@ -695,17 +695,28 @@ static func load_png_16(file_name : String) -> Image:
 		return null
 	# Big endian to little endian
 	data = get_big_endian_data(Image.create_from_data(width*channels, height, false, Image.FORMAT_R16, data))
-	match color_type:
-		0:
-			return Image.create_from_data(width, height, false, Image.FORMAT_R16, data)
-		6:
-			return Image.create_from_data(width, height, false, Image.FORMAT_RGBA16, data)
-	# RGB and gray+alpha are expanded to RGBA
+	if color_type == 6:
+		return Image.create_from_data(width, height, false, Image.FORMAT_RGBA16, data)
+	# Other color types are expanded to RGBA (single channel textures are
+	# sampled as red, not gray)
 	var values : PackedInt32Array = PackedInt32Array()
 	var count : int = width*height
 	var rgba : PackedInt64Array = PackedInt64Array()
 	rgba.resize(count)
-	if color_type == 2:
+	if color_type == 0:
+		# Two gray values per 32 bits integer
+		if count % 2 == 1:
+			data.append_array(PackedByteArray([ 0, 0 ]))
+		values = data.to_int32_array()
+		const OPAQUE : int = 0xFFFF << 48
+		for i in values.size():
+			var pair : int = values[i]
+			var gray : int = pair & 0xFFFF
+			rgba[2*i] = gray | (gray << 16) | (gray << 32) | OPAQUE
+			if 2*i+1 < count:
+				gray = (pair >> 16) & 0xFFFF
+				rgba[2*i+1] = gray | (gray << 16) | (gray << 32) | OPAQUE
+	elif color_type == 2:
 		for i in count:
 			var r : int = data.decode_u16(6*i)
 			var g : int = data.decode_u16(6*i+2)
