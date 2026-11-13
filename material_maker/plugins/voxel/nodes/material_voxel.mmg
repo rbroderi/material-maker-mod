@@ -1,0 +1,264 @@
+{
+	"export": {},
+	"export_last_target": "",
+	"name": "material_voxel",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"albedo_color": {
+			"a": 1,
+			"b": 1,
+			"g": 1,
+			"r": 1,
+			"type": "Color"
+		},
+		"ao": 1,
+		"bump": 1,
+		"emission_energy": 1,
+		"linear_albedo": false,
+		"metallic": 1,
+		"preview_scale": 1,
+		"roughness": 1
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"custom": "",
+		"exports": {},
+		"global": [
+			"float mm_vox_lin1(float c) {",
+			"\treturn (c < 0.04045) ? c/12.92 : pow((c+0.055)/1.055, 2.4);",
+			"}",
+			"",
+			"vec3 mm_vox_lin(vec3 c) {",
+			"\treturn vec3(mm_vox_lin1(c.x), mm_vox_lin1(c.y), mm_vox_lin1(c.z));",
+			"}",
+			""
+		],
+		"inputs": [
+			{
+				"default": "vec3(0.5)",
+				"label": "",
+				"longdesc": "Albedo",
+				"name": "albedo_tex",
+				"shortdesc": "Albedo",
+				"type": "tex3d"
+			},
+			{
+				"default": "0.0",
+				"label": "",
+				"longdesc": "Metallic",
+				"name": "metallic_tex",
+				"shortdesc": "Metallic",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"longdesc": "Roughness",
+				"name": "roughness_tex",
+				"shortdesc": "Roughness",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "vec3(0.0)",
+				"label": "",
+				"longdesc": "Emission",
+				"name": "emission_tex",
+				"shortdesc": "Emission",
+				"type": "tex3d"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"longdesc": "Ambient occlusion",
+				"name": "ao_tex",
+				"shortdesc": "Ambient occlusion",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "1.0",
+				"label": "",
+				"longdesc": "Opacity",
+				"name": "opacity_tex",
+				"shortdesc": "Opacity",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "vec3(0.0)",
+				"label": "",
+				"longdesc": "Bump (gradient of a height)",
+				"name": "bump_tex",
+				"shortdesc": "Bump (gradient of a height)",
+				"type": "tex3d"
+			}
+		],
+		"instance": "",
+		"longdesc": "Material for voxel and 3D-placed materials: the inputs are 3D textures of the object-space position, shown in the 3D preview with the object-space normal and bump",
+		"name": "Voxel Material",
+		"outputs": [
+			{
+				"longdesc": "Base colour, linear",
+				"shortdesc": "Albedo",
+				"tex3d": "vec3($albedo_color.rgb*($linear_albedo ? $albedo_tex($uv) : mm_vox_lin($albedo_tex($uv))))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "Occlusion, roughness and metallic",
+				"shortdesc": "ORM",
+				"tex3d": "vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "Emission",
+				"shortdesc": "Emission",
+				"tex3d": "$emission_energy*$emission_tex($uv)",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "Bumped object-space normal",
+				"shortdesc": "Normal",
+				"tex3d": "normalize(vec3($?1, $?2, $?3) - $bump*($bump_tex($uv) - vec3($?1, $?2, $?3)*dot($bump_tex($uv), vec3($?1, $?2, $?3))))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "Opacity",
+				"shortdesc": "Opacity",
+				"tex3d_gs": "$opacity_tex($uv)",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"a": 1,
+					"b": 1,
+					"g": 1,
+					"r": 1
+				},
+				"label": "Albedo",
+				"name": "albedo_color",
+				"type": "color"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Metallic",
+				"max": 1,
+				"min": 0,
+				"name": "metallic",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Roughness",
+				"max": 1,
+				"min": 0,
+				"name": "roughness",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Emission",
+				"max": 1,
+				"min": 0,
+				"name": "emission_energy",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Ambient occlusion",
+				"max": 1,
+				"min": 0,
+				"name": "ao",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Bump",
+				"max": 4,
+				"min": 0,
+				"name": "bump",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": false,
+				"label": "Linear albedo",
+				"name": "linear_albedo",
+				"type": "boolean"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Preview scale",
+				"max": 100,
+				"min": 0.01,
+				"name": "preview_scale",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"preview_shader": [
+			"shader_type spatial;",
+			"render_mode blend_mix,depth_prepass_alpha,cull_back,diffuse_burley,specular_schlick_ggx;",
+			"",
+			"varying vec3 mm_vox_p;",
+			"varying vec3 mm_vox_n;",
+			"",
+			"$definitions",
+			"",
+			"float mm_vox_lin1(float c) {",
+			"\treturn (c < 0.04045) ? c/12.92 : pow((c+0.055)/1.055, 2.4);",
+			"}",
+			"",
+			"vec3 mm_vox_lin(vec3 c) {",
+			"\treturn vec3(mm_vox_lin1(c.x), mm_vox_lin1(c.y), mm_vox_lin1(c.z));",
+			"}",
+			"",
+			"void vertex() {",
+			"\tmm_vox_p = VERTEX;",
+			"\tmm_vox_n = NORMAL;",
+			"}",
+			"",
+			"void fragment() {",
+			"\tfloat _seed_variation_ = 0.0;",
+			"\tvec3 mm_n = normalize(mm_vox_n);",
+			"\tvec4 _controlled_variation_ = vec4(mm_n, 0.0);",
+			"$begin_generate",
+			"\tvec3 mm_alb = $albedo_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"$if $(param:linear_albedo)",
+			"$else",
+			"\tmm_alb = mm_vox_lin(mm_alb);",
+			"$fi",
+			"\tALBEDO = $albedo_color.rgb*mm_alb;",
+			"\tMETALLIC = $metallic*$metallic_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"\tROUGHNESS = $roughness*$roughness_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"\tSPECULAR = 0.5;",
+			"\tEMISSION = $emission_energy*$emission_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"\tAO = $ao_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"\tAO_LIGHT_AFFECT = $ao;",
+			"\tvec3 mm_g = $bump_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"\tvec3 mm_nb = normalize(mm_n - $bump*(mm_g - mm_n*dot(mm_g, mm_n)));",
+			"\tNORMAL = normalize((VIEW_MATRIX*MODEL_MATRIX*vec4(mm_nb, 0.0)).xyz);",
+			"$if $(connected:opacity_tex)",
+			"\tALPHA = $opacity_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
+			"$fi",
+			"$end_generate",
+			"}",
+			""
+		],
+		"shortdesc": "Voxel Material"
+	},
+	"type": "material_export"
+}

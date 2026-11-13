@@ -1,0 +1,218 @@
+{
+	"name": "voxel_surface_pattern",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"blend_sharpness": 4.0,
+		"mode": 0,
+		"offset_u": 0.0,
+		"offset_v": 0.0,
+		"scale_u": 2.0,
+		"scale_v": 2.0,
+		"up": 0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec3($uv, 0.0)",
+				"function": true,
+				"label": "Pattern",
+				"longdesc": "The 2D pattern (a wallpaper motif, a weave...) that is projected onto the surface",
+				"name": "in",
+				"shortdesc": "Pattern",
+				"type": "rgb"
+			},
+			{
+				"default": "vec3(0.0)",
+				"label": "Normal",
+				"longdesc": "The object-space surface normal (from Voxel Inputs); a zero vector selects the Z projection",
+				"name": "normal_in",
+				"shortdesc": "Normal",
+				"type": "tex3d"
+			},
+			{
+				"default": "1.0",
+				"label": "Mask",
+				"longdesc": "Multiplies the colour and the height of the pattern",
+				"name": "mask_in",
+				"shortdesc": "Mask",
+				"type": "tex3d_gs"
+			}
+		],
+		"instance": [
+			"vec2 $(name)_plane(vec3 p, vec3 n, int axis) {",
+			"\tfloat ph = p.y;",
+			"\tfloat pu = p.z;",
+			"\tfloat nh = n.y;",
+			"\tfloat nu = n.z;",
+			"\tif ($up > 0.5) {",
+			"\t\tph = -p.z;",
+			"\t\tpu = p.y;",
+			"\t\tnh = -n.z;",
+			"\t\tnu = n.y;",
+			"\t}",
+			"\tif (axis == 0) {",
+			"\t\treturn vec2((n.x >= 0.0) ? ph : -ph, pu);",
+			"\t}",
+			"\tif (axis == 1) {",
+			"\t\treturn vec2((nh >= 0.0) ? -p.x : p.x, pu);",
+			"\t}",
+			"\treturn vec2((nu >= 0.0) ? p.x : -p.x, ph);",
+			"}",
+			"vec3 $(name)_sample(vec3 p, vec3 n, int axis) {",
+			"\tvec2 c = $(name)_plane(p, n, axis);",
+			"\treturn $in(fract(vec2(c.x*$scale_u+$offset_u, c.y*$scale_v+$offset_v)));",
+			"}",
+			"vec3 $(name)_pattern(vec3 p, vec3 nin) {",
+			"\tvec3 n = vec3(0.0, 0.0, 1.0);",
+			"\tfloat l = dot(nin, nin);",
+			"\tif (l > 0.000001) {",
+			"\t\tn = nin/sqrt(l);",
+			"\t}",
+			"\tfloat nh = n.y;",
+			"\tfloat nu = n.z;",
+			"\tif ($up > 0.5) {",
+			"\t\tnh = -n.z;",
+			"\t\tnu = n.y;",
+			"\t}",
+			"\tfloat wx = abs(n.x);",
+			"\tfloat wh = abs(nh);",
+			"\tfloat wu = abs(nu);",
+			"\tif ($mode < 0.5) {",
+			"\t\tint axis = 1;",
+			"\t\tif (wu >= wx && wu >= wh) {",
+			"\t\t\taxis = 2;",
+			"\t\t} else if (wx >= wh) {",
+			"\t\t\taxis = 0;",
+			"\t\t}",
+			"\t\treturn $(name)_sample(p, n, axis);",
+			"\t}",
+			"\twx = pow(max(wx, 0.00001), $blend_sharpness);",
+			"\twh = pow(max(wh, 0.00001), $blend_sharpness);",
+			"\twu = pow(max(wu, 0.00001), $blend_sharpness);",
+			"\treturn ($(name)_sample(p, n, 0)*wx+$(name)_sample(p, n, 1)*wh+$(name)_sample(p, n, 2)*wu)/(wx+wh+wu);",
+			"}"
+		],
+		"longdesc": "Places a 2D pattern (wallpaper, fabric...) on the surfaces of a voxel object, by projecting it along the dominant axis of the surface normal, or by blending three projections",
+		"name": "Voxel Surface Pattern",
+		"outputs": [
+			{
+				"longdesc": "The projected pattern, multiplied by the mask",
+				"shortdesc": "Colour",
+				"tex3d": "$(name)_pattern($uv.xyz, $normal_in($uv))*$mask_in($uv)",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The luminance of the projected pattern, multiplied by the mask (feed it to Gradient to get a bump)",
+				"shortdesc": "Height",
+				"tex3d_gs": "dot($(name)_pattern($uv.xyz, $normal_in($uv)), vec3(0.2126, 0.7152, 0.0722))*$mask_in($uv)",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Scale U",
+				"longdesc": "Repeats of the pattern per metre along the horizontal axis of the surface",
+				"max": 100,
+				"min": 0.01,
+				"name": "scale_u",
+				"shortdesc": "Scale U",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 2.0,
+				"label": "Scale V",
+				"longdesc": "Repeats of the pattern per metre along the vertical axis of the surface",
+				"max": 100,
+				"min": 0.01,
+				"name": "scale_v",
+				"shortdesc": "Scale V",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Up",
+				"longdesc": "The object axis that is up on walls",
+				"name": "up",
+				"shortdesc": "Up",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Z",
+						"value": "0.0"
+					},
+					{
+						"name": "Y",
+						"value": "1.0"
+					}
+				]
+			},
+			{
+				"default": 0,
+				"label": "Mode",
+				"longdesc": "Dominant axis: one projection, chosen by the largest normal component. Triplanar blend: the three projections are blended",
+				"name": "mode",
+				"shortdesc": "Mode",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Dominant axis",
+						"value": "0.0"
+					},
+					{
+						"name": "Triplanar blend",
+						"value": "1.0"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 4.0,
+				"label": "Blend sharpness",
+				"longdesc": "The exponent of the blend weights in Triplanar blend mode",
+				"max": 32,
+				"min": 0,
+				"name": "blend_sharpness",
+				"shortdesc": "Blend sharpness",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Offset U",
+				"longdesc": "Shifts the pattern along U, in pattern repeats",
+				"max": 1,
+				"min": -1,
+				"name": "offset_u",
+				"shortdesc": "Offset U",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Offset V",
+				"longdesc": "Shifts the pattern along V, in pattern repeats",
+				"max": 1,
+				"min": -1,
+				"name": "offset_v",
+				"shortdesc": "Offset V",
+				"step": 0.001,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Voxel Surface Pattern"
+	},
+	"type": "shader"
+}

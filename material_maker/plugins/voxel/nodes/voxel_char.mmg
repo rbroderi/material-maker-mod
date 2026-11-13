@@ -1,0 +1,179 @@
+{
+	"name": "voxel_char",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"char_colour": {
+			"a": 1,
+			"b": 0.02,
+			"g": 0.02,
+			"r": 0.02
+		},
+		"char_roughness": 0.9,
+		"crack_scale": 40,
+		"crack_width": 0.12,
+		"ember": 0.0,
+		"ember_colour": {
+			"a": 1,
+			"b": 0.03,
+			"g": 0.25,
+			"r": 1.0
+		}
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"includes": [
+			"mm_noise3d"
+		],
+		"inputs": [
+			{
+				"default": "vec3(0.5)",
+				"label": "Albedo",
+				"longdesc": "The linear albedo",
+				"name": "albedo_in",
+				"shortdesc": "Albedo",
+				"type": "tex3d"
+			},
+			{
+				"default": "0.5",
+				"label": "Roughness",
+				"longdesc": "The roughness",
+				"name": "roughness_in",
+				"shortdesc": "Roughness",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Char",
+				"longdesc": "How burnt the surface is, 0 to 1 (from Voxel Inputs)",
+				"name": "char_in",
+				"shortdesc": "Char",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Seed",
+				"longdesc": "The seed (from Voxel Inputs)",
+				"name": "seed_in",
+				"shortdesc": "Seed",
+				"type": "tex3d_gs"
+			}
+		],
+		"instance": [
+			"float $(name)_scale(vec3 P, float sd) {",
+			"\tvec3 d = mm_n3_voronoi_search(P*$crack_scale, mm_n3_seed(sd)+31u, 1.0, 0, 0);",
+			"\treturn smoothstep(0.0, $crack_width, d.y-d.x);",
+			"}"
+		],
+		"longdesc": "Burns a surface to charcoal with alligator cracks",
+		"name": "Voxel Char",
+		"outputs": [
+			{
+				"longdesc": "The charred linear albedo",
+				"shortdesc": "Albedo",
+				"tex3d": "mix($albedo_in($uv), $char_colour.rgb*(0.5+0.5*$(name)_scale($uv.xyz, $seed_in($uv))), clamp($char_in($uv), 0.0, 1.0))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The charred roughness",
+				"shortdesc": "Roughness",
+				"tex3d_gs": "mix($roughness_in($uv), $char_roughness, clamp($char_in($uv), 0.0, 1.0))",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The crack height (0 in the cracks), for a bump",
+				"shortdesc": "Height",
+				"tex3d_gs": "mix(0.5, $(name)_scale($uv.xyz, $seed_in($uv)), clamp($char_in($uv), 0.0, 1.0))",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "Glowing embers in the cracks",
+				"shortdesc": "Emission",
+				"tex3d": "$ember_colour.rgb*$ember*clamp($char_in($uv), 0.0, 1.0)*(1.0-$(name)_scale($uv.xyz, $seed_in($uv)))",
+				"type": "tex3d"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"a": 1,
+					"b": 0.02,
+					"g": 0.02,
+					"r": 0.02
+				},
+				"label": "Char colour",
+				"longdesc": "Linear colour of the charcoal",
+				"name": "char_colour",
+				"shortdesc": "Char colour",
+				"type": "color"
+			},
+			{
+				"control": "None",
+				"default": 40,
+				"label": "Crack scale",
+				"longdesc": "Size of the alligator scales, in cells per metre",
+				"max": 1000,
+				"min": 0.1,
+				"name": "crack_scale",
+				"shortdesc": "Crack scale",
+				"step": 0.1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.12,
+				"label": "Crack width",
+				"longdesc": "Width of the cracks between the scales, in cells",
+				"max": 1,
+				"min": 0.001,
+				"name": "crack_width",
+				"shortdesc": "Crack width",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.9,
+				"label": "Char roughness",
+				"longdesc": "Roughness of fully charred surfaces",
+				"max": 1,
+				"min": 0,
+				"name": "char_roughness",
+				"shortdesc": "Char roughness",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.0,
+				"label": "Ember",
+				"longdesc": "Brightness of the glowing cracks (0 for none)",
+				"max": 20,
+				"min": 0,
+				"name": "ember",
+				"shortdesc": "Ember",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": {
+					"a": 1,
+					"b": 0.03,
+					"g": 0.25,
+					"r": 1.0
+				},
+				"label": "Ember colour",
+				"longdesc": "Linear colour of the glowing cracks",
+				"name": "ember_colour",
+				"shortdesc": "Ember colour",
+				"type": "color"
+			}
+		],
+		"shortdesc": "Voxel Char"
+	},
+	"type": "shader"
+}

@@ -1,0 +1,155 @@
+{
+	"name": "voxel_wetness",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"darken": 0.55,
+		"min_roughness": 0.15,
+		"porosity": 1.0,
+		"up_axis": 2,
+		"up_bias": 0.5
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"includes": [
+			"mm_noise3d"
+		],
+		"inputs": [
+			{
+				"default": "vec3(0.5)",
+				"label": "Albedo",
+				"longdesc": "The linear albedo",
+				"name": "albedo_in",
+				"shortdesc": "Albedo",
+				"type": "tex3d"
+			},
+			{
+				"default": "0.5",
+				"label": "Roughness",
+				"longdesc": "The roughness",
+				"name": "roughness_in",
+				"shortdesc": "Roughness",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Wet",
+				"longdesc": "How wet the surface is, 0 to 1 (from Voxel Inputs)",
+				"name": "wet_in",
+				"shortdesc": "Wet",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "vec3(0.0)",
+				"label": "Normal",
+				"longdesc": "The surface normal (from Voxel Inputs); a zero vector counts as facing up",
+				"name": "normal_in",
+				"shortdesc": "Normal",
+				"type": "tex3d"
+			}
+		],
+		"instance": [
+			"float $(name)_up(vec3 nrm) {",
+			"\tfloat nl = dot(nrm, nrm);",
+			"\tif (nl > 0.000001) {",
+			"\t\tvec3 n = nrm/sqrt(nl);",
+			"\t\tfloat u = n.z;",
+			"\t\tif ($up_axis < 0.5) {",
+			"\t\t\tu = n.x;",
+			"\t\t} else if ($up_axis < 1.5) {",
+			"\t\t\tu = n.y;",
+			"\t\t}",
+			"\t\treturn clamp(u, 0.0, 1.0);",
+			"\t}",
+			"\treturn 1.0;",
+			"}",
+			"float $(name)_wf(float wet, vec3 nrm) {",
+			"\treturn clamp(wet, 0.0, 1.0)*(1.0-$up_bias+$up_bias*$(name)_up(nrm));",
+			"}"
+		],
+		"longdesc": "Darkens the albedo and lowers the roughness of wet surfaces, more on up-facing ones",
+		"name": "Voxel Wetness",
+		"outputs": [
+			{
+				"longdesc": "The wet linear albedo",
+				"shortdesc": "Albedo",
+				"tex3d": "$albedo_in($uv)*mix(1.0, $darken, clamp($wet_in($uv), 0.0, 1.0)*$porosity)",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The wet roughness",
+				"shortdesc": "Roughness",
+				"tex3d_gs": "mix($roughness_in($uv), min($roughness_in($uv), $min_roughness), $(name)_wf($wet_in($uv), $normal_in($uv)))",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Porosity",
+				"longdesc": "How much the surface darkens when wet",
+				"max": 1,
+				"min": 0,
+				"name": "porosity",
+				"shortdesc": "Porosity",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.55,
+				"label": "Darkening",
+				"longdesc": "Albedo factor of a fully wet porous surface",
+				"max": 1,
+				"min": 0,
+				"name": "darken",
+				"shortdesc": "Darkening",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.15,
+				"label": "Wet roughness",
+				"longdesc": "Roughness of a fully wet surface",
+				"max": 1,
+				"min": 0,
+				"name": "min_roughness",
+				"shortdesc": "Wet roughness",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Up bias",
+				"longdesc": "How much more the roughness drops on up-facing surfaces",
+				"max": 1,
+				"min": 0,
+				"name": "up_bias",
+				"shortdesc": "Up bias",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 2,
+				"label": "Up axis",
+				"longdesc": "The up axis: 0 for X, 1 for Y, 2 for Z",
+				"max": 2,
+				"min": 0,
+				"name": "up_axis",
+				"shortdesc": "Up axis",
+				"step": 1,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Voxel Wetness"
+	},
+	"type": "shader"
+}

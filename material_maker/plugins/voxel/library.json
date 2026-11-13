@@ -1,0 +1,53 @@
+{
+	"lib": [
+		{
+			"display_name": "Voxel Inputs",
+			"name": "voxel_inputs",
+			"tree_item": "3D/Voxel/Inputs",
+			"type": "voxel_inputs"
+		},
+		{
+			"display_name": "Wood",
+			"name": "voxel_wood",
+			"tree_item": "3D/Voxel/Wood",
+			"type": "voxel_wood"
+		},
+		{
+			"display_name": "Voxel Palette Pick",
+			"name": "voxel_palette_pick",
+			"tree_item": "3D/Voxel/Palette Pick",
+			"type": "voxel_palette_pick"
+		},
+		{
+			"display_name": "Voxel Weathering",
+			"name": "voxel_weathering",
+			"tree_item": "3D/Voxel/Weathering",
+			"type": "voxel_weathering"
+		},
+		{
+			"display_name": "Voxel Char",
+			"name": "voxel_char",
+			"tree_item": "3D/Voxel/Char",
+			"type": "voxel_char"
+		},
+		{
+			"display_name": "Voxel Wetness",
+			"name": "voxel_wetness",
+			"tree_item": "3D/Voxel/Wetness",
+			"type": "voxel_wetness"
+		},
+		{
+			"display_name": "Voxel Paint",
+			"name": "voxel_paint",
+			"tree_item": "3D/Voxel/Paint",
+			"type": "voxel_paint"
+		},
+		{
+			"display_name": "Voxel Surface Pattern",
+			"name": "voxel_surface_pattern",
+			"tree_item": "3D/Voxel/Surface Pattern",
+			"type": "voxel_surface_pattern"
+		}
+	],
+	"name": "Voxel"
+}

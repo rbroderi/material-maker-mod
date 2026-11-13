@@ -1,0 +1,254 @@
+{
+	"name": "voxel_palette_pick",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"blend": 0.35,
+		"c0": {
+			"a": 1,
+			"b": 0.23529411764705882,
+			"g": 0.3137254901960784,
+			"r": 0.5882352941176471
+		},
+		"c1": {
+			"a": 1,
+			"b": 0.25098039215686274,
+			"g": 0.3607843137254902,
+			"r": 0.6588235294117647
+		},
+		"c2": {
+			"a": 1,
+			"b": 0.2196078431372549,
+			"g": 0.27450980392156865,
+			"r": 0.47058823529411764
+		},
+		"c3": {
+			"a": 1,
+			"b": 0.25098039215686274,
+			"g": 0.25098039215686274,
+			"r": 0.32941176470588235
+		},
+		"c4": {
+			"a": 1,
+			"b": 0.3686274509803922,
+			"g": 0.5254901960784314,
+			"r": 0.6901960784313725
+		},
+		"t1": 0.4,
+		"t2": 0.66,
+		"t3": 0.86,
+		"t4": 0.93
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"includes": [
+			"mm_noise3d"
+		],
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "Id",
+				"longdesc": "The unit id: a Voronoi cell value, a brick id or the per-thing seed",
+				"name": "id_in",
+				"shortdesc": "Id",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Seed",
+				"longdesc": "The seed (from Voxel Inputs)",
+				"name": "seed_in",
+				"shortdesc": "Seed",
+				"type": "tex3d_gs"
+			}
+		],
+		"instance": [
+			"float $(name)_lin1(float c) {",
+			"\treturn (c <= 0.04045) ? c/12.92 : pow((c+0.055)/1.055, 2.4);",
+			"}",
+			"vec3 $(name)_lin(vec3 c) {",
+			"\treturn vec3($(name)_lin1(c.x), $(name)_lin1(c.y), $(name)_lin1(c.z));",
+			"}",
+			"float $(name)_h(float idv, float sd, int a, int b) {",
+			"\treturn mm_n3_hash(int(floor(idv+0.5)), a, b, mm_n3_seed(sd));",
+			"}",
+			"vec3 $(name)_pick(float idv, float sd) {",
+			"\tfloat h1 = $(name)_h(idv, sd, 3, 1);",
+			"\tfloat h2 = $(name)_h(idv, sd, 5, 2);",
+			"\tvec3 k0 = $(name)_lin($c0.rgb);",
+			"\tvec3 k1 = $(name)_lin($c1.rgb);",
+			"\tvec3 k2 = $(name)_lin($c2.rgb);",
+			"\tvec3 k3 = $(name)_lin($c3.rgb);",
+			"\tvec3 k4 = $(name)_lin($c4.rgb);",
+			"\tfloat s1 = step($t1, h1);",
+			"\tfloat s2 = step($t2, h1);",
+			"\tfloat s3 = step($t3, h1);",
+			"\tfloat s4 = step($t4, h1);",
+			"\tvec3 a = mix(mix(mix(mix(k0, k1, s1), k2, s2), k3, s3), k4, s4);",
+			"\tvec3 b = mix(mix(mix(mix(k1, k2, s1), k3, s2), k4, s3), k0, s4);",
+			"\treturn mix(a, b, h2*$blend);",
+			"}"
+		],
+		"longdesc": "Picks one of five palette colours per unit (brick, tile, plank) from an id, as in the voxkit brick recipe",
+		"name": "Voxel Palette Pick",
+		"outputs": [
+			{
+				"longdesc": "The linear palette colour of the unit",
+				"shortdesc": "Colour",
+				"tex3d": "$(name)_pick($id_in($uv), $seed_in($uv))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "Random value 1 of the unit (picks the colour)",
+				"shortdesc": "H1",
+				"tex3d_gs": "$(name)_h($id_in($uv), $seed_in($uv), 3, 1)",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "Random value 2 of the unit (blends in the next colour)",
+				"shortdesc": "H2",
+				"tex3d_gs": "$(name)_h($id_in($uv), $seed_in($uv), 5, 2)",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "Random value 3 of the unit, for per-unit variation",
+				"shortdesc": "H3",
+				"tex3d_gs": "$(name)_h($id_in($uv), $seed_in($uv), 7, 3)",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"a": 1,
+					"b": 0.23529411764705882,
+					"g": 0.3137254901960784,
+					"r": 0.5882352941176471
+				},
+				"label": "Colour 0",
+				"longdesc": "Palette colour 0 (sRGB)",
+				"name": "c0",
+				"shortdesc": "Colour 0",
+				"type": "color"
+			},
+			{
+				"default": {
+					"a": 1,
+					"b": 0.25098039215686274,
+					"g": 0.3607843137254902,
+					"r": 0.6588235294117647
+				},
+				"label": "Colour 1",
+				"longdesc": "Palette colour 1 (sRGB)",
+				"name": "c1",
+				"shortdesc": "Colour 1",
+				"type": "color"
+			},
+			{
+				"default": {
+					"a": 1,
+					"b": 0.2196078431372549,
+					"g": 0.27450980392156865,
+					"r": 0.47058823529411764
+				},
+				"label": "Colour 2",
+				"longdesc": "Palette colour 2 (sRGB)",
+				"name": "c2",
+				"shortdesc": "Colour 2",
+				"type": "color"
+			},
+			{
+				"default": {
+					"a": 1,
+					"b": 0.25098039215686274,
+					"g": 0.25098039215686274,
+					"r": 0.32941176470588235
+				},
+				"label": "Colour 3",
+				"longdesc": "Palette colour 3 (sRGB)",
+				"name": "c3",
+				"shortdesc": "Colour 3",
+				"type": "color"
+			},
+			{
+				"default": {
+					"a": 1,
+					"b": 0.3686274509803922,
+					"g": 0.5254901960784314,
+					"r": 0.6901960784313725
+				},
+				"label": "Colour 4",
+				"longdesc": "Palette colour 4 (sRGB)",
+				"name": "c4",
+				"shortdesc": "Colour 4",
+				"type": "color"
+			},
+			{
+				"control": "None",
+				"default": 0.4,
+				"label": "Threshold 1",
+				"longdesc": "Cumulative threshold 1: units whose first random value is above it use colour 1 or later",
+				"max": 1,
+				"min": 0,
+				"name": "t1",
+				"shortdesc": "Threshold 1",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.66,
+				"label": "Threshold 2",
+				"longdesc": "Cumulative threshold 2: units whose first random value is above it use colour 2 or later",
+				"max": 1,
+				"min": 0,
+				"name": "t2",
+				"shortdesc": "Threshold 2",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.86,
+				"label": "Threshold 3",
+				"longdesc": "Cumulative threshold 3: units whose first random value is above it use colour 3 or later",
+				"max": 1,
+				"min": 0,
+				"name": "t3",
+				"shortdesc": "Threshold 3",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.93,
+				"label": "Threshold 4",
+				"longdesc": "Cumulative threshold 4: units whose first random value is above it use colour 4 or later",
+				"max": 1,
+				"min": 0,
+				"name": "t4",
+				"shortdesc": "Threshold 4",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.35,
+				"label": "Blend",
+				"longdesc": "Largest amount of the next palette colour mixed into the picked one",
+				"max": 1,
+				"min": 0,
+				"name": "blend",
+				"shortdesc": "Blend",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Voxel Palette Pick"
+	},
+	"type": "shader"
+}

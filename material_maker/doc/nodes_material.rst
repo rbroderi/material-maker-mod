@@ -14,3 +14,4 @@ Each material has a single Material node that defines the material type.
 	node_material_unlit
 	node_material_dynamic_sky
 	node_material_car_paint
+	node_material_voxel

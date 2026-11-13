@@ -1,0 +1,158 @@
+{
+	"name": "voxel_paint",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"gloss": 0.35,
+		"hides": 1.0,
+		"paint_colour": {
+			"a": 1,
+			"b": 0.6666666666666666,
+			"g": 0.7450980392156863,
+			"r": 0.7843137254901961
+		},
+		"units_per_metre": 81
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"includes": [
+			"mm_noise3d"
+		],
+		"inputs": [
+			{
+				"default": "vec3(0.5)",
+				"label": "Albedo",
+				"longdesc": "The linear albedo",
+				"name": "albedo_in",
+				"shortdesc": "Albedo",
+				"type": "tex3d"
+			},
+			{
+				"default": "0.5",
+				"label": "Roughness",
+				"longdesc": "The roughness",
+				"name": "roughness_in",
+				"shortdesc": "Roughness",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "vec3(0.0)",
+				"label": "Bump",
+				"longdesc": "The bump gradient vector",
+				"name": "bump_in",
+				"shortdesc": "Bump",
+				"type": "tex3d"
+			},
+			{
+				"default": "0.0",
+				"label": "Mask",
+				"longdesc": "Where the surface is painted, 0 to 1",
+				"name": "mask_in",
+				"shortdesc": "Mask",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Seed",
+				"longdesc": "The seed (from Voxel Inputs)",
+				"name": "seed_in",
+				"shortdesc": "Seed",
+				"type": "tex3d_gs"
+			}
+		],
+		"instance": [
+			"float $(name)_lin1(float c) {",
+			"\treturn (c <= 0.04045) ? c/12.92 : pow((c+0.055)/1.055, 2.4);",
+			"}",
+			"vec3 $(name)_lin(vec3 c) {",
+			"\treturn vec3($(name)_lin1(c.x), $(name)_lin1(c.y), $(name)_lin1(c.z));",
+			"}",
+			"float $(name)_w(float mask) {",
+			"\treturn clamp(mask*$hides, 0.0, 1.0);",
+			"}",
+			"vec3 $(name)_paint(vec3 P, float sd) {",
+			"\tfloat v = mm_n3_fbm(P*($units_per_metre*0.15), mm_n3_seed(sd)+11u, 2, 0.5, 2.03);",
+			"\treturn $(name)_lin($paint_colour.rgb)*(0.93+0.14*v);",
+			"}"
+		],
+		"longdesc": "Paints over a surface where the mask is set; a port of the paint branch of the voxkit wood recipe",
+		"name": "Voxel Paint",
+		"outputs": [
+			{
+				"longdesc": "The painted linear albedo",
+				"shortdesc": "Albedo",
+				"tex3d": "mix($albedo_in($uv), $(name)_paint($uv.xyz, $seed_in($uv)), $(name)_w($mask_in($uv)))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The painted roughness",
+				"shortdesc": "Roughness",
+				"tex3d_gs": "mix($roughness_in($uv), $gloss, $(name)_w($mask_in($uv)))",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The bump, reduced under the paint",
+				"shortdesc": "Bump",
+				"tex3d": "$bump_in($uv)*mix(1.0, 0.375, $(name)_w($mask_in($uv)))",
+				"type": "tex3d"
+			}
+		],
+		"parameters": [
+			{
+				"default": {
+					"a": 1,
+					"b": 0.6666666666666666,
+					"g": 0.7450980392156863,
+					"r": 0.7843137254901961
+				},
+				"label": "Paint colour",
+				"longdesc": "Colour (sRGB) of the paint",
+				"name": "paint_colour",
+				"shortdesc": "Paint colour",
+				"type": "color"
+			},
+			{
+				"control": "None",
+				"default": 0.35,
+				"label": "Gloss",
+				"longdesc": "Roughness of fully painted surfaces (lower is glossier)",
+				"max": 1,
+				"min": 0,
+				"name": "gloss",
+				"shortdesc": "Gloss",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1.0,
+				"label": "Hides",
+				"longdesc": "How much the paint hides what is below",
+				"max": 1,
+				"min": 0,
+				"name": "hides",
+				"shortdesc": "Hides",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 81,
+				"label": "Units per metre",
+				"longdesc": "Recipe units (voxels) per metre",
+				"max": 1000,
+				"min": 1,
+				"name": "units_per_metre",
+				"shortdesc": "Units per metre",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Voxel Paint"
+	},
+	"type": "shader"
+}

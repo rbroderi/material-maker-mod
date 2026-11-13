@@ -1,0 +1,227 @@
+{
+	"name": "voxel_weathering",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"bloom": 0.12,
+		"dirt_colour": {
+			"a": 1,
+			"b": 0.3058823529411765,
+			"g": 0.33725490196078434,
+			"r": 0.3764705882352941
+		},
+		"grime_scale": 0.05,
+		"hides": 0.3,
+		"hollows": 0.5,
+		"rough_gain": 0.2,
+		"units_per_metre": 81,
+		"wear": 0.16
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"includes": [
+			"mm_noise3d"
+		],
+		"inputs": [
+			{
+				"default": "vec3(0.5)",
+				"label": "Albedo",
+				"longdesc": "The linear albedo to weather",
+				"name": "albedo_in",
+				"shortdesc": "Albedo",
+				"type": "tex3d"
+			},
+			{
+				"default": "0.5",
+				"label": "Height",
+				"longdesc": "Optional height: dirt gathers in low places, wear lightens high ones",
+				"name": "height_in",
+				"shortdesc": "Height",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Seed",
+				"longdesc": "The seed (from Voxel Inputs)",
+				"name": "seed_in",
+				"shortdesc": "Seed",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.1",
+				"label": "Age",
+				"longdesc": "How old the surface is (from Voxel Inputs)",
+				"name": "age_in",
+				"shortdesc": "Age",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Upkeep",
+				"longdesc": "How well kept the surface is (from Voxel Inputs)",
+				"name": "upkeep_in",
+				"shortdesc": "Upkeep",
+				"type": "tex3d_gs"
+			},
+			{
+				"default": "0.0",
+				"label": "Fresh",
+				"longdesc": "0 for the original surface, 1 for a freshly cut one (from Voxel Inputs)",
+				"name": "fresh_in",
+				"shortdesc": "Fresh",
+				"type": "tex3d_gs"
+			}
+		],
+		"instance": [
+			"float $(name)_lin1(float c) {",
+			"\treturn (c <= 0.04045) ? c/12.92 : pow((c+0.055)/1.055, 2.4);",
+			"}",
+			"vec3 $(name)_lin(vec3 c) {",
+			"\treturn vec3($(name)_lin1(c.x), $(name)_lin1(c.y), $(name)_lin1(c.z));",
+			"}",
+			"float $(name)_w(float age, float up, float fr) {",
+			"\treturn clamp(age*(1.0-up)*(1.0-fr), 0.0, 1.0);",
+			"}",
+			"vec3 $(name)_eval(vec3 P, vec3 col, float h, float sd, float age, float up, float fr) {",
+			"\tuint sh = mm_n3_seed(sd);",
+			"\tvec3 x = P*$units_per_metre;",
+			"\tfloat w = $(name)_w(age, up, fr);",
+			"\tfloat grime = mm_n3_fbm(x*$grime_scale, sh+3u, 3, 0.5, 2.03);",
+			"\tfloat hol = 1.0+$hollows*(1.0-2.0*smoothstep(0.2, 0.8, h));",
+			"\tfloat dirt = clamp($hides*(0.5+1.8*grime)*hol, 0.0, 0.85);",
+			"\tvec3 aged = mix(col, $(name)_lin($dirt_colour.rgb), dirt);",
+			"\tfloat bl = smoothstep(0.62, 0.80, mm_n3_fbm(x*vec3(0.035, 0.035, 0.06)*($grime_scale/0.05), sh+4u, 3, 0.5, 2.03))*$bloom;",
+			"\taged = mix(aged, vec3(0.45, 0.42, 0.38), bl)*0.9;",
+			"\tvec3 res = mix(col, aged, w);",
+			"\treturn res*(1.0+$wear*age*(1.0-fr)*smoothstep(0.55, 0.85, h));",
+			"}"
+		],
+		"longdesc": "Dirt, bloom and wear on an albedo, a port of the aged branch of the voxkit brick recipe",
+		"name": "Voxel Weathering",
+		"outputs": [
+			{
+				"longdesc": "The weathered linear albedo",
+				"shortdesc": "Albedo",
+				"tex3d": "$(name)_eval($uv.xyz, $albedo_in($uv), $height_in($uv), $seed_in($uv), $age_in($uv), $upkeep_in($uv), $fresh_in($uv))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "Roughness to add to the surface roughness",
+				"shortdesc": "Roughness delta",
+				"tex3d_gs": "$rough_gain*$(name)_w($age_in($uv), $upkeep_in($uv), $fresh_in($uv))",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "Factor to multiply the bump by (weathered surfaces are smoother)",
+				"shortdesc": "Bump scale",
+				"tex3d_gs": "mix(0.34, 0.16, $(name)_w($age_in($uv), $upkeep_in($uv), $fresh_in($uv)))/0.34",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 81,
+				"label": "Units per metre",
+				"longdesc": "Recipe units (voxels) per metre",
+				"max": 1000,
+				"min": 1,
+				"name": "units_per_metre",
+				"shortdesc": "Units per metre",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": {
+					"a": 1,
+					"b": 0.3058823529411765,
+					"g": 0.33725490196078434,
+					"r": 0.3764705882352941
+				},
+				"label": "Dirt colour",
+				"longdesc": "Colour (sRGB) of the dirt",
+				"name": "dirt_colour",
+				"shortdesc": "Dirt colour",
+				"type": "color"
+			},
+			{
+				"control": "None",
+				"default": 0.3,
+				"label": "Hides",
+				"longdesc": "How much the dirt hides the surface",
+				"max": 1,
+				"min": 0,
+				"name": "hides",
+				"shortdesc": "Hides",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.05,
+				"label": "Grime scale",
+				"longdesc": "Frequency of the grime pattern, per recipe unit",
+				"max": 2,
+				"min": 0.001,
+				"name": "grime_scale",
+				"shortdesc": "Grime scale",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.12,
+				"label": "Bloom",
+				"longdesc": "Amount of the pale bloom (salts, lichen)",
+				"max": 1,
+				"min": 0,
+				"name": "bloom",
+				"shortdesc": "Bloom",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.5,
+				"label": "Hollows",
+				"longdesc": "How much more dirt gathers in hollows (low height) than on high spots",
+				"max": 1,
+				"min": 0,
+				"name": "hollows",
+				"shortdesc": "Hollows",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.16,
+				"label": "Wear",
+				"longdesc": "How much the high spots are lightened by handling",
+				"max": 1,
+				"min": 0,
+				"name": "wear",
+				"shortdesc": "Wear",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0.2,
+				"label": "Roughness gain",
+				"longdesc": "Roughness added where the surface is weathered",
+				"max": 1,
+				"min": 0,
+				"name": "rough_gain",
+				"shortdesc": "Roughness gain",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Voxel Weathering"
+	},
+	"type": "shader"
+}

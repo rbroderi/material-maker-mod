@@ -1,0 +1,270 @@
+{
+	"name": "voxel_inputs",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"vox_age": 0,
+		"vox_axis_x": 1,
+		"vox_axis_y": 0,
+		"vox_axis_z": 0,
+		"vox_char": 0,
+		"vox_footprint": 0,
+		"vox_fresh": 0,
+		"vox_origin_x": 0,
+		"vox_origin_y": 0,
+		"vox_origin_z": 0,
+		"vox_seed": 0,
+		"vox_upkeep": 0,
+		"vox_wet": 0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": [
+			"vec3 mm_vox_normal(vec3 n, vec3 p) {",
+			"\tfloat l = dot(n, n);",
+			"\treturn (l > 0.25) ? n/sqrt(l) : normalize(p+vec3(0.0, 0.0, 0.000001));",
+			"}",
+			"",
+			"vec3 mm_vox_axis(vec3 a) {",
+			"\tfloat l = dot(a, a);",
+			"\treturn (l > 0.000001) ? a/sqrt(l) : vec3(1.0, 0.0, 0.0);",
+			"}",
+			""
+		],
+		"inputs": [],
+		"instance": "",
+		"longdesc": "Per-thing values and the position and normal of the shaded point, for voxel materials",
+		"name": "Voxel Inputs",
+		"outputs": [
+			{
+				"longdesc": "The object-space position, in metres",
+				"shortdesc": "Position",
+				"tex3d": "$uv.xyz",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The object-space unit normal (the direction of the position when it is not known)",
+				"shortdesc": "Normal",
+				"tex3d": "mm_vox_normal(vec3($?1, $?2, $?3), $uv.xyz)",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The seed",
+				"shortdesc": "Seed",
+				"tex3d_gs": "$vox_seed",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The age",
+				"shortdesc": "Age",
+				"tex3d_gs": "$vox_age",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The upkeep",
+				"shortdesc": "Upkeep",
+				"tex3d_gs": "$vox_upkeep",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The fresh value, per point plus the slider",
+				"shortdesc": "Fresh",
+				"tex3d_gs": "clamp($vox_fresh+$?4, 0.0, 1.0)",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The char value",
+				"shortdesc": "Char",
+				"tex3d_gs": "$vox_char",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The wet value",
+				"shortdesc": "Wet",
+				"tex3d_gs": "$vox_wet",
+				"type": "tex3d_gs"
+			},
+			{
+				"longdesc": "The normalized axis",
+				"shortdesc": "Axis",
+				"tex3d": "mm_vox_axis(vec3($vox_axis_x, $vox_axis_y, $vox_axis_z))",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The origin, in metres",
+				"shortdesc": "Origin",
+				"tex3d": "vec3($vox_origin_x, $vox_origin_y, $vox_origin_z)",
+				"type": "tex3d"
+			},
+			{
+				"longdesc": "The footprint, in metres per pixel",
+				"shortdesc": "Footprint",
+				"tex3d_gs": "$vox_footprint",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Seed",
+				"longdesc": "Seed of the thing (an integer, 0 to 65535)",
+				"max": 65535,
+				"min": 0,
+				"name": "vox_seed",
+				"shortdesc": "Seed",
+				"step": 1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Age",
+				"longdesc": "How old the thing is",
+				"max": 1,
+				"min": 0,
+				"name": "vox_age",
+				"shortdesc": "Age",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Upkeep",
+				"longdesc": "How well the thing is maintained",
+				"max": 1,
+				"min": 0,
+				"name": "vox_upkeep",
+				"shortdesc": "Upkeep",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Fresh",
+				"longdesc": "How freshly cut the thing is (added to the per point fresh value)",
+				"max": 1,
+				"min": 0,
+				"name": "vox_fresh",
+				"shortdesc": "Fresh",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Char",
+				"longdesc": "How burnt the thing is",
+				"max": 1,
+				"min": 0,
+				"name": "vox_char",
+				"shortdesc": "Char",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Wet",
+				"longdesc": "How wet the thing is",
+				"max": 1,
+				"min": 0,
+				"name": "vox_wet",
+				"shortdesc": "Wet",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "Axis X",
+				"longdesc": "X of the axis of the thing (normalized in the Axis output)",
+				"max": 1,
+				"min": -1,
+				"name": "vox_axis_x",
+				"shortdesc": "Axis X",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Axis Y",
+				"longdesc": "Y of the axis of the thing",
+				"max": 1,
+				"min": -1,
+				"name": "vox_axis_y",
+				"shortdesc": "Axis Y",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Axis Z",
+				"longdesc": "Z of the axis of the thing",
+				"max": 1,
+				"min": -1,
+				"name": "vox_axis_z",
+				"shortdesc": "Axis Z",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Origin X",
+				"longdesc": "X of the origin of the thing, in metres",
+				"max": 10,
+				"min": -10,
+				"name": "vox_origin_x",
+				"shortdesc": "Origin X",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Origin Y",
+				"longdesc": "Y of the origin of the thing, in metres",
+				"max": 10,
+				"min": -10,
+				"name": "vox_origin_y",
+				"shortdesc": "Origin Y",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Origin Z",
+				"longdesc": "Z of the origin of the thing, in metres",
+				"max": 10,
+				"min": -10,
+				"name": "vox_origin_z",
+				"shortdesc": "Origin Z",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "Footprint",
+				"longdesc": "Size of a pixel, in metres (0 when not known)",
+				"max": 0.1,
+				"min": 0,
+				"name": "vox_footprint",
+				"shortdesc": "Footprint",
+				"step": 0.0001,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Voxel Inputs"
+	},
+	"type": "shader"
+}
