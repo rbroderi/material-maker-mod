@@ -1,7 +1,32 @@
 #define PI 3.14159265359
 #define TAU 2.0*PI
-#define hlsl_atan(x,y) atan2(x, y)
 #define mod(x,y) ((x)-(y)*floor((x)/(y)))
+
+// GLSL atan: two arguments (atan2) or one
+inline float hlsl_atan(float y, float x) {
+    return atan2(y, x);
+}
+inline float hlsl_atan(float x) {
+    return atan(x);
+}
+inline float2 hlsl_atan(float2 y, float2 x) {
+    return atan2(y, x);
+}
+inline float2 hlsl_atan(float2 x) {
+    return atan(x);
+}
+inline float3 hlsl_atan(float3 y, float3 x) {
+    return atan2(y, x);
+}
+inline float3 hlsl_atan(float3 x) {
+    return atan(x);
+}
+inline float4 hlsl_atan(float4 y, float4 x) {
+    return atan2(y, x);
+}
+inline float4 hlsl_atan(float4 x) {
+    return atan(x);
+}
 
 inline float4 textureLod(sampler2D tex, float2 uv, float lod) {
     return tex2D(tex, uv);
@@ -72,6 +97,69 @@ inline int4 toint4(int x, int2 yz, int w) {
 }
 inline int4 toint4(int x, int y, int2 zw) {
     return int4(x, y, zw.x, zw.y);
+}
+
+// uint vector funtions
+
+inline uint2 touint2(uint x) {
+    return uint2(x, x);
+}
+inline uint2 touint2(uint x, uint y) {
+    return uint2(x, y);
+}
+inline uint2 touint2(uint2 v) {
+    return v;
+}
+inline uint2 touint2(uint3 v) {
+    return v.xy;
+}
+inline uint2 touint2(uint4 v) {
+    return v.xy;
+}
+inline uint3 touint3(uint3 v) {
+    return v;
+}
+inline uint3 touint3(uint4 v) {
+    return v.xyz;
+}
+inline uint4 touint4(uint4 v) {
+    return v;
+}
+inline uint3 touint3(uint x) {
+    return uint3(x, x, x);
+}
+inline uint3 touint3(uint x, uint y, uint z) {
+    return uint3(x, y, z);
+}
+inline uint3 touint3(uint2 xy, uint z) {
+    return uint3(xy.x, xy.y, z);
+}
+inline uint3 touint3(uint x, uint2 yz) {
+    return uint3(x, yz.x, yz.y);
+}
+inline uint4 touint4(uint x, uint y, uint z, uint w) {
+    return uint4(x, y, z, w);
+}
+inline uint4 touint4(uint x) {
+    return uint4(x, x, x, x);
+}
+inline uint4 touint4(uint x, uint3 yzw) {
+    return uint4(x, yzw.x, yzw.y, yzw.z);
+}
+inline uint4 touint4(uint2 xy, uint2 zw) {
+    return uint4(xy.x, xy.y, zw.x, zw.y);
+}
+inline uint4 touint4(uint3 xyz, uint w) {
+    return uint4(xyz.x, xyz.y, xyz.z, w);
+}
+inline uint4 touint4(uint2 xy, uint z, uint w) {
+    return uint4(xy.x, xy.y, z, w);
+}
+inline uint4 touint4(uint x, uint2 yz, uint w) {
+    return uint4(x, yz.x, yz.y, w);
+}
+inline uint4 touint4(uint x, uint y, uint2 zw) {
+    return uint4(x, y, zw.x, zw.y);
 }
 
 // GLSL bit casts (used by integer hashes)
@@ -154,4 +242,25 @@ inline float4 tofloat4(float x, float y, float2 zw) {
 
 inline float2x2 tofloat2x2(float2 v1, float2 v2) {
     return float2x2(v1.x, v1.y, v2.x, v2.y);
+}
+
+// GLSL mat3/mat4 constructors: arguments are columns (column-major), stored
+// so that mul(m, v) is GLSL's m*v
+inline float3x3 tofloat3x3(float s) {
+    return float3x3(s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s);
+}
+inline float3x3 tofloat3x3(float3 c0, float3 c1, float3 c2) {
+    return float3x3(c0.x, c1.x, c2.x, c0.y, c1.y, c2.y, c0.z, c1.z, c2.z);
+}
+inline float3x3 tofloat3x3(float a0, float a1, float a2, float b0, float b1, float b2, float c0, float c1, float c2) {
+    return float3x3(a0, b0, c0, a1, b1, c1, a2, b2, c2);
+}
+inline float4x4 tofloat4x4(float s) {
+    return float4x4(s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s);
+}
+inline float4x4 tofloat4x4(float4 c0, float4 c1, float4 c2, float4 c3) {
+    return float4x4(c0.x, c1.x, c2.x, c3.x, c0.y, c1.y, c2.y, c3.y, c0.z, c1.z, c2.z, c3.z, c0.w, c1.w, c2.w, c3.w);
+}
+inline float4x4 tofloat4x4(float a0, float a1, float a2, float a3, float b0, float b1, float b2, float b3, float c0, float c1, float c2, float c3, float d0, float d1, float d2, float d3) {
+    return float4x4(a0, b0, c0, d0, a1, b1, c1, d1, a2, b2, c2, d2, a3, b3, c3, d3);
 }

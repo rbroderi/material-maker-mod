@@ -427,6 +427,15 @@ func set_3d_previews(previews : Dictionary[Node, Array]):
 # Export filters
 
 func process_option_hlsl_base(s : String, is_declaration : bool = false) -> String:
+	# Unsigned vectors, 3x3 and 4x4 matrices and inversesqrt (word-bounded). Must
+	# precede the vec rules, that would turn uvec3( into utofloat3(
+	s = RegEx.create_from_string("\\buvec([234])\\s*\\(").sub(s, "touint$1(", true)
+	s = RegEx.create_from_string("\\buvec([234])\\b").sub(s, "uint$1", true)
+	s = RegEx.create_from_string("\\bmat3\\s*\\(").sub(s, "tofloat3x3(", true)
+	s = RegEx.create_from_string("\\bmat3\\b").sub(s, "float3x3", true)
+	s = RegEx.create_from_string("\\bmat4\\s*\\(").sub(s, "tofloat4x4(", true)
+	s = RegEx.create_from_string("\\bmat4\\b").sub(s, "float4x4", true)
+	s = RegEx.create_from_string("\\binversesqrt\\s*\\(").sub(s, "rsqrt(", true)
 	s = s.replace("ivec2(", "toint2(")
 	s = s.replace("ivec3(", "toint3(")
 	s = s.replace("ivec4(", "toint4(")
