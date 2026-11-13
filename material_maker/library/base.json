@@ -8916,6 +8916,104 @@
 			"seed_int": 0,
 			"tree_item": "Transform/Trimsheet",
 			"type": "trimsheet"
+		},
+		{
+			"display_name": "Value",
+			"name": "tex3d_noise_value",
+			"parameters": {
+				"offset_x": 0,
+				"offset_y": 0,
+				"offset_z": 0,
+				"period": 0,
+				"scale_x": 8,
+				"scale_y": 8,
+				"scale_z": 8,
+				"seed_offset": 0
+			},
+			"tree_item": "3D/Texture/Noise/Value",
+			"type": "tex3d_noise_value"
+		},
+		{
+			"display_name": "Perlin",
+			"name": "tex3d_noise_perlin",
+			"parameters": {
+				"offset_x": 0,
+				"offset_y": 0,
+				"offset_z": 0,
+				"period": 0,
+				"scale_x": 8,
+				"scale_y": 8,
+				"scale_z": 8,
+				"seed_offset": 0
+			},
+			"tree_item": "3D/Texture/Noise/Perlin",
+			"type": "tex3d_noise_perlin"
+		},
+		{
+			"display_name": "FBM",
+			"name": "tex3d_noise_fbm",
+			"parameters": {
+				"basis": 0,
+				"gain": 0.5,
+				"lacunarity": 2.03,
+				"octaves": 3,
+				"offset_x": 0,
+				"offset_y": 0,
+				"offset_z": 0,
+				"period": 0,
+				"scale_x": 8,
+				"scale_y": 8,
+				"scale_z": 8,
+				"seed_offset": 0
+			},
+			"tree_item": "3D/Texture/Noise/FBM",
+			"type": "tex3d_noise_fbm"
+		},
+		{
+			"display_name": "Voronoi",
+			"name": "tex3d_noise_voronoi",
+			"parameters": {
+				"jitter": 1,
+				"offset_x": 0,
+				"offset_y": 0,
+				"offset_z": 0,
+				"period": 0,
+				"scale_x": 8,
+				"scale_y": 8,
+				"scale_z": 8,
+				"seed_offset": 0
+			},
+			"tree_item": "3D/Texture/Noise/Voronoi",
+			"type": "tex3d_noise_voronoi"
+		},
+		{
+			"display_name": "Domain Warp",
+			"name": "tex3d_domain_warp",
+			"parameters": {
+				"amount": 0.1,
+				"gain": 0.5,
+				"octaves": 2,
+				"offset_x": 0,
+				"offset_y": 0,
+				"offset_z": 0,
+				"scale_x": 4,
+				"scale_y": 4,
+				"scale_z": 4,
+				"seed_offset": 0
+			},
+			"tree_item": "3D/Texture/Domain Warp",
+			"type": "tex3d_domain_warp"
+		},
+		{
+			"display_name": "Gradient",
+			"name": "tex3d_gradient",
+			"parameters": {
+				"eps": 0.00074,
+				"mode": 0,
+				"strength": 1
+			},
+			"tree_item": "3D/Texture/Gradient",
+			"type": "tex3d_gradient"
 		}
 	],
 	"name": "Base library"

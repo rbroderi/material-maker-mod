@@ -38,3 +38,9 @@ index.
 	node_3d_texture_decompose
 	node_3d_texture_smooth_minmax
 	node_3d_texture_warp
+	node_3d_texture_noise_value
+	node_3d_texture_noise_perlin
+	node_3d_texture_noise_fbm
+	node_3d_texture_noise_voronoi
+	node_3d_texture_domain_warp
+	node_3d_texture_gradient

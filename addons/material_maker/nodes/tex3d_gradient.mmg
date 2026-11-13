@@ -1,0 +1,100 @@
+{
+	"name": "tex3d_gradient",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"eps": 0.00074,
+		"mode": 0,
+		"strength": 1
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": "",
+		"global": "",
+		"inputs": [
+			{
+				"default": "0.0",
+				"function": true,
+				"label": "",
+				"longdesc": "The 3D height whose gradient is computed (in height units per metre)",
+				"name": "in",
+				"shortdesc": "Height",
+				"type": "tex3d_gs"
+			}
+		],
+		"instance": [
+			"vec3 $(name)_grad(vec4 p, float e) {",
+			"\tvec3 g;",
+			"\tif ($mode == 1) {",
+			"\t\tg.x = ($in(p+vec4(e, 0.0, 0.0, 0.0))-$in(p-vec4(e, 0.0, 0.0, 0.0)))/(2.0*e);",
+			"\t\tg.y = ($in(p+vec4(0.0, e, 0.0, 0.0))-$in(p-vec4(0.0, e, 0.0, 0.0)))/(2.0*e);",
+			"\t\tg.z = ($in(p+vec4(0.0, 0.0, e, 0.0))-$in(p-vec4(0.0, 0.0, e, 0.0)))/(2.0*e);",
+			"\t} else {",
+			"\t\tfloat h0 = $in(p);",
+			"\t\tg.x = ($in(p+vec4(e, 0.0, 0.0, 0.0))-h0)/e;",
+			"\t\tg.y = ($in(p+vec4(0.0, e, 0.0, 0.0))-h0)/e;",
+			"\t\tg.z = ($in(p+vec4(0.0, 0.0, e, 0.0))-h0)/e;",
+			"\t}",
+			"\treturn g;",
+			"}"
+		],
+		"longdesc": "Outputs the gradient vector of a 3D height, to be used as a bump by the voxel material",
+		"name": "Gradient 3D",
+		"outputs": [
+			{
+				"longdesc": "The gradient of the height in object space",
+				"shortdesc": "Gradient",
+				"tex3d": "$strength*$(name)_grad($uv, $eps)",
+				"type": "tex3d"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 0.00074,
+				"label": "",
+				"longdesc": "The distance in metres used to measure the gradient",
+				"max": 0.1,
+				"min": 1e-05,
+				"name": "eps",
+				"shortdesc": "Epsilon",
+				"step": 1e-05,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "",
+				"longdesc": "A factor applied to the gradient",
+				"max": 100,
+				"min": -100,
+				"name": "strength",
+				"shortdesc": "Strength",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 0.0,
+				"label": "",
+				"longdesc": "Forward differences use one lookup less per axis than central differences. Central differences are more precise",
+				"name": "mode",
+				"shortdesc": "Mode",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Forward",
+						"value": "0"
+					},
+					{
+						"name": "Central",
+						"value": "1"
+					}
+				]
+			}
+		],
+		"shortdesc": "Gradient 3D"
+	},
+	"type": "shader"
+}

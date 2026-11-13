@@ -1,0 +1,148 @@
+{
+	"name": "tex3d_noise_value",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"offset_x": 0,
+		"offset_y": 0,
+		"offset_z": 0,
+		"period": 0,
+		"scale_x": 8,
+		"scale_y": 8,
+		"scale_z": 8,
+		"seed_offset": 0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": [
+			"uint $(name_uv)_s = mm_n3_seed($seed_in($uv)+$seed_offset);",
+			"vec3 $(name_uv)_p = $uv.xyz*vec3($scale_x, $scale_y, $scale_z)+vec3($offset_x, $offset_y, $offset_z);"
+		],
+		"global": "",
+		"includes": [
+			"mm_noise3d"
+		],
+		"inputs": [
+			{
+				"default": "0.0",
+				"label": "Seed",
+				"longdesc": "The integer seed of the noise (0 to 16777215). The seed offset parameter is added to it",
+				"name": "seed_in",
+				"shortdesc": "Seed",
+				"type": "tex3d_gs"
+			}
+		],
+		"longdesc": "Seeded value noise in 3D, with features sized in metres",
+		"name": "Value noise 3D",
+		"outputs": [
+			{
+				"longdesc": "Value noise in [0, 1)",
+				"shortdesc": "Output",
+				"tex3d_gs": "mm_n3_value_p($(name_uv)_p, $(name_uv)_s, int($period))",
+				"type": "tex3d_gs"
+			}
+		],
+		"parameters": [
+			{
+				"control": "None",
+				"default": 8,
+				"label": "",
+				"longdesc": "Number of noise features per metre along the X axis",
+				"max": 1000,
+				"min": 0.001,
+				"name": "scale_x",
+				"shortdesc": "Scale X",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8,
+				"label": "",
+				"longdesc": "Number of noise features per metre along the Y axis",
+				"max": 1000,
+				"min": 0.001,
+				"name": "scale_y",
+				"shortdesc": "Scale Y",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 8,
+				"label": "",
+				"longdesc": "Number of noise features per metre along the Z axis",
+				"max": 1000,
+				"min": 0.001,
+				"name": "scale_z",
+				"shortdesc": "Scale Z",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "",
+				"longdesc": "Shift of the noise lattice along X, in lattice cells",
+				"max": 1000,
+				"min": -1000,
+				"name": "offset_x",
+				"shortdesc": "Offset X",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "",
+				"longdesc": "Shift of the noise lattice along Y, in lattice cells",
+				"max": 1000,
+				"min": -1000,
+				"name": "offset_y",
+				"shortdesc": "Offset Y",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "",
+				"longdesc": "Shift of the noise lattice along Z, in lattice cells",
+				"max": 1000,
+				"min": -1000,
+				"name": "offset_z",
+				"shortdesc": "Offset Z",
+				"step": 0.001,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "",
+				"longdesc": "Added to the seed input to get the integer seed of the noise",
+				"max": 1000,
+				"min": 0,
+				"name": "seed_offset",
+				"shortdesc": "Seed offset",
+				"step": 1,
+				"type": "float"
+			},
+			{
+				"control": "None",
+				"default": 0,
+				"label": "",
+				"longdesc": "Period of the noise lattice in cells (after scaling) on each axis, for tileable volumes. 0 disables tiling",
+				"max": 256,
+				"min": 0,
+				"name": "period",
+				"shortdesc": "Period",
+				"step": 1,
+				"type": "float"
+			}
+		],
+		"shortdesc": "Value noise 3D"
+	},
+	"type": "shader"
+}
