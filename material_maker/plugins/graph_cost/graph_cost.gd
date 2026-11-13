@@ -33,9 +33,10 @@ const KEYWORDS : Array[String] = [ "if", "for", "while", "switch", "return", "el
 ## Helpers that hash with sin(): not bit-exact across compilers and drivers
 const SIN_HASH_HELPERS : Array[String] = [ "rand", "rand2", "rand3", "rand31", "rand33" ]
 ## Tokens that the GLSL to HLSL translation does not handle (see the plan's
-## HLSL-safe subset)
+## HLSL-safe subset). Matrices, unsigned vectors and one-argument atan() are
+## translated.
 const UNSAFE_TOKENS : Array[String] = [
-	"mat2", "mat3", "mat4", "uvec2", "uvec3", "uvec4", "bvec2", "bvec3", "bvec4",
+	"bvec2", "bvec3", "bvec4",
 	"lessThan", "lessThanEqual", "greaterThan", "greaterThanEqual", "equal", "notEqual",
 	"dFdx", "dFdy", "fwidth", "texelFetch", "textureSize"
 ]
@@ -187,14 +188,6 @@ static func lint_parity(code : String) -> PackedStringArray:
 	for t in UNSAFE_TOKENS:
 		if names.has(t):
 			rv.append("'%s' is not in the HLSL-safe subset" % t)
-	for m in re_identifier.search_all(code):
-		if m.get_string() == "atan":
-			var open : int = code.find("(", m.get_end())
-			if open != -1 and code.substr(m.get_end(), open-m.get_end()).strip_edges() == "":
-				var close : int = find_closing(code, open)
-				if close != -1 and split_top_level(code.substr(open+1, close-open-1), ",").size() == 1:
-					rv.append("one-argument atan() is not translated to HLSL")
-					break
 	return rv
 
 
@@ -423,6 +416,9 @@ static func loop_cost(text : String, keyword : String, open : int, env : Diction
 	var trips : int = -1
 	if keyword == "for":
 		trips = for_trip_count(header, env, ctx)
+		var break_trips : int = for_break_count(header, body, env, ctx)
+		if break_trips != -1:
+			trips = break_trips if trips == -1 else mini(trips, break_trips)
 	var body_env : Dictionary = env
 	var cost : Dictionary
 	if trips == -1:
@@ -433,6 +429,31 @@ static func loop_cost(text : String, keyword : String, open : int, env : Diction
 	rv.t += cost.t*trips
 	rv.u += cost.u*trips
 	return i
+
+## The number of iterations of a for loop that counts up by 1 and whose body
+## starts with if (<i> >= X) break; (or <i> > X, or float(<i>) instead of <i>)
+## where X has a known value (such as for (int i = 0; i < 10; ++i) { if (i >=
+## octaves) break; ... }), or -1
+static func for_break_count(header : String, body : String, env : Dictionary, ctx : Dictionary) -> int:
+	var parts : Array[String] = split_top_level(header, ";")
+	if parts.size() != 3:
+		return -1
+	var init : RegExMatch = RegEx.create_from_string("(\\w+)\\s*=\\s*(.+)$").search(parts[0].strip_edges())
+	if init == null:
+		return -1
+	var variable : String = init.get_string(1)
+	if not parts[2].replace(" ", "") in [ "++"+variable, variable+"++", variable+"+=1" ]:
+		return -1
+	var start = eval_const(init.get_string(2), env, ctx)
+	var re : RegEx = RegEx.create_from_string("^\\s*if\\s*\\(\\s*(?:float\\s*\\(\\s*"+variable+"\\s*\\)|"+variable+")\\s*(>=|>)\\s*(.+?)\\s*\\)\\s*\\{?\\s*break\\s*;")
+	var m : RegExMatch = re.search(body)
+	if start == null or m == null:
+		return -1
+	var bound = eval_const(m.get_string(2), env, ctx)
+	if bound == null:
+		return -1
+	var last : float = ceil(float(bound)) if m.get_string(1) == ">=" else floor(float(bound))+1.0
+	return maxi(int(last-float(start)), 0)
 
 ## The number of iterations of a for loop, from the text between its
 ## parenthesis, or -1

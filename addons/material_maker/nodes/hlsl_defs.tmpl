@@ -240,27 +240,74 @@ inline float4 tofloat4(float x, float y, float2 zw) {
     return float4(x, y, zw.x, zw.y);
 }
 
+// GLSL matrix constructors. HLSL matrices are the transposes of the GLSL ones
+// (as cross compilers translate them): each GLSL column is an HLSL row, so that
+// m[i] is the column i in both languages. Products are translated with swapped
+// operands: GLSL m*v is mul(v, m), v*m is mul(m, v), a*b of matrices is mul(b, a)
+// (see MMGenMaterial.process_option_hlsl_base)
+inline float2x2 tofloat2x2(float s) {
+    return float2x2(s, 0.0, 0.0, s);
+}
 inline float2x2 tofloat2x2(float2 v1, float2 v2) {
     return float2x2(v1.x, v1.y, v2.x, v2.y);
 }
-
-// GLSL mat3/mat4 constructors: arguments are columns (column-major), stored
-// so that mul(m, v) is GLSL's m*v
+inline float2x2 tofloat2x2(float a0, float a1, float b0, float b1) {
+    return float2x2(a0, a1, b0, b1);
+}
+inline float2x2 tofloat2x2(float3x3 m) {
+    return float2x2(m[0].xy, m[1].xy);
+}
+inline float2x2 tofloat2x2(float4x4 m) {
+    return float2x2(m[0].xy, m[1].xy);
+}
 inline float3x3 tofloat3x3(float s) {
     return float3x3(s, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, s);
 }
 inline float3x3 tofloat3x3(float3 c0, float3 c1, float3 c2) {
-    return float3x3(c0.x, c1.x, c2.x, c0.y, c1.y, c2.y, c0.z, c1.z, c2.z);
+    return float3x3(c0.x, c0.y, c0.z, c1.x, c1.y, c1.z, c2.x, c2.y, c2.z);
 }
 inline float3x3 tofloat3x3(float a0, float a1, float a2, float b0, float b1, float b2, float c0, float c1, float c2) {
-    return float3x3(a0, b0, c0, a1, b1, c1, a2, b2, c2);
+    return float3x3(a0, a1, a2, b0, b1, b2, c0, c1, c2);
+}
+inline float3x3 tofloat3x3(float4x4 m) {
+    return float3x3(m[0].xyz, m[1].xyz, m[2].xyz);
 }
 inline float4x4 tofloat4x4(float s) {
     return float4x4(s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s, 0.0, 0.0, 0.0, 0.0, s);
 }
 inline float4x4 tofloat4x4(float4 c0, float4 c1, float4 c2, float4 c3) {
-    return float4x4(c0.x, c1.x, c2.x, c3.x, c0.y, c1.y, c2.y, c3.y, c0.z, c1.z, c2.z, c3.z, c0.w, c1.w, c2.w, c3.w);
+    return float4x4(c0.x, c0.y, c0.z, c0.w, c1.x, c1.y, c1.z, c1.w, c2.x, c2.y, c2.z, c2.w, c3.x, c3.y, c3.z, c3.w);
 }
 inline float4x4 tofloat4x4(float a0, float a1, float a2, float a3, float b0, float b1, float b2, float b3, float c0, float c1, float c2, float c3, float d0, float d1, float d2, float d3) {
-    return float4x4(a0, b0, c0, d0, a1, b1, c1, d1, a2, b2, c2, d2, a3, b3, c3, d3);
+    return float4x4(a0, a1, a2, a3, b0, b1, b2, b3, c0, c1, c2, c3, d0, d1, d2, d3);
+}
+inline float4x4 tofloat4x4(float3x3 m) {
+    return float4x4(m[0].x, m[0].y, m[0].z, 0.0, m[1].x, m[1].y, m[1].z, 0.0, m[2].x, m[2].y, m[2].z, 0.0, 0.0, 0.0, 0.0, 1.0);
+}
+
+// GLSL inverse (the inverse of the transpose is the transpose of the inverse)
+inline float2x2 hlsl_inverse(float2x2 m) {
+    return float2x2(m[1][1], -m[0][1], -m[1][0], m[0][0])/(m[0][0]*m[1][1]-m[0][1]*m[1][0]);
+}
+inline float3x3 hlsl_inverse(float3x3 m) {
+    float3 r0 = cross(m[1], m[2]);
+    float3 r1 = cross(m[2], m[0]);
+    float3 r2 = cross(m[0], m[1]);
+    return transpose(float3x3(r0, r1, r2))/dot(m[0], r0);
+}
+inline float4x4 hlsl_inverse(float4x4 m) {
+    float a00 = m[0][0], a01 = m[0][1], a02 = m[0][2], a03 = m[0][3];
+    float a10 = m[1][0], a11 = m[1][1], a12 = m[1][2], a13 = m[1][3];
+    float a20 = m[2][0], a21 = m[2][1], a22 = m[2][2], a23 = m[2][3];
+    float a30 = m[3][0], a31 = m[3][1], a32 = m[3][2], a33 = m[3][3];
+    float b00 = a00*a11-a01*a10, b01 = a00*a12-a02*a10, b02 = a00*a13-a03*a10;
+    float b03 = a01*a12-a02*a11, b04 = a01*a13-a03*a11, b05 = a02*a13-a03*a12;
+    float b06 = a20*a31-a21*a30, b07 = a20*a32-a22*a30, b08 = a20*a33-a23*a30;
+    float b09 = a21*a32-a22*a31, b10 = a21*a33-a23*a31, b11 = a22*a33-a23*a32;
+    float det = b00*b11-b01*b10+b02*b09+b03*b08-b04*b07+b05*b06;
+    return float4x4(
+        a11*b11-a12*b10+a13*b09, a02*b10-a01*b11-a03*b09, a31*b05-a32*b04+a33*b03, a22*b04-a21*b05-a23*b03,
+        a12*b08-a10*b11-a13*b07, a00*b11-a02*b08+a03*b07, a32*b02-a30*b05-a33*b01, a20*b05-a22*b02+a23*b01,
+        a10*b10-a11*b08+a13*b06, a01*b08-a00*b10-a03*b06, a30*b04-a31*b02+a33*b00, a21*b02-a20*b04-a23*b00,
+        a11*b07-a10*b09-a12*b06, a00*b09-a01*b07+a02*b06, a31*b01-a30*b03-a32*b00, a20*b03-a21*b01+a22*b00)/det;
 }

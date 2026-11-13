@@ -7,6 +7,8 @@ var buffer_name_prefix : String
 
 var export_last_target : String = ""
 
+const HlslMatrix = preload("res://addons/material_maker/engine/nodes/hlsl_matrix.gd")
+
 ## Outputs of the standard Material node (material.mmg) used by exports, the
 ## path tracer and runtime packages
 const OUTPUT_ALBEDO : int = 0
@@ -426,37 +428,11 @@ func set_3d_previews(previews : Dictionary[Node, Array]):
 
 # Export filters
 
-# GLSL's matrix * vector is mul(matrix, vector) in HLSL (the matrix constructors are already
-# column major, see process_option_hlsl_base): tofloat3x3(...)*v becomes mul(tofloat3x3(...), v)
-func wrap_matrix_products(s : String) -> String:
-	for ctor in [ "tofloat3x3(", "tofloat4x4(" ]:
-		var from : int = 0
-		while true:
-			var i : int = s.find(ctor, from)
-			if i == -1:
-				break
-			var close : int = MMGenBase.find_matching_parenthesis(s, i+ctor.length()-1)
-			if close == -1:
-				break
-			from = close+1
-			var j : int = close+1
-			while j < s.length() and s[j] in " \t\r\n":
-				j += 1
-			if j >= s.length()-1 or s[j] != "*" or s[j+1] == "=":
-				continue
-			j += 1
-			while j < s.length() and s[j] in " \t\r\n":
-				j += 1
-			var m : RegExMatch = RegEx.create_from_string("^[A-Za-z_]\\w*(\\.[xyzw]+)?").search(s.substr(j, 64))
-			if m == null:
-				continue
-			var end : int = j+m.get_string().length()
-			var wrapped : String = "mul("+s.substr(i, close+1-i)+", "+m.get_string()+")"
-			s = s.left(i)+wrapped+s.substr(end)
-			from = i+wrapped.length()
-	return s
-
-func process_option_hlsl_base(s : String, is_declaration : bool = false) -> String:
+## GLSL to HLSL translation. Matrices are stored transposed (each GLSL column is
+## an HLSL row, see hlsl_defs.tmpl) and the products that involve a matrix
+## become mul() with swapped operands (see hlsl_matrix.gd). declarations is the
+## code that declares the globals and functions s uses (for the matrix types).
+func process_option_hlsl_base(s : String, is_declaration : bool = false, declarations : String = "") -> String:
 	# Unsigned vectors, 3x3 and 4x4 matrices and inversesqrt (word-bounded). Must
 	# precede the vec rules, that would turn uvec3( into utofloat3(
 	s = RegEx.create_from_string("\\buvec([234])\\s*\\(").sub(s, "touint$1(", true)
@@ -465,7 +441,9 @@ func process_option_hlsl_base(s : String, is_declaration : bool = false) -> Stri
 	s = RegEx.create_from_string("\\bmat3\\b").sub(s, "float3x3", true)
 	s = RegEx.create_from_string("\\bmat4\\s*\\(").sub(s, "tofloat4x4(", true)
 	s = RegEx.create_from_string("\\bmat4\\b").sub(s, "float4x4", true)
-	s = wrap_matrix_products(s)
+	s = RegEx.create_from_string("\\binverse\\s*\\(").sub(s, "hlsl_inverse(", true)
+	# Identifiers that are HLSL keywords (geometry shader primitive types)
+	s = RegEx.create_from_string("\\b(point|line|triangle|lineadj|triangleadj)\\b").sub(s, "$1_", true)
 	s = RegEx.create_from_string("\\binversesqrt\\s*\\(").sub(s, "rsqrt(", true)
 	s = s.replace("ivec2(", "toint2(")
 	s = s.replace("ivec3(", "toint3(")
@@ -484,13 +462,8 @@ func process_option_hlsl_base(s : String, is_declaration : bool = false) -> Stri
 	s = s.replace("mix", "lerp")
 	s = s.replace("fract", "frac")
 	s = s.replace("atan", "hlsl_atan")
+	s = HlslMatrix.translate(s, "" if is_declaration else declarations)
 	var re : RegEx = RegEx.new()
-	re.compile("(\\w+)\\s*\\*=\\s*tofloat2x2([^;]+);")
-	while true:
-		var m : RegExMatch = re.search(s)
-		if m == null:
-			break
-		s = s.replace(m.strings[0], "%s = mul(%s, tofloat2x2%s);" % [ m.strings[1], m.strings[1], m.strings[2] ])
 	re.compile("(?:int|float)[234]?\\[\\d*\\]\\((.*)\\);")
 	while true:
 		var m : RegExMatch = re.search(s)
@@ -501,8 +474,8 @@ func process_option_hlsl_base(s : String, is_declaration : bool = false) -> Stri
 		s = get_template_text("hlsl_defs.tmpl")+"\n\n// EngineSpecificDefinitions\n\n\n"+s
 	return s
 
-func process_option_hlsl(s : String, is_declaration : bool = false) -> String:
-	s = process_option_hlsl_base(s, is_declaration)
+func process_option_hlsl(s : String, is_declaration : bool = false, declarations : String = "") -> String:
+	s = process_option_hlsl_base(s, is_declaration, declarations)
 	s = s.replace("uniform float", "static const float")
 	s = s.replace("uniform vec4", "static const vec4")
 	s = s.replace("uniform int", "static const int")
@@ -565,6 +538,12 @@ func preprocess_option_unreal5(s : String) -> Array:
 	var re = RegEx.new()
 	re.compile("(?:uniform|const)\\s+([\\w_]+)\\s+([\\w_]+)((?:\\[\\d+\\])?)\\s*=\\s*([^;]+);")
 	for d in split_glsl(s):
+		# The constants of a function (whose body starts before any =) are local
+		var code : String = MMGenBase.remove_comments(d)
+		var brace : int = code.find("{")
+		var equal : int = code.find("=")
+		if brace != -1 and (equal == -1 or brace < equal):
+			continue
 		d = process_option_hlsl_base(d)
 		var extracted = re.search_all(d)
 		unreal5_decls.append_array(extracted)

@@ -75,10 +75,35 @@ func test_lint_flags_sin_hash_nodes_only() -> void:
 	assert_eq(plain_cost.parity_warnings.size(), 0)
 
 func test_lint_unsafe_tokens() -> void:
-	assert_eq(MMGraphCost.lint_parity("float f(float x) { return atan(x); }").size(), 1)
+	# Matrices, unsigned vectors and one-argument atan are translated to HLSL
+	assert_eq(MMGraphCost.lint_parity("float f(float x) { return atan(x); }").size(), 0)
 	assert_eq(MMGraphCost.lint_parity("float f(float x, float y) { return atan(x, y); }").size(), 0)
-	assert_eq(MMGraphCost.lint_parity("void f() { mat3 m; }").size(), 1)
+	assert_eq(MMGraphCost.lint_parity("void f() { mat2 a; mat3 m; mat4 b; uvec2 c; uvec3 d; uvec4 e; }").size(), 0)
+	assert_eq(MMGraphCost.lint_parity("void f() { bvec3 b; }").size(), 1)
+	assert_eq(MMGraphCost.lint_parity("float f(float x) { return dFdx(x); }").size(), 1)
 	assert_eq(MMGraphCost.lint_parity("float f(vec2 p) { return fract(sin(dot(p, vec2(1.0)))*4.0); }").size(), 1)
+
+## A loop whose body starts with if (i >= X) break; runs min(bound, X) times
+## when X is known
+func test_loop_with_early_break() -> void:
+	# Per iteration: the comparison (1) and s += x (1)
+	var code : String = """
+	float f(float x) { float s = 0.0; for (int i = 0; i < 10; i++) { if (i >= 3) break; s += x; } return s; }
+	float g(float x) { float s = 0.0; for (int i = 0; i < 10; ++i) { if (i >= octaves) { break; } s += x; } return s; }
+	float h(float x) { float s = 0.0; for (int i = 0; i < 10; i++) { if (float(i) > lim-1.0) break; s += x; } return s; }
+	float k(float x) { float s = 0.0; for (int i = 0; i < 10; i++) { if (i >= 30) break; s += x; } return s; }
+	float u(float x, int n) { float s = 0.0; for (int i = 0; i < 10; i++) { if (i >= n) break; s += x; } return s; }
+	float c(float x) { return u(x, 4); }
+	"""
+	assert_eq(MMGraphCost.estimate_glsl(code, "f").instructions, 6)
+	var r : Dictionary = MMGraphCost.estimate_glsl(code, "g", { "octaves": 5 })
+	assert_eq(r.instructions, 10)
+	assert_eq(r.loops_unbounded, 0)
+	assert_eq(MMGraphCost.estimate_glsl(code, "h", { "lim": 4.0 }).instructions, 3*4)
+	assert_eq(MMGraphCost.estimate_glsl(code, "k").instructions, 20)
+	# Unknown X: the bound of the loop
+	assert_eq(MMGraphCost.estimate_glsl(code, "g").instructions, 20)
+	assert_eq(MMGraphCost.estimate_glsl(code, "c").instructions, 8)
 
 func test_material_cost() -> void:
 	var graph : MMGenBase = await mm_loader.create_gen({
