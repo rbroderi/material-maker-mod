@@ -123,6 +123,74 @@ func test_slices() -> void:
 	for z in N:
 		DirAccess.remove_absolute("%s_z%04d.exr" % [ base, z ])
 
+func test_rgba8_rounds() -> void:
+	var data : PackedByteArray = VolumeExport.get_texel_data(make_volume(), "rgba8")
+	assert_eq(data.size(), N*N*N*4)
+	# x = 2, y = 3, z = 1: 0.5, 0.75 and 0.25 are 127.5, 191.25 and 63.75 in 8 bits
+	var offset : int = ((1*N+3)*N+2)*4
+	assert_eq(Array(data.slice(offset, offset+4)), [ 128, 191, 64, 255 ])
+	# The slices are rounded as well
+	var base : String = "user://test_volume_export_formats_rgba8"
+	assert_eq(VolumeExport.write_slices(base, make_volume(), "rgba8"), OK)
+	var image : Image = Image.load_from_file("%s_z0001.png" % base)
+	assert_not_null(image)
+	var c : Color = image.get_pixel(2, 3)
+	assert_eq([ int(roundf(c.r*255.0)), int(roundf(c.g*255.0)), int(roundf(c.b*255.0)) ], [ 128, 191, 64 ])
+	for z in N:
+		DirAccess.remove_absolute("%s_z%04d.png" % [ base, z ])
+
+func test_vdb_transform_follows_origin() -> void:
+	var volume : VolumeExport.Volume = make_volume()
+	# Voxel size 0.5, extent 2: voxel i is centered at translation+i*0.5
+	var expected : Dictionary = { center=0.25-1.0, corner=0.25 }
+	for origin in expected.keys():
+		volume.origin = origin
+		var values : Array = VolumeExport.vdb_transform_values(volume)
+		assert_almost_eq(values[0], expected[origin], 1e-9, origin)
+		assert_almost_eq(values[1], 0.5, 1e-9)
+		assert_almost_eq(values[3], 2.0, 1e-9)
+		var file : StreamPeerBuffer = StreamPeerBuffer.new()
+		VolumeExport.write_vdb_transform(file, volume)
+		var bytes : PackedByteArray = file.data_array
+		var name_size : int = bytes.decode_u32(0)
+		assert_eq(bytes.slice(4, 4+name_size).get_string_from_ascii(), "UniformScaleTranslateMap")
+		assert_eq(bytes.size(), 4+name_size+18*8)
+		for c in 3:
+			assert_almost_eq(bytes.decode_double(4+name_size+c*8), expected[origin], 1e-9, origin)
+
+## A graph with one output whose value is sin of the phase (an expression of the position)
+func make_field(phase : String) -> MMGenGraph:
+	var graph : MMGenGraph = await mm_loader.create_gen({ nodes=[ {
+		name="f", type="shader", parameters={},
+		shader_model={ name="Field", parameters=[], inputs=[], instance="", code="", global="",
+			outputs=[ { type="tex3d_gs", tex3d_gs="0.5+0.5*sin(%s)" % phase } ] } } ], connections=[] })
+	add_child(graph)
+	return graph
+
+func test_check_tileable_checks_each_axis() -> void:
+	if RenderingServer.get_rendering_device() == null:
+		pending("no rendering device (headless)")
+		return
+	var path : String = "user://test_volume_export_formats_tileable.raw"
+	# Periodic along each axis with the period 1
+	var tileable : MMGenGraph = await make_field("6.2831853*($uv.x+$uv.y+$uv.z)")
+	var error : String = await VolumeExport.export_volume(tileable.get_node("f"), 0, path, 8, 1.0, "r8", "center", true)
+	assert_eq(error, "")
+	tileable.free()
+	# Periodic along the diagonal (period 3 along each axis, so shifting by (1, 1, 1) is
+	# a whole number of periods) but not along x
+	var diagonal : MMGenGraph = await make_field("6.2831853*($uv.x+$uv.y+$uv.z)/3.0")
+	error = await VolumeExport.export_volume(diagonal.get_node("f"), 0, path, 8, 1.0, "r8", "center", true)
+	assert_string_contains(error, "not tileable along x")
+	diagonal.free()
+	# Only periodic along x and z
+	var no_y : MMGenGraph = await make_field("6.2831853*($uv.x+$uv.z)+$uv.y*2.0")
+	error = await VolumeExport.export_volume(no_y.get_node("f"), 0, path, 8, 1.0, "r8", "center", true)
+	assert_string_contains(error, "not tileable along y")
+	no_y.free()
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(path+".json")
+
 func test_unknown_formats_are_errors() -> void:
 	var generator : MMGenBase = MMGenBase.new()
 	var error : String = await VolumeExport.export_volume(generator, 0, "user://x.raw", 8, 1.0, "r12")

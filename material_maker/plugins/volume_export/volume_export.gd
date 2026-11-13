@@ -147,12 +147,15 @@ static func export_volume(generator : MMGenBase, output_index : int, file_name :
 	if volume == null:
 		return "the output is not a 3D texture or SDF, or could not be rendered"
 	if check_tileable:
-		var shifted : Volume = await render_volume(generator, output_index, resolution, extent, origin, Vector3(extent, extent, extent))
-		if shifted == null:
-			return "the output could not be rendered to check that it is tileable"
-		var difference : float = max_difference(volume, shifted)
-		if difference > 1.0/255.0:
-			return "the volume is not tileable (maximum difference %f with the volume offset by the extent, more than 1/255)" % difference
+		for axis in 3:
+			var shift : Vector3 = Vector3()
+			shift[axis] = extent
+			var shifted : Volume = await render_volume(generator, output_index, resolution, extent, origin, shift)
+			if shifted == null:
+				return "the output could not be rendered to check that it is tileable"
+			var difference : float = max_difference(volume, shifted)
+			if difference > 1.0/255.0:
+				return "the volume is not tileable along %s (maximum difference %f with the volume offset by the extent, more than 1/255)" % [ "xyz"[axis], difference ]
 	if texel_format == "":
 		texel_format = default_texel_format(volume)
 	var error : Error
@@ -194,6 +197,9 @@ static func get_texel_data(volume : Volume, texel_format : String) -> PackedByte
 	var image_format : int = TEXEL_FORMATS[texel_format].image
 	if image_format < 0:
 		return quantize_texels(volume, TEXEL_FORMATS[texel_format])
+	if image_format == Image.FORMAT_RGBA8:
+		# Image.convert may truncate: round like the other unorm formats
+		return quantize_texels(volume, { channels=4, bits=8 })
 	var data : PackedByteArray = PackedByteArray()
 	for z in volume.resolution:
 		var slice : Image = volume.get_slice(z)
@@ -258,12 +264,14 @@ static func write_slices(path : String, volume : Volume, texel_format : String) 
 	var n : int = volume.resolution
 	var is_png : bool = format.image == Image.FORMAT_RGBA8 or format.get("bits", 0) == 8
 	var all_texels : PackedByteArray
-	if format.image < 0:
+	if format.image < 0 or format.image == Image.FORMAT_RGBA8:
 		all_texels = get_texel_data(volume, texel_format)
 	var slice_bytes : int = n*n*format.size
 	for z in n:
 		var slice : Image
-		if format.image >= 0:
+		if format.image == Image.FORMAT_RGBA8:
+			slice = Image.create_from_data(n, n, false, Image.FORMAT_RGBA8, all_texels.slice(z*slice_bytes, (z+1)*slice_bytes))
+		elif format.image >= 0:
 			slice = volume.get_slice(z)
 			slice.convert(format.image)
 		else:
@@ -448,14 +456,20 @@ static func write_vdb_metadata(file : StreamPeerBuffer, grid : Dictionary) -> vo
 	put_string(file, "string")
 	put_string(file, grid.name)
 
-## Transform: voxel centers at ((i+0.5)/n-0.5)*extent
+## Transform: voxel centers at ((i+0.5)/n-0.5)*extent for the "center" origin
+## and at (i+0.5)/n*extent for the "corner" one
 static func write_vdb_transform(file : StreamPeerBuffer, volume : Volume) -> void:
-	var voxel_size : float = volume.voxel_size()
 	put_string(file, "UniformScaleTranslateMap")
-	var translation : float = 0.5*voxel_size-0.5*volume.extent
-	for v in [ translation, voxel_size, voxel_size, 1.0/voxel_size, 1.0/(voxel_size*voxel_size), 0.5/voxel_size ]:
+	for v in vdb_transform_values(volume):
 		for c in 3:
 			file.put_double(v)
+
+## The 6 values (each written for x, y and z) of the map: translation, scale,
+## voxel size, inverse scale, inverse scale squared and half inverse scale
+static func vdb_transform_values(volume : Volume) -> Array[float]:
+	var voxel_size : float = volume.voxel_size()
+	var translation : float = 0.5*voxel_size-(0.0 if volume.origin == "corner" else 0.5*volume.extent)
+	return [ translation, voxel_size, voxel_size, 1.0/voxel_size, 1.0/(voxel_size*voxel_size), 0.5/voxel_size ]
 
 ## The leaves with active voxels (inside the narrow band for level sets),
 ## grouped by 128³ internal node, in the order of the node's slots (x, then y,

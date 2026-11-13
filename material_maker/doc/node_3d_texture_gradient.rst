@@ -16,7 +16,7 @@ The node provides a 3D vector texture: the gradient of the height, in height uni
 Parameters
 ..........
 
-* the epsilon, i.e. the distance used for finite differences, in metres
+* the epsilon, i.e. the minimum distance used for finite differences, in metres. Far from the origin the distance grows with the largest absolute coordinate (7.4e-6 per metre, i.e. 0.074 m at 10 km) so that it stays above the float32 precision of the positions. It is unchanged within 100 m of the origin with the default epsilon
 * the strength, a factor applied to the gradient
 * the mode: forward differences or central differences
 

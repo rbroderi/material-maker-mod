@@ -25,7 +25,9 @@
 			}
 		],
 		"instance": [
-			"vec3 $(name)_grad(vec4 p, float e) {",
+			"vec3 $(name)_grad(vec4 p, float e0) {",
+				"\t// The epsilon grows with the distance to the origin: 7.4e-6 per metre leaves it unchanged up to 100 m, and gives 0.074 at 10 km where float32 positions are quantised to 1e-3",
+				"\tfloat e = max(e0, 7.4e-6*max(abs(p.x), max(abs(p.y), abs(p.z))));",
 			"\tvec3 g;",
 			"\tif ($mode == 1) {",
 			"\t\tg.x = ($in(p+vec4(e, 0.0, 0.0, 0.0))-$in(p-vec4(e, 0.0, 0.0, 0.0)))/(2.0*e);",
@@ -55,7 +57,7 @@
 				"control": "None",
 				"default": 0.00074,
 				"label": "",
-				"longdesc": "The distance in metres used to measure the gradient",
+				"longdesc": "The minimum distance in metres used to measure the gradient (it grows with the distance to the origin, 7.4e-6 per metre, to stay above the float precision of the positions)",
 				"max": 0.1,
 				"min": 1e-05,
 				"name": "eps",
