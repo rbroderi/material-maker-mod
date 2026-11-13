@@ -9,5 +9,6 @@ Material Maker User Manual
    nodes
    base_library
    export
+   voxel_workflow
    command_line
    scripting

@@ -220,7 +220,38 @@ covering a box centered on the origin (from -0.5 to 0.5 by default).
   of the surface.
 * **3D DDS** (.dds) and **KTX2** (.ktx2) files are 3D textures for game engines, in 16 bits float
   (the default), 32 bits float or 8 bits, with 4 channels (colors) or 1 channel (grayscale
-  textures and SDFs).
+  textures and SDFs). Besides 16 bits float, 32 bits float and 8 bits, the texel formats include
+  r8, rg8, r16 and rg16 (1 or 2 channels of 8 or 16 bits unsigned normalized values).
+* **Raw** (.raw) files hold the texels, x varying fastest, then y, then z, with a .raw.json file
+  that describes the resolution, texel format, channels, extent and origin. A **slices** export
+  writes one PNG (8 bits formats) or EXR image per z slice.
+
+The box can start at the origin (**--volume-origin** corner, from 0 to the extent), which is
+the box of noises whose period is the extent, and **--check-tileable** fails if the volume is
+not periodic with that period.
+
+Voxel materials for Unreal Engine 5
+-----------------------------------
+
+The *Voxel materials* plugin adds two Unreal Engine 5 targets for graphs that end in a Voxel
+Material node (see :ref:`voxel-workflow-section`). They are HLSL translations of the graph, like
+the *Unreal Engine 5 Shader* target, and need the Python path configured as described above:
+
+* **Unreal/Unreal Engine 5 Voxel** generates <prefix>.py (the script that creates the material,
+  with a Custom node), <prefix>.shader (its HLSL code) and <prefix>_texture_<n>.exr (the buffers
+  of the graph). The Custom node has the inputs Position, Normal, Seed, Age, Upkeep, Fresh,
+  Char, Wet, Axis, Origin, Footprint and Time (then one per buffer), and the outputs base color,
+  metallic, roughness, normal (in object space), emission, occlusion and opacity. The position
+  is in metres: the script multiplies the local position by 0.01.
+* **Unreal/Unreal Engine 5 Voxel Function** generates <prefix>.voxel.hlsl (a struct named
+  MMVoxRecipe), the buffer textures and <prefix>_function.py, that creates the Material Function
+  MF_<prefix> with one function input per input of the Custom node. The **--voxel-master** mode
+  combines several of these recipes in a master material.
+
+The generated scripts and HLSL are checked by compiling with DXC and by running the scripts
+against a stub of the unreal module, and the numeric parity of the HLSL with Material Maker's
+GLSL is tested on the development GPU. They have **not been run in Unreal Engine**: see
+:ref:`voxel-workflow-section` for what is and is not verified.
 
 Color spaces
 ------------

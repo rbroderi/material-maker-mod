@@ -1,0 +1,246 @@
+{
+	"connections": [
+		{
+			"from": "Inputs",
+			"from_port": 2,
+			"to": "Wood",
+			"to_port": 0
+		},
+		{
+			"from": "Inputs",
+			"from_port": 1,
+			"to": "Wood",
+			"to_port": 1
+		},
+		{
+			"from": "Inputs",
+			"from_port": 8,
+			"to": "Wood",
+			"to_port": 2
+		},
+		{
+			"from": "Inputs",
+			"from_port": 9,
+			"to": "Wood",
+			"to_port": 3
+		},
+		{
+			"from": "Inputs",
+			"from_port": 3,
+			"to": "Wood",
+			"to_port": 4
+		},
+		{
+			"from": "Inputs",
+			"from_port": 5,
+			"to": "Wood",
+			"to_port": 5
+		},
+		{
+			"from": "Inputs",
+			"from_port": 10,
+			"to": "Wood",
+			"to_port": 6
+		},
+		{
+			"from": "Wood",
+			"from_port": 0,
+			"to": "Beam",
+			"to_port": 0
+		},
+		{
+			"from": "Wood",
+			"from_port": 2,
+			"to": "Beam",
+			"to_port": 2
+		},
+		{
+			"from": "Wood",
+			"from_port": 1,
+			"to": "Beam",
+			"to_port": 6
+		}
+	],
+	"label": "Graph",
+	"longdesc": "",
+	"name": "voxel_oak",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "Inputs",
+			"node_position": {
+				"x": 0.0,
+				"y": 0.0
+			},
+			"parameters": {
+				"vox_age": 0.6,
+				"vox_axis_x": 1.0,
+				"vox_axis_y": 0.0,
+				"vox_axis_z": 0.0,
+				"vox_char": 0.0,
+				"vox_footprint": 0.0,
+				"vox_fresh": 0.0,
+				"vox_origin_x": 0.0,
+				"vox_origin_y": 0.08,
+				"vox_origin_z": 0.14,
+				"vox_seed": 21.0,
+				"vox_upkeep": 0.0,
+				"vox_wet": 0.0
+			},
+			"seed_int": 0,
+			"type": "voxel_inputs"
+		},
+		{
+			"name": "Wood",
+			"node_position": {
+				"x": 420.0,
+				"y": 0.0
+			},
+			"parameters": {
+				"aged_colour": {
+					"a": 1.0,
+					"b": 0.243137255311012,
+					"g": 0.329411774873734,
+					"r": 0.415686279535294,
+					"type": "Color"
+				},
+				"aged_hides": 0.55,
+				"bump_strength": 0.08,
+				"check_strength": 0.7,
+				"early": {
+					"a": 1.0,
+					"b": 0.298039227724075,
+					"g": 0.431372553110123,
+					"r": 0.572549045085907,
+					"type": "Color"
+				},
+				"flow_amount": 7.0,
+				"flow_scale": 0.014,
+				"late": {
+					"a": 1.0,
+					"b": 0.156862750649452,
+					"g": 0.227450981736183,
+					"r": 0.329411774873734,
+					"type": "Color"
+				},
+				"pith_wander": 4.0,
+				"pore_strength": 0.55,
+				"ray_strength": 0.4,
+				"ring_porous": true,
+				"ring_width_mm": 5.0,
+				"ripple_amount": 0.7,
+				"units_per_metre": 81.0
+			},
+			"seed_int": 0,
+			"type": "voxel_wood"
+		},
+		{
+			"export_paths": {},
+			"name": "Beam",
+			"node_position": {
+				"x": 840.0,
+				"y": 0.0
+			},
+			"parameters": {
+				"albedo_color": {
+					"a": 1.0,
+					"b": 1.0,
+					"g": 1.0,
+					"r": 1.0,
+					"type": "Color"
+				},
+				"ao": 1.0,
+				"bump": 1.0,
+				"emission_energy": 1.0,
+				"linear_albedo": true,
+				"metallic": 1.0,
+				"preview_scale": 1.0,
+				"roughness": 1.0
+			},
+			"seed_int": 0,
+			"type": "material_voxel"
+		},
+		{
+			"name": "Oak",
+			"node_position": {
+				"x": 420.0,
+				"y": -360.0
+			},
+			"parameters": {
+				"param0": 7.0,
+				"param1": 0.014,
+				"param2": 4.0,
+				"param3": 0.7
+			},
+			"presets": {
+				"voxkit": {
+					"param0": 7.0,
+					"param1": 0.014,
+					"param2": 4.0,
+					"param3": 0.7
+				},
+				"zcity": {
+					"param0": 4.0,
+					"param1": 0.006,
+					"param2": 1.0,
+					"param3": 0.2
+				}
+			},
+			"seed_int": 0,
+			"type": "remote",
+			"widgets": [
+				{
+					"label": "Flow amount",
+					"linked_widgets": [
+						{
+							"node": "Wood",
+							"widget": "flow_amount"
+						}
+					],
+					"name": "param0",
+					"type": "linked_control"
+				},
+				{
+					"label": "Flow scale",
+					"linked_widgets": [
+						{
+							"node": "Wood",
+							"widget": "flow_scale"
+						}
+					],
+					"name": "param1",
+					"type": "linked_control"
+				},
+				{
+					"label": "Pith wander",
+					"linked_widgets": [
+						{
+							"node": "Wood",
+							"widget": "pith_wander"
+						}
+					],
+					"name": "param2",
+					"type": "linked_control"
+				},
+				{
+					"label": "Ripple amount",
+					"linked_widgets": [
+						{
+							"node": "Wood",
+							"widget": "ripple_amount"
+						}
+					],
+					"name": "param3",
+					"type": "linked_control"
+				}
+			]
+		}
+	],
+	"parameters": {},
+	"seed_int": 0,
+	"shortdesc": "",
+	"type": "graph"
+}

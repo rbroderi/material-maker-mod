@@ -1,3 +1,30 @@
+# Voxel materials (fork)
+
+## Voxel materials plugin
+
+- Added the Voxel Material node (object-space position, normal and bump, in metres) and the Voxel Inputs node (seed, age, upkeep, fresh, char, wet, axis, origin and footprint as sliders)
+- Added the Unreal/Unreal Engine 5 Voxel and Unreal/Unreal Engine 5 Voxel Function export targets (not run in Unreal Engine yet)
+- Added recipe nodes: Voxel Wood, Palette Pick, Weathering, Char, Wetness, Paint, and Surface Pattern (3D placed 2D patterns)
+- Added the Voxel oak example and a Python comparison with the ZCity kit (python/examples/zcity_oak)
+- Added the voxel workflow chapter to the manual
+
+## Nodes
+
+- Added seeded 3D noises (Value, Perlin, fBm, Voronoi) with an integer hash that is the same in GLSL, HLSL and numpy, a 3D Domain Warp and a 3D Gradient node (the bump input of the Voxel Material)
+- Added a 3D Buffer node that stores a volume in a 16 bits float atlas of slices
+- Added a Hash parameter (Legacy or Exact) to the 3D FBM, FBM 2, FBM 3 and 3D Voronoi nodes. Legacy, the default, keeps existing graphs unchanged; the 3D/Texture/FBM library item uses Exact
+
+## Command line and scripting
+
+- Added the modes --param-schema, --graph-cost, --evaluate-points, --bake-voxel-material and --voxel-master, and the RPC methods param_schema, graph_cost, evaluate_points and bake_voxel_material
+- Added the Python module material_maker_client.voxel (evaluation of graphs at numpy points)
+- Added the raw and slices volume formats, the r8, rg8, r16 and rg16 texel formats and the options --volume-origin and --check-tileable to --export-volume
+
+## Miscellaneous
+
+- Improved the GLSL to HLSL translation: whole word replacements, uvec, mat3, mat4 and one argument atan
+- Added a test that compares the exported HLSL, compiled by DXC and run on the GPU, with the GLSL
+
 # Material Maker 1.8
 
 ## User interface

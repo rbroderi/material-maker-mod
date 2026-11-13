@@ -23,6 +23,11 @@ needs **xvfb-run** (from the *xvfb* package), that provides a virtual one.
  material_maker --export-volume --node <node[:output]> [options] <input_files>
  material_maker --bake [--maps <map,...>] [options] <mesh_files>
  material_maker --list-parameters <input_files>
+ material_maker --param-schema [-o <dir>] <input_files>
+ material_maker --graph-cost [--node <node[:output]>] <input_files>
+ material_maker --evaluate-points --points <points.npy> [options] <input_files>
+ material_maker --bake-voxel-material --mesh <mesh> [options] <input_files>
+ material_maker --voxel-master --master-config <config.json> -o <dir> <input_files>
  material_maker --export-mmr [options] <input_files>
  material_maker --rpc [--rpc-port <port>] [<input_file>]
  material_maker -- --help
@@ -43,12 +48,36 @@ Modes
 * **--export-volume** exports a 3D texture or SDF output as a volume (see :ref:`export-section`),
   named <input>_<node>.<format>, with **--format** vdb (the default), dds or ktx2, **--voxels**
   (the resolution, from 8 to 256, 128 by default), **--extent** (the size of the sampled box, 1 by default) and,
-  for dds and ktx2, **--texel-format** (rgba16f, rgba32f, rgba8, r16f or r32f)
+  for dds and ktx2, **--texel-format** (rgba16f, rgba32f, rgba8, r16f or r32f; also r8, rg8, r16
+  and rg16 for dds, ktx2 and the formats below). **--format** raw writes <input>_<node>.raw and a
+  <input>_<node>.raw.json file that describes it, and **--format** slices one image per z slice.
+  **--volume-origin** corner samples the box [0, extent]^3 instead of the centered one
+  (the default is center), and **--check-tileable** fails if the volume is not periodic with the
+  period given by **--extent**
 * **--bake** bakes mesh maps (position, normal, tangent, ambient_occlusion, bent_normals,
   thickness, curvature, seams, adjacency) to files named <mesh>_<map>.png
 * **--list-parameters** lists the parameters that can be set with **--set**
 * **--export-mmr** exports runtime packages (see :ref:`export-section`), named <input>.mmr
   (the material's size is used unless **--size** is given)
+* **--param-schema** writes the parameters of each graph (the Voxel Inputs sliders, the Voxel
+  Material inputs, the remote parameters and the parameters of the top level nodes) as a JSON
+  file named <input>.schema.json, without rendering (see :ref:`voxel-workflow-section`)
+* **--graph-cost** prints, as one line of JSON per graph, a relative estimate of the shader cost
+  (instructions, texture samples, parity warnings) of the material, or of a node output with
+  **--node**
+* **--evaluate-points** evaluates the Voxel Material of a graph (or a node output, with **--node**)
+  at the points of a NumPy .npy file, and writes the results as .npy files (<input>_base_color,
+  _orm, _emission, _normal and _opacity, or <input>_<node> with **--node**). The options are
+  **--points** (float32 positions in metres, shape (N, 3), required), **--normals** (unit
+  normals, shape (N, 3)), **--fresh** (shape (N)) and **--voxel-params** (a JSON object, or the path
+  of a JSON file, with seed, age, upkeep, fresh, char, wet, footprint, axis and origin)
+* **--bake-voxel-material** bakes the Voxel Material of a graph to the textures of the mesh given
+  with **--mesh** (obj or glb), named <input>_<mesh>_basecolor, _orm, _normal_object, _emission and
+  _opacity, with **--size** (1024 by default), **--unit-scale** (metres per mesh unit, 1 by
+  default) and **--format** png (the default) or exr
+* **--voxel-master** combines the voxel recipes of several graphs in one Unreal Engine 5
+  master material (<name>.shader, <name>.py and <name>.master.json), configured by the JSON file
+  of **--master-config** (see :ref:`voxel-workflow-section`)
 * **--rpc** starts a JSON-RPC server to control Material Maker from scripts (see :ref:`scripting-section`)
 * **--plugin <command> [arguments]** runs a command added by a plugin (see :ref:`scripting-section`),
   for example **--plugin axf_import material.axf output_dir** to import an AxF material. The
@@ -133,6 +162,10 @@ Options
   **--export-material** and **--render** (as the 3D preview's custom mesh)
 * **--software-raytracing** bakes **--high** maps without hardware ray tracing, even when the GPU
   supports it
+* **--points <file>**, **--normals <file>**, **--fresh <file>**, **--voxel-params <json>**,
+  **--unit-scale <f>**, **--master-config <file>**, **--volume-origin <center|corner>** and
+  **--check-tileable** are the options of the voxel modes above (**--node**, **--set**, **--size**,
+  **--format**, **--mesh** and **-o** are the options described here)
 * **--rpc-port <port>** is the port of the JSON-RPC server (the default is 7680). When used without
   **--rpc**, Material Maker starts with its user interface and a server
 
@@ -159,5 +192,11 @@ Examples
  material_maker --render --node Material:0 --set Hue=0.3 --variations 4 --size 1024 -o out bricks.ptex
  material_maker --export-material --preset Mossy --set Hue=0.1 -o out bricks.ptex
  material_maker --render --node Material:0 --frames 16 --duration 2 --columns 4 --size 256 -o out fire.ptex
+ material_maker --param-schema -o schemas oak.ptex
+ material_maker --graph-cost oak.ptex
+ material_maker --evaluate-points --points p.npy --normals n.npy --voxel-params '{"seed": 12}' -o out oak.ptex
+ material_maker --bake-voxel-material --mesh crate.glb --size 1024 -o out oak.ptex
+ material_maker --voxel-master --master-config master.json -o out wood.ptex stone.ptex
+ material_maker --export-volume --node Noise:0 --format raw --texel-format r8 --voxels 64 --volume-origin corner -o out noise.ptex
  material_maker --bake --maps ambient_occlusion,curvature --size 2048 -o maps model.obj
  material_maker --bake --high sculpt.obj --maps normal_tangent,height,material_id --front 0.02 -o maps model.obj

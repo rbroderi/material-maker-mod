@@ -45,6 +45,13 @@ The **python** directory of the source repository contains a Python client witho
 server, use **MaterialMaker(port=7680)**. Any method of the server can also be called with
 **mm.call("method", **params)**. See **python/examples/variations.py** for a complete script.
 
+**material_maker_client.voxel** (it needs numpy) evaluates voxel graphs at points with arrays:
+**evaluate(mm, points, normals=None, fresh=None, params=None, node=None)** and the
+**VoxelGraph(mm, path, node)** class, whose **evaluate(points, normals, params)** returns a
+dictionary of arrays (base_color, orm, emission, normal, opacity) for the Voxel Material, or an
+(N, 4) array for a node output. It exchanges .npy files with the server, that must run on the
+same machine. See **python/examples/voxel_evaluate.py** and :ref:`voxel-workflow-section`.
+
 Methods
 -------
 
@@ -88,7 +95,23 @@ graph (and in **list_nodes**).
   or [1001, 1002])
 * **export_mmr(path, size, height)** exports a runtime package (.mmr) of the material
 * **export_volume(node, path, output, resolution, extent, texel_format)** exports a 3D texture or
-  SDF output as a volume (.vdb, .dds or .ktx2)
+  SDF output as a volume (.vdb, .dds or .ktx2, and with the file extension .raw or .slices the
+  formats of **--format** raw and slices; and the options **origin** (center or corner) and
+  **check_tileable**)
+* **param_schema()** returns the parameter schema of the current graph (see
+  :ref:`voxel-workflow-section`), as **--param-schema** writes it
+* **graph_cost(node, output)** returns the estimated shader cost of the material, or of a node
+  output (**node** and **output** are optional), as **--graph-cost** prints it
+* **evaluate_points(points, output, normals, fresh, node, params)** evaluates the Voxel Material
+  (or a node output, with **node** as "name" or "name:output") at the points of a .npy file.
+  **points**, **normals** and **fresh** are paths of float32 .npy files (shapes (N, 3), (N, 3) and
+  (N)), **params** is an object that sets voxel parameters (seed, age, upkeep, fresh, char, wet,
+  footprint, axis, origin, or "node:parameter"). **output** is the path of an (N, 4) file with
+  **node**, otherwise a prefix for the files <prefix>_base_color.npy, _orm, _emission, _normal and
+  _opacity. It returns the list of the files written
+* **bake_voxel_material(mesh, prefix, size, unit_scale, format)** bakes the Voxel Material to the
+  textures of a mesh file (<prefix>_basecolor, _orm, _normal_object, _emission and _opacity, as
+  png or exr), and returns the files written
 * **render_path_traced(path, size, samples, transparent, displacement, thin_walled, sss_radius, sss_color)**
   and **render_turntable(path, frames, size)** render the 3D preview (with the user interface
   only, see the 3D preview panel; **sss_radius** is relative to the object's size, 0.03 by
@@ -257,7 +280,10 @@ command line mode (**--example-thumbnails**), a section of the 2D preview's expo
 export hook.
 Several features of Material Maker are bundled plugins, enabled by default, that can be disabled
 in *Tools > Plugins...*: **materialx_import** (MaterialX import), **runtime_export** (runtime
-packages, **--export-mmr**), **volume_export** (volumes, **--export-volume**), **export_targets**
+packages, **--export-mmr**), **volume_export** (volumes, **--export-volume**), **voxel** (the Voxel Material and Voxel Inputs
+nodes, and the Unreal Engine 5 Voxel export targets), **voxel_eval** (**--evaluate-points**),
+**voxel_mesh_bake** (**--bake-voxel-material**), **voxel_master** (**--voxel-master**),
+**param_schema** (**--param-schema**), **graph_cost** (**--graph-cost**), **export_targets**
 (the Godot 4, Unity and Unreal Engine 5 shader exports, MaterialX and USD), **sbs** (a skeleton
 of the Substance atomic nodes plugin that sbsar2ptex installs), **ktx2_format**,
 **tx_format** and **exr_layers_format** (the KTX2 and TX image formats, multi-layer OpenEXR,
