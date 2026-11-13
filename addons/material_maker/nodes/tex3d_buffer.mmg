@@ -1,0 +1,280 @@
+{
+	"connections": [
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "to_atlas",
+			"to_port": 0
+		},
+		{
+			"from": "to_atlas",
+			"from_port": 0,
+			"to": "atlas_buffer",
+			"to_port": 0
+		},
+		{
+			"from": "atlas_buffer",
+			"from_port": 0,
+			"to": "from_atlas",
+			"to_port": 0
+		},
+		{
+			"from": "gen_inputs",
+			"from_port": 0,
+			"to": "from_atlas",
+			"to_port": 1
+		},
+		{
+			"from": "from_atlas",
+			"from_port": 0,
+			"to": "gen_outputs",
+			"to_port": 0
+		}
+	],
+	"label": "3D Buffer",
+	"longdesc": "Bakes a periodic 3D texture into an atlas image and reads it back with trilinear filtering",
+	"name": "tex3d_buffer",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"nodes": [
+		{
+			"name": "to_atlas",
+			"node_position": {
+				"x": -300,
+				"y": 0
+			},
+			"parameters": {
+				"extent": 1,
+				"layout": 2
+			},
+			"seed_int": 0,
+			"type": "tex3d_to_atlas"
+		},
+		{
+			"name": "atlas_buffer",
+			"node_position": {
+				"x": -150,
+				"y": 0
+			},
+			"parameters": {
+				"aspect": 0,
+				"f16i": false,
+				"f32": false,
+				"f8": false,
+				"filter": true,
+				"mipmap": false,
+				"rg": false,
+				"rounding": 0,
+				"size": 11,
+				"size_mode": 0,
+				"size_offset": 0
+			},
+			"seed": 4321,
+			"type": "buffer",
+			"version": 2
+		},
+		{
+			"name": "from_atlas",
+			"node_position": {
+				"x": 0,
+				"y": 0
+			},
+			"parameters": {
+				"extent": 1,
+				"layout": 2,
+				"mode": 0
+			},
+			"seed_int": 0,
+			"type": "tex3d_from_atlas"
+		},
+		{
+			"name": "gen_inputs",
+			"node_position": {
+				"x": -600,
+				"y": 0
+			},
+			"parameters": {
+
+			},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The periodic 3D texture to bake",
+					"name": "in",
+					"shortdesc": "Input",
+					"type": "tex3d"
+				}
+			],
+			"seed": 1234,
+			"type": "ios"
+		},
+		{
+			"name": "gen_outputs",
+			"node_position": {
+				"x": 250,
+				"y": 0
+			},
+			"parameters": {
+
+			},
+			"ports": [
+				{
+					"group_size": 0,
+					"longdesc": "The baked 3D texture",
+					"name": "out",
+					"shortdesc": "Output",
+					"type": "tex3d"
+				}
+			],
+			"seed": 5678,
+			"type": "ios"
+		},
+		{
+			"name": "gen_parameters",
+			"node_position": {
+				"x": -300,
+				"y": -250
+			},
+			"parameters": {
+				"extent": 1,
+				"layout": 2,
+				"mode": 0
+			},
+			"seed": 9012,
+			"type": "remote",
+			"widgets": [
+				{
+					"configurations": {
+						"1: 64^3": [
+							{
+								"node": "atlas_buffer",
+								"value": 9,
+								"widget": "size"
+							},
+							{
+								"node": "to_atlas",
+								"value": 0,
+								"widget": "layout"
+							},
+							{
+								"node": "from_atlas",
+								"value": 0,
+								"widget": "layout"
+							}
+						],
+						"2: 128x128x64": [
+							{
+								"node": "atlas_buffer",
+								"value": 10,
+								"widget": "size"
+							},
+							{
+								"node": "to_atlas",
+								"value": 1,
+								"widget": "layout"
+							},
+							{
+								"node": "from_atlas",
+								"value": 1,
+								"widget": "layout"
+							}
+						],
+						"3: 128x128x256": [
+							{
+								"node": "atlas_buffer",
+								"value": 11,
+								"widget": "size"
+							},
+							{
+								"node": "to_atlas",
+								"value": 2,
+								"widget": "layout"
+							},
+							{
+								"node": "from_atlas",
+								"value": 2,
+								"widget": "layout"
+							}
+						],
+						"4: 256^3": [
+							{
+								"node": "atlas_buffer",
+								"value": 12,
+								"widget": "size"
+							},
+							{
+								"node": "to_atlas",
+								"value": 3,
+								"widget": "layout"
+							},
+							{
+								"node": "from_atlas",
+								"value": 3,
+								"widget": "layout"
+							}
+						]
+					},
+					"label": "Layout",
+					"linked_widgets": [
+						{
+							"node": "atlas_buffer",
+							"widget": "size"
+						},
+						{
+							"node": "to_atlas",
+							"widget": "layout"
+						},
+						{
+							"node": "from_atlas",
+							"widget": "layout"
+						}
+					],
+					"longdesc": "The atlas layout (tiles of resolution x resolution, one per z slice): 64^3 in 512x512, 128x128x64 in 1024x1024, 128x128x256 in 2048x2048, 256^3 in 4096x4096",
+					"name": "layout",
+					"shortdesc": "Layout",
+					"type": "config_control"
+				},
+				{
+					"label": "Extent",
+					"linked_widgets": [
+						{
+							"node": "to_atlas",
+							"widget": "extent"
+						},
+						{
+							"node": "from_atlas",
+							"widget": "extent"
+						}
+					],
+					"longdesc": "The size in metres covered by the volume. The volume is periodic with this period",
+					"name": "extent",
+					"shortdesc": "Extent",
+					"type": "linked_control"
+				},
+				{
+					"label": "Mode",
+					"linked_widgets": [
+						{
+							"node": "from_atlas",
+							"widget": "mode"
+						}
+					],
+					"longdesc": "Baked reads the atlas. Direct evaluates the input 3D texture without baking",
+					"name": "mode",
+					"shortdesc": "Mode",
+					"type": "linked_control"
+				}
+			]
+		}
+	],
+	"parameters": {
+		"extent": 1,
+		"layout": 2,
+		"mode": 0
+	},
+	"seed_int": 0,
+	"shortdesc": "3D Buffer",
+	"type": "graph"
+}

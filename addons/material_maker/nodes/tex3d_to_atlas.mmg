@@ -1,0 +1,84 @@
+{
+	"name": "tex3d_to_atlas",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"extent": 1,
+		"layout": 2
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": [
+			"vec2 $(name_uv)_tr = $layout;",
+			"vec2 $(name_uv)_tile = min(floor($uv.xy*$(name_uv)_tr.x), vec2($(name_uv)_tr.x-1.0));",
+			"float $(name_uv)_slice = $(name_uv)_tile.y*$(name_uv)_tr.x+$(name_uv)_tile.x;",
+			"vec3 $(name_uv)_p = vec3(fract($uv.xy*$(name_uv)_tr.x), ($(name_uv)_slice+0.5)/($(name_uv)_tr.x*$(name_uv)_tr.x))*$extent;"
+		],
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec3(0.5)",
+				"label": "",
+				"longdesc": "The 3D texture to bake into an atlas of slices",
+				"name": "in",
+				"shortdesc": "Input",
+				"type": "tex3d"
+			}
+		],
+		"instance": "",
+		"longdesc": "Lays out the slices of a periodic volume (period: extent, in metres) in a square atlas image. The image is made of T x T tiles, each tile is one z slice. It is meant to be stored in a Buffer and read back by the From Atlas node",
+		"name": "TEX3D to atlas",
+		"outputs": [
+			{
+				"longdesc": "The atlas image",
+				"rgb": "$in(vec4($(name_uv)_p, 0.0))",
+				"shortdesc": "Atlas",
+				"type": "rgb"
+			}
+		],
+		"parameters": [
+			{
+				"default": 2,
+				"label": "",
+				"longdesc": "Atlas layout: tiles per side and resolution of each tile",
+				"name": "layout",
+				"shortdesc": "Layout",
+				"type": "enum",
+				"values": [
+					{
+						"name": "64^3",
+						"value": "vec2(8.0, 64.0)"
+					},
+					{
+						"name": "128x128x64",
+						"value": "vec2(8.0, 128.0)"
+					},
+					{
+						"name": "128x128x256",
+						"value": "vec2(16.0, 128.0)"
+					},
+					{
+						"name": "256^3",
+						"value": "vec2(16.0, 256.0)"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "",
+				"longdesc": "The size in metres covered by the volume. The volume is periodic with this period",
+				"max": 1000,
+				"min": 0.01,
+				"name": "extent",
+				"shortdesc": "Extent",
+				"step": 0.01,
+				"type": "float"
+			}
+		],
+		"shortdesc": "TEX3D to atlas"
+	},
+	"type": "shader"
+}

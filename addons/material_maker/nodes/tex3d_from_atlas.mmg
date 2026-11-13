@@ -1,0 +1,118 @@
+{
+	"name": "tex3d_from_atlas",
+	"node_position": {
+		"x": 0,
+		"y": 0
+	},
+	"parameters": {
+		"extent": 1,
+		"layout": 2,
+		"mode": 0
+	},
+	"seed_int": 0,
+	"shader_model": {
+		"code": [
+			"vec2 $(name_uv)_tr = $layout;",
+			"float $(name_uv)_depth = $(name_uv)_tr.x*$(name_uv)_tr.x;",
+			"vec3 $(name_uv)_q = fract($uv.xyz/$extent);",
+			"float $(name_uv)_zf = $(name_uv)_q.z*$(name_uv)_depth-0.5;",
+			"float $(name_uv)_z0 = floor($(name_uv)_zf);",
+			"float $(name_uv)_t = $(name_uv)_zf-$(name_uv)_z0;",
+			"float $(name_uv)_za = mod($(name_uv)_z0, $(name_uv)_depth);",
+			"float $(name_uv)_zb = mod($(name_uv)_z0+1.0, $(name_uv)_depth);",
+			"vec2 $(name_uv)_xy = clamp($(name_uv)_q.xy, vec2(0.5/$(name_uv)_tr.y), vec2(1.0-0.5/$(name_uv)_tr.y));",
+			"vec2 $(name_uv)_ua = (vec2(mod($(name_uv)_za, $(name_uv)_tr.x), floor($(name_uv)_za/$(name_uv)_tr.x))+$(name_uv)_xy)/$(name_uv)_tr.x;",
+			"vec2 $(name_uv)_ub = (vec2(mod($(name_uv)_zb, $(name_uv)_tr.x), floor($(name_uv)_zb/$(name_uv)_tr.x))+$(name_uv)_xy)/$(name_uv)_tr.x;"
+		],
+		"global": "",
+		"inputs": [
+			{
+				"default": "vec4(0.0)",
+				"label": "Atlas",
+				"longdesc": "The atlas image, made by the To Atlas node (usually through a Buffer)",
+				"name": "atlas",
+				"shortdesc": "Atlas",
+				"type": "rgba"
+			},
+			{
+				"default": "vec3(0.0)",
+				"label": "Direct",
+				"longdesc": "The original 3D texture, used when the mode is Direct",
+				"name": "direct",
+				"shortdesc": "Direct",
+				"type": "tex3d"
+			}
+		],
+		"instance": "",
+		"longdesc": "Reads a volume stored in an atlas image with trilinear filtering. The volume is periodic with the extent as period. There is no filtering across the x and y borders of the volume (the lookups are clamped to half a texel inside each tile)",
+		"name": "TEX3D from atlas",
+		"outputs": [
+			{
+				"longdesc": "The 3D texture. Normal and fresh context are lost (zero) in baked mode",
+				"shortdesc": "Output",
+				"tex3d": "$mode",
+				"type": "tex3d"
+			}
+		],
+		"parameters": [
+			{
+				"default": 2,
+				"label": "",
+				"longdesc": "Atlas layout: tiles per side and resolution of each tile (must match the To Atlas node)",
+				"name": "layout",
+				"shortdesc": "Layout",
+				"type": "enum",
+				"values": [
+					{
+						"name": "64^3",
+						"value": "vec2(8.0, 64.0)"
+					},
+					{
+						"name": "128x128x64",
+						"value": "vec2(8.0, 128.0)"
+					},
+					{
+						"name": "128x128x256",
+						"value": "vec2(16.0, 128.0)"
+					},
+					{
+						"name": "256^3",
+						"value": "vec2(16.0, 256.0)"
+					}
+				]
+			},
+			{
+				"control": "None",
+				"default": 1,
+				"label": "",
+				"longdesc": "The size in metres covered by the volume (must match the To Atlas node)",
+				"max": 1000,
+				"min": 0.01,
+				"name": "extent",
+				"shortdesc": "Extent",
+				"step": 0.01,
+				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "",
+				"longdesc": "Baked reads the atlas. Direct ignores the atlas and evaluates the original 3D texture",
+				"name": "mode",
+				"shortdesc": "Mode",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Baked",
+						"value": "mix($atlas($(name_uv)_ua).rgb, $atlas($(name_uv)_ub).rgb, $(name_uv)_t)"
+					},
+					{
+						"name": "Direct",
+						"value": "$direct($uv)"
+					}
+				]
+			}
+		],
+		"shortdesc": "TEX3D from atlas"
+	},
+	"type": "shader"
+}

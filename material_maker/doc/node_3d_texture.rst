@@ -44,3 +44,4 @@ index.
 	node_3d_texture_noise_voronoi
 	node_3d_texture_domain_warp
 	node_3d_texture_gradient
+	node_3d_texture_buffer

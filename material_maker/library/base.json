@@ -9014,6 +9014,17 @@
 			},
 			"tree_item": "3D/Texture/Gradient",
 			"type": "tex3d_gradient"
+		},
+		{
+			"display_name": "3D Buffer",
+			"name": "tex3d_buffer",
+			"parameters": {
+				"extent": 1,
+				"layout": 2,
+				"mode": 0
+			},
+			"tree_item": "3D/Texture/Buffer",
+			"type": "tex3d_buffer"
 		}
 	],
 	"name": "Base library"
