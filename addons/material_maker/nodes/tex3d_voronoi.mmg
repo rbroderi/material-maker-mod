@@ -74,7 +74,7 @@
 			"\tint x = mm_n3_wrap(int(cell.x), int(size.x));",
 			"\tint y = mm_n3_wrap(int(cell.y), int(size.y));",
 			"\tint z = mm_n3_wrap(int(cell.z), int(size.z));",
-			"\treturn vec3(mm_n3_hash(x, y, z, s), mm_n3_hash(x, y, z, s+1u), mm_n3_hash(x, y, z, s+2u));",
+			"\treturn vec3(mm_n3_hash(x, y, z, s), mm_n3_hash(x, y, z, mm_n3_salt(s, 1u)), mm_n3_hash(x, y, z, mm_n3_salt(s, 2u)));",
 			"}",
 			"",
 			"vec4 mmx4_cells(vec3 x, vec3 size, float randomness, uint s) {",

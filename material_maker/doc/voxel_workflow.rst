@@ -60,7 +60,8 @@ Seeds
 Seeds are integer valued floats. The Voxel Inputs slider goes from 0 to 65535; the noise
 nodes add their *seed offset* parameter (0 to 1000) to their seed input and convert the sum
 exactly (``mm_n3_seed``, exact up to 16777215). The new noise nodes use an integer hash (the one of the
-ZCity kit's ``noise.py``) so that GLSL, HLSL and numpy produce the same values.
+ZCity kit's ``noise.py``: a finalised integer hash, ``salt(seed, n)`` for the separate stream
+of each channel and for each fbm octave) so that GLSL, HLSL and numpy produce the same values.
 
 Linear versus sRGB
 ++++++++++++++++++

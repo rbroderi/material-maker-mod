@@ -86,14 +86,14 @@ class Voxkit:
 
     def ring_phase(self, s, u0, v0, seed, pith, ring_vox, flow_amount, flow_scale, pith_wander, ripple_amount):
         """The ring phase of appearance.wood() (floor(phase) is the year), with the arch parameters given"""
-        noise3, fbm = self.noise.noise3, self.noise.fbm
-        pu = pith[0] + (noise3(s * 0.011 + 9, 0.3, 0.7, seed + 20) - 0.5) * pith_wander
-        pv = pith[1] + (noise3(s * 0.011 + 19, 0.6, 0.2, seed + 21) - 0.5) * pith_wander
+        noise3, fbm, salt = self.noise.noise3, self.noise.fbm, self.noise.salt
+        pu = pith[0] + (noise3(s * 0.011 + 9, 0.3, 0.7, salt(seed, 20)) - 0.5) * pith_wander
+        pv = pith[1] + (noise3(s * 0.011 + 19, 0.6, 0.2, salt(seed, 21)) - 0.5) * pith_wander
         u, v = u0 - pu, v0 - pv
         flow = (fbm(s * flow_scale, u * 0.03 + 4, v * 0.03, seed, 2) - 0.5) * flow_amount
-        ripple = (noise3(s * 0.05, u * 0.15, v * 0.15, seed + 1) - 0.5) * ripple_amount
+        ripple = (noise3(s * 0.05, u * 0.15, v * 0.15, salt(seed, 1)) - 0.5) * ripple_amount
         base = np.abs(np.hypot(u, v) + flow + ripple) / ring_vox
-        return base + 1.6 * (noise3(base * 0.17 + 0.5, 0.5, 0.5, seed + 2) - 0.5) + 0.3 * (noise3(base * 0.9, 0.2, s * 0.02, seed + 22) - 0.5)
+        return base + 1.6 * (noise3(base * 0.17 + 0.5, 0.5, 0.5, salt(seed, 2)) - 0.5) + 0.3 * (noise3(base * 0.9, 0.2, s * 0.02, salt(seed, 22)) - 0.5)
 
 
 class InlineExecutor:

@@ -65,7 +65,7 @@
 		],
 		"instance": [
 			"float $(name)_scale(vec3 P, float sd) {",
-			"\tvec3 d = mm_n3_voronoi_search(P*$crack_scale, mm_n3_seed(sd)+31u, 1.0, 0, 0);",
+			"\tvec3 d = mm_n3_voronoi_search(P*$crack_scale, mm_n3_salt(mm_n3_seed(sd), 31u), 1.0, 0, 0);",
 			"\treturn smoothstep(0.0, $crack_width, d.y-d.x);",
 			"}"
 		],

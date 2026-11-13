@@ -75,7 +75,7 @@
 			"\treturn clamp(mask*$hides, 0.0, 1.0);",
 			"}",
 			"vec3 $(name)_paint(vec3 P, float sd) {",
-			"\tfloat v = mm_n3_fbm(P*($units_per_metre*0.15), mm_n3_seed(sd)+11u, 2, 0.5, 2.03);",
+			"\tfloat v = mm_n3_fbm(P*($units_per_metre*0.15), mm_n3_salt(mm_n3_seed(sd), 11u), 2, 0.5, 2.03);",
 			"\treturn $(name)_lin($paint_colour.rgb)*(0.93+0.14*v);",
 			"}"
 		],

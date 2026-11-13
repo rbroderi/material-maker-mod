@@ -11,7 +11,7 @@ extends GutTest
 #       sdf3d_fbm   (mmx5_), sdf3d_fbm2 (mmx6_): radius of the sphere of the lattice vertex
 #                    i+c = 0.5*mm_n3_hash(x, y, z, seed), seed = mm_n3_seed(mod(seed*16777215, 2^24))
 #       sdf3d_repeat (mmx7_): per cell variation seed rmmx7_and(cell)+seed (salt 30u) and the
-#                    rotation angles (hash with seed s, s+1, s+2 of the integer cell)
+#                    rotation angles (hash with seed s, salt(s,1), salt(s,2) of the integer cell)
 #       sdf3d_circle_repeat (mmx8_): variation seed rmmx8_and(k/count) (salt 31u, k recovered on
 #                    a grid of 65536 per unit) + seed
 #
@@ -273,13 +273,14 @@ func test_legacy_blend_modes_are_not_flagged() -> void:
 		free_graph()
 
 # The HLSL translation turns matrix * vector into mul (the legacy SDF FBM, which stays in the
-# global code of the node when the Exact hash is chosen, multiplies a mat3 by a vec3)
+# global code of the node when the Exact hash is chosen, multiplies a mat3 by a vec3). HLSL
+# matrices are the transposed GLSL ones, so GLSL's M*v is mul(v, M)
 func test_hlsl_translation_wraps_matrix_products() -> void:
 	var material : MMGenMaterial = MMGenMaterial.new()
 	var t : String = material.process_option_hlsl_base("p = mat3(vec3(1.0, 0.0, 0.0),\n\tvec3(0.0, 2.0, 0.0),\n\tvec3(0.0, 0.0, 3.0))*p;\nq = mat3(a, b, c) * v.xy; r *= 2.0;")
-	assert_string_contains(t, "p = mul(tofloat3x3(tofloat3(1.0, 0.0, 0.0),")
-	assert_string_contains(t, "tofloat3(0.0, 0.0, 3.0)), p);")
-	assert_string_contains(t, "q = mul(tofloat3x3(a, b, c), v.xy);")
+	assert_string_contains(t, "p = mul(p, tofloat3x3(tofloat3(1.0, 0.0, 0.0),")
+	assert_string_contains(t, "tofloat3(0.0, 0.0, 3.0)));")
+	assert_string_contains(t, "q = mul(v.xy, tofloat3x3(a, b, c));")
 	assert_string_contains(t, "r *= 2.0;")
 	material.free()
 

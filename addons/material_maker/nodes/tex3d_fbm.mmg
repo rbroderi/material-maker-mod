@@ -226,7 +226,7 @@
 			"\tint x = mm_n3_wrap(int(c.x), int(per.x));",
 			"\tint y = mm_n3_wrap(int(c.y), int(per.y));",
 			"\tint z = mm_n3_wrap(int(c.z), int(per.z));",
-			"\treturn -1.0+2.0*vec3(mm_n3_hash(x, y, z, s), mm_n3_hash(x, y, z, s+1u), mm_n3_hash(x, y, z, s+2u));",
+			"\treturn -1.0+2.0*vec3(mm_n3_hash(x, y, z, s), mm_n3_hash(x, y, z, mm_n3_salt(s, 1u)), mm_n3_hash(x, y, z, mm_n3_salt(s, 2u)));",
 			"}",
 			"",
 			"float mmx1_value(vec3 coord, vec3 per, uint s) {",

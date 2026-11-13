@@ -50,7 +50,7 @@
 			"\tvec2 q = floor(mod((p.xy+0.5*r.xy)/r.xy, 1.0/r.xy));",
 			"\tint cx = int(q.x);",
 			"\tint cy = int(q.y);",
-			"\tvec3 a = (vec3(mm_n3_hash(cx, cy, 0, s), mm_n3_hash(cx, cy, 0, s+1u), mm_n3_hash(cx, cy, 0, s+2u))-0.5)*6.28*randomness;",
+			"\tvec3 a = (vec3(mm_n3_hash(cx, cy, 0, s), mm_n3_hash(cx, cy, 0, mm_n3_salt(s, 1u)), mm_n3_hash(cx, cy, 0, mm_n3_salt(s, 2u)))-0.5)*6.28*randomness;",
 			"\tp.xy = mod(p.xy+0.5*r.xy, r.xy)-0.5*r.xy;",
 			"\tvec3 rv;",
 			"\tfloat c;",

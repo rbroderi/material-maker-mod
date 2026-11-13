@@ -41,7 +41,10 @@ and every user export target change); **mutable globals** (Godot's shading langu
 **`mm_renderer` global parameters** (application wide, not saved per graph).
 
 **D3. Seeds are integer valued floats and the new noises use voxkit's integer hash bit for bit**
-(`noise.py::hash3`). Integer arithmetic is identical in GLSL, HLSL and numpy, so only the float
+(`noise.py::hash3`, `mix32` and `salt`: a lowbias32 finaliser on the seed and on the hash, a separate
+stream per channel `mm_n3_salt(seed, n)` instead of `seed+n`, fbm octaves `salt(seed, 0x40000000+o)`;
+the finaliser is `mm_n3_lowbias32` here because the HLSL translation rewrites identifiers
+containing `mix`). Integer arithmetic is identical in GLSL, HLSL and numpy, so only the float
 rounding of the interpolation can differ. `mm_n3_seed(float)` converts exactly (the plan's
 `uint(int(floor(s+0.5)))` was replaced by it). The Voxel Inputs seed slider goes to 65535 and the
 noise `seed_offset` to 1000, narrower than the 16777215 of the plan; the hash accepts the full range.

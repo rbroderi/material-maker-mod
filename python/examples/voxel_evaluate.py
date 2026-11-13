@@ -25,16 +25,26 @@ from material_maker_client.voxel import VoxelGraph  # noqa: E402
 M32 = 0xFFFFFFFF
 
 
+def mix32(x):
+    u = np.uint32
+    x = np.asarray(x).astype(u)
+    with np.errstate(over="ignore"):
+        x = x ^ (x >> u(16))
+        x = x * u(0x7FEB352D)
+        x = x ^ (x >> u(15))
+        x = x * u(0x846CA68B)
+        x = x ^ (x >> u(16))
+    return x
+
+
 def hash3(x, y, z, s):
     """voxkit's integer hash (ZCity/Tools/voxkit/noise.py), float64 in [0, 1)"""
     u = np.uint32
     with np.errstate(over="ignore"):
         h = (x.astype(np.int64) & M32).astype(u) * u(374761393) + (y.astype(np.int64) & M32).astype(u) * u(668265263) \
-            + (z.astype(np.int64) & M32).astype(u) * u(2147483629) + u(s) * u(974711)
-        h = (h ^ (h >> u(13))) * u(1274126177)
-        h = (h ^ (h >> u(16))) * u(374761393)
-        h = h ^ (h >> u(15))
-    return h.astype(np.float64) / 4294967296.0
+            + (z.astype(np.int64) & M32).astype(u) * u(2147483629) + mix32(u(s))
+    h = mix32(h)
+    return (h >> u(8)).astype(np.float64) * (1.0 / 16777216.0)
 
 
 def value_noise(p, s):

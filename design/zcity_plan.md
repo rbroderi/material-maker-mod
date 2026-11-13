@@ -25,7 +25,7 @@ Each subagent brief = **Standing constraints** + **Shared contract** + **HLSL-sa
 - **Docs test**: `test/test_doc_completion.gd` only checks nodes listed in `material_maker/library/base.json`. Doc name = `node_` + tree_item lowercased with `/` and space replaced by `_`.
 - **Toolchain on this machine**: Vulkan SDK 1.4.363 on PATH (`dxc`, `glslangValidator`, `spirv-cross`, `spirv-val`), Python 3.15 with numpy 2.5.4. No `fxc.exe`. No Unreal found at `C:\Program Files\Epic Games`; I did not search other drives, so "no Unreal" is an assumption.
 - **voxkit specifics**:
-  - `noise.py` uses a uint32 integer hash (constants 374761393, 668265263, 2147483629, 974711, 1274126177), value noise with smoothstep, and fbm with frequency x2.03 and seed+101 per octave.
+  - `noise.py` uses a uint32 integer hash (lowbias32 finaliser `mix32`, constants 374761393, 668265263, 2147483629), value noise with smoothstep, and fbm with frequency x2.03 and seed `salt(seed, 0x40000000+o)` per octave (the earlier scheme, with a `974711` seed term and `seed+101` octaves, was replaced; the old text of this plan is historical).
   - Coordinates are in voxels (81 per metre). `fw` is 1 on the original surface (the wishlist's `fresh` = 1 - fw). `fp` is the pixel footprint used to fade rings.
   - `render.render` always uses a `ProcessPoolExecutor`.
 
@@ -86,16 +86,20 @@ Each subagent brief = **Standing constraints** + **Shared contract** + **HLSL-sa
 - **Seed**: integer-valued float 0..16777215. Convert with `uint(int(floor(s+0.5)))`.
 - **Hash** (must equal `ZCity/Tools/voxkit/noise.py::hash3`):
   ```glsl
-  uint mm_n3_hash_u(int x, int y, int z, uint s) {
-      uint h = uint(x)*374761393u + uint(y)*668265263u + uint(z)*2147483629u + s*974711u;
-      h = (h ^ (h >> 13u))*1274126177u;
-      h = (h ^ (h >> 16u))*374761393u;
-      return h ^ (h >> 15u);
+  uint mm_n3_lowbias32(uint x) {   // voxkit mix32 (not named mix: the HLSL translation rewrites "mix")
+      x ^= x >> 16u; x *= 0x7FEB352Du; x ^= x >> 15u; x *= 0x846CA68Bu; x ^= x >> 16u;
+      return x;
   }
-  float mm_n3_hash(int x, int y, int z, uint s) { return float(mm_n3_hash_u(x, y, z, s))*(1.0/4294967296.0); }
+  uint mm_n3_salt(uint seed, uint n) { return mm_n3_lowbias32(mm_n3_lowbias32(seed)+n*0x9E3779B9u); }
+  uint mm_n3_hash_u(int x, int y, int z, uint s) {
+      uint h = uint(x)*374761393u + uint(y)*668265263u + uint(z)*2147483629u + mm_n3_lowbias32(s);
+      return mm_n3_lowbias32(h);
+  }
+  float mm_n3_hash(int x, int y, int z, uint s) { return float(mm_n3_hash_u(x, y, z, s) >> 8u)*(1.0/16777216.0); }
   ```
+  A separate stream is `mm_n3_salt(seed, n)`, never `seed+n`.
 - **Value noise** `mm_n3_value(vec3 p, uint s)`: lattice `floor(p)`, weights `f*f*(3-2f)`, trilinear mix of `mm_n3_hash` at the 8 corners. Equals voxkit `noise3`.
-- **fbm** `mm_n3_fbm(vec3 p, uint s, int octaves, float gain, float lacunarity)`: octave `o` uses seed `s + 101u*uint(o)` and frequency `lacunarity^o`, normalised by the sum of amplitudes. Equals voxkit `fbm` when lacunarity = 2.03.
+- **fbm** `mm_n3_fbm(vec3 p, uint s, int octaves, float gain, float lacunarity)`: octave `o` uses seed `mm_n3_salt(s, 0x40000000u+uint(o))` and frequency `lacunarity^o`, normalised by the sum of amplitudes. Equals voxkit `fbm` when lacunarity = 2.03.
 - **Bump**: `nb = normalize(n - k*(g - n*dot(g, n)))`, `g` = gradient vector from the graph, `k` = material `bump` parameter.
 - **Colour**: the voxel material has boolean `linear_albedo`. False (default) = albedo input is sRGB, decoded in the material as in the existing UE5 template. True = the input is already linear (ZCity recipes use this).
 - **Custom node input names (UE)**: `Position`, `Normal`, `Seed`, `Age`, `Upkeep`, `Fresh`, `Char`, `Wet`, `Axis`, `Origin`, `Footprint`, `Time`, then `texture_<n>`.
@@ -279,7 +283,7 @@ Sizes: S under 200 changed lines, M 200-600, L over 600.
 
 **Per node**
 - **Value**: output tex3d_gs in [0,1) = `mm_n3_value`.
-- **Perlin**: gradient noise. The gradient per lattice point comes from three `mm_n3_hash` calls with seeds s, s+1, s+2 mapped to [-1,1], not normalised. Quintic fade. Output remapped `0.5+0.5*n`.
+- **Perlin**: gradient noise. The gradient per lattice point comes from three `mm_n3_hash` calls with seeds s, salt(s,1), salt(s,2) mapped to [-1,1], not normalised. Quintic fade. Output remapped `0.5+0.5*n`.
 - **FBM**: enum `basis` (Value/Perlin), `octaves` (1..8), `gain` (default 0.5), `lacunarity` (default 2.03).
 - **Voronoi**: `jitter` 0..1. For each of the 27 neighbour cells, the feature point is `cell + 0.5 + jitter*(hash3-0.5)`. Outputs:
   - F1 distance (tex3d_gs);
