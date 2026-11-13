@@ -92,6 +92,10 @@
 			"\t}",
 			"}",
 			"",
+			"vec3 blend3d_dissolve_exact(vec3 uv, vec3 c1, vec3 c2, float opacity) {",
+			"\treturn (mm_n3_hash(int(floor(uv.x*16384.0)), int(floor(uv.y*16384.0)), int(floor(uv.z*16384.0)), 20u) < opacity) ? c1 : c2;",
+			"}",
+			"",
 			"vec3 blend3d_additive(vec3 uv, vec3 c1, vec3 c2, float oppacity) {",
 			"\treturn c2 + c1 * oppacity;",
 			"}",
@@ -185,7 +189,8 @@
 		],
 		"includes": [
 			"adjust_hsv",
-			"blend2"
+			"blend2",
+			"mm_noise3d"
 		],
 		"inputs": [
 			{
@@ -324,6 +329,10 @@
 					{
 						"name": "Value",
 						"value": "value"
+					},
+					{
+						"name": "Dissolve (Exact)",
+						"value": "dissolve_exact"
 					}
 				]
 			},

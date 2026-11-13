@@ -11,7 +11,7 @@
 	"seed_int": 411153024,
 	"shader_model": {
 		"code": [
-			"float $(name_uv)_ids = $variations ? rand(vec2((floor(fract((0.15915494309*atan($uv.x, $uv.y) - 0.5 / $c)) * $c) / $c))) + $seed : 0.0;",
+			"float $(name_uv)_ids = $variations ? r$(hash)and(vec2((floor(fract((0.15915494309*atan($uv.x, $uv.y) - 0.5 / $c)) * $c) / $c))) + $seed : 0.0;",
 			"vec2 $(name_uv)_in = $in.variation(circle_repeat_transform($uv, $c), $(name_uv)_ids);"
 		],
 		"global": [
@@ -27,7 +27,13 @@
 			"\trv.z = p.z;",
 			"\treturn rv;",
 			"}",
-			""
+			"",
+			"float rmmx8_and(vec2 v) {",
+			"\treturn mm_n3_hash(int(floor(v.x*65536.0+0.5)), 0, 0, 31u);",
+			"}"
+		],
+		"includes": [
+			"mm_noise3d"
 		],
 		"inputs": [
 			{
@@ -69,6 +75,24 @@
 				"label": "Variations",
 				"name": "variations",
 				"type": "boolean"
+			},
+			{
+				"default": 0,
+				"label": "Hash",
+				"longdesc": "Legacy hashes with sin(), whose results differ between GPUs and compilers (kept so existing graphs do not change). Exact uses an integer hash that gives the same values in the preview and in exported HLSL",
+				"name": "hash",
+				"shortdesc": "Hash",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Legacy",
+						"value": ""
+					},
+					{
+						"name": "Exact",
+						"value": "mmx8_"
+					}
+				]
 			}
 		],
 		"shortdesc": "Circle Repeat"

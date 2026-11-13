@@ -29,6 +29,10 @@ The **SDF FBM** node accepts the following parameters.
 
 * A *Scaling* control to adjust how much the size of the noise is adjusted at each iteration.
 
+* The *Hash* of the random values: *Legacy* uses a hash based on sin(), whose results can
+  differ between GPUs and compilers (graphs saved before this option keep it), *Exact* uses an
+  integer hash that gives the same values in the preview and in exported shaders.
+
 Example images
 ::::::::::::::
 

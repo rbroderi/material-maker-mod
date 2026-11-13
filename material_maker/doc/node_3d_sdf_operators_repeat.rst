@@ -27,6 +27,9 @@ The **Repeat** node accepts the following parameters:
 * *the repetition offset* for both X and Y axes
 * *the amount of random rotation* applied to all instances
 * *variation* controls whether the input is sampled with variations
+* The *Hash* of the random rotations and variations: *Legacy* uses a hash based on sin(), whose results can
+  differ between GPUs and compilers (graphs saved before this option keep it), *Exact* uses an
+  integer hash that gives the same values in the preview and in exported shaders.
 
 Example images
 ::::::::::::::

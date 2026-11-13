@@ -13,8 +13,8 @@
 	"seed_int": 740522688,
 	"shader_model": {
 		"code": [
-			"float $(name_uv)_seed = $variations ? rand(floor($uv.xy * vec2($rx, $ry) + 0.5)) + $seed : 0.0;",
-			"vec2 $(name_uv)_in = $in.variation(repeat($uv, vec3(1.0/$rx, 1.0/$ry, 0.0), float($seed), $r), $(name_uv)_seed);"
+			"float $(name_uv)_seed = $variations ? r$(hash)and(floor($uv.xy * vec2($rx, $ry) + 0.5)) + $seed : 0.0;",
+			"vec2 $(name_uv)_in = $in.variation(re$(hash)peat($uv, vec3(1.0/$rx, 1.0/$ry, 0.0), float($seed), $r), $(name_uv)_seed);"
 		],
 		"global": [
 			"vec3 repeat(vec3 p, vec3 r, float seed, float randomness) {",
@@ -40,7 +40,41 @@
 			"\trv.z = p.z;",
 			"\treturn rv;",
 			"}",
-			""
+			"",
+			"float rmmx7_and(vec2 c) {",
+			"\treturn mm_n3_hash(int(c.x), int(c.y), 0, 30u);",
+			"}",
+			"",
+			"vec3 remmx7_peat(vec3 p, vec3 r, float seed, float randomness) {",
+			"\tuint s = mm_n3_seed(mod(seed*16777215.0, 16777216.0));",
+			"\tvec2 q = floor(mod((p.xy+0.5*r.xy)/r.xy, 1.0/r.xy));",
+			"\tint cx = int(q.x);",
+			"\tint cy = int(q.y);",
+			"\tvec3 a = (vec3(mm_n3_hash(cx, cy, 0, s), mm_n3_hash(cx, cy, 0, s+1u), mm_n3_hash(cx, cy, 0, s+2u))-0.5)*6.28*randomness;",
+			"\tp.xy = mod(p.xy+0.5*r.xy, r.xy)-0.5*r.xy;",
+			"\tvec3 rv;",
+			"\tfloat c;",
+			"\tfloat sn;",
+			"\tc = cos(a.x);",
+			"\tsn = sin(a.x);",
+			"\trv.x = p.x;",
+			"\trv.y = p.y*c+p.z*sn;",
+			"\trv.z = -p.y*sn+p.z*c;",
+			"\tc = cos(a.y);",
+			"\tsn = sin(a.y);",
+			"\tp.x = rv.x*c+rv.z*sn;",
+			"\tp.y = rv.y;",
+			"\tp.z = -rv.x*sn+rv.z*c;",
+			"\tc = cos(a.z);",
+			"\tsn = sin(a.z);",
+			"\trv.x = p.x*c+p.y*sn;",
+			"\trv.y = -p.x*sn+p.y*c;",
+			"\trv.z = p.z;",
+			"\treturn rv;",
+			"}"
+		],
+		"includes": [
+			"mm_noise3d"
 		],
 		"inputs": [
 			{
@@ -108,6 +142,24 @@
 				"name": "variations",
 				"shortdesc": "Variations",
 				"type": "boolean"
+			},
+			{
+				"default": 0,
+				"label": "Hash",
+				"longdesc": "Legacy hashes with sin(), whose results differ between GPUs and compilers (kept so existing graphs do not change). Exact uses an integer hash that gives the same values in the preview and in exported HLSL",
+				"name": "hash",
+				"shortdesc": "Hash",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Legacy",
+						"value": ""
+					},
+					{
+						"name": "Exact",
+						"value": "mmx7_"
+					}
+				]
 			}
 		],
 		"shortdesc": "Repeat"

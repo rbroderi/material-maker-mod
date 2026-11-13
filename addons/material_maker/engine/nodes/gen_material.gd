@@ -426,6 +426,36 @@ func set_3d_previews(previews : Dictionary[Node, Array]):
 
 # Export filters
 
+# GLSL's matrix * vector is mul(matrix, vector) in HLSL (the matrix constructors are already
+# column major, see process_option_hlsl_base): tofloat3x3(...)*v becomes mul(tofloat3x3(...), v)
+func wrap_matrix_products(s : String) -> String:
+	for ctor in [ "tofloat3x3(", "tofloat4x4(" ]:
+		var from : int = 0
+		while true:
+			var i : int = s.find(ctor, from)
+			if i == -1:
+				break
+			var close : int = MMGenBase.find_matching_parenthesis(s, i+ctor.length()-1)
+			if close == -1:
+				break
+			from = close+1
+			var j : int = close+1
+			while j < s.length() and s[j] in " \t\r\n":
+				j += 1
+			if j >= s.length()-1 or s[j] != "*" or s[j+1] == "=":
+				continue
+			j += 1
+			while j < s.length() and s[j] in " \t\r\n":
+				j += 1
+			var m : RegExMatch = RegEx.create_from_string("^[A-Za-z_]\\w*(\\.[xyzw]+)?").search(s.substr(j, 64))
+			if m == null:
+				continue
+			var end : int = j+m.get_string().length()
+			var wrapped : String = "mul("+s.substr(i, close+1-i)+", "+m.get_string()+")"
+			s = s.left(i)+wrapped+s.substr(end)
+			from = i+wrapped.length()
+	return s
+
 func process_option_hlsl_base(s : String, is_declaration : bool = false) -> String:
 	# Unsigned vectors, 3x3 and 4x4 matrices and inversesqrt (word-bounded). Must
 	# precede the vec rules, that would turn uvec3( into utofloat3(
@@ -435,6 +465,7 @@ func process_option_hlsl_base(s : String, is_declaration : bool = false) -> Stri
 	s = RegEx.create_from_string("\\bmat3\\b").sub(s, "float3x3", true)
 	s = RegEx.create_from_string("\\bmat4\\s*\\(").sub(s, "tofloat4x4(", true)
 	s = RegEx.create_from_string("\\bmat4\\b").sub(s, "float4x4", true)
+	s = wrap_matrix_products(s)
 	s = RegEx.create_from_string("\\binversesqrt\\s*\\(").sub(s, "rsqrt(", true)
 	s = s.replace("ivec2(", "toint2(")
 	s = s.replace("ivec3(", "toint3(")

@@ -65,10 +65,51 @@
 			"\t\ts = 0.5*s;",
 			"\t}",
 			"\treturn d;",
+			"}",
+			"",
+			"float mmx5_sph( ivec3 i, vec3 f, ivec3 c, uint s )",
+			"{",
+			"\tivec3 k = i+c;",
+			"\tfloat rad = 0.5*mm_n3_hash(k.x, k.y, k.z, s);",
+			"\treturn length(f-vec3(c)) - rad;",
+			"}",
+			"",
+			"float mmx5_base( vec3 p, uint s )",
+			"{",
+			"\tivec3 i = ivec3(floor(p));",
+			"\tvec3 f = fract(p);",
+			"\treturn min(min(min(mmx5_sph(i,f,ivec3(0,0,0), s),",
+			"\t\t\tmmx5_sph(i,f,ivec3(0,0,1), s)),",
+			"\t\tmin(mmx5_sph(i,f,ivec3(0,1,0), s),",
+			"\t\t\tmmx5_sph(i,f,ivec3(0,1,1), s))),",
+			"\tmin(min(mmx5_sph(i,f,ivec3(1,0,0), s),",
+			"\t\t\tmmx5_sph(i,f,ivec3(1,0,1), s)),",
+			"\t\tmin(mmx5_sph(i,f,ivec3(1,1,0), s),",
+			"\t\t\tmmx5_sph(i,f,ivec3(1,1,1), s))));",
+			"}",
+			"",
+			"float sdmmx5_Fbm( vec3 p, float d, int iterations, float smoothness, float seed, float scaling, int mode)",
+			"{",
+			"\tuint s0 = mm_n3_seed(mod(seed*16777215.0, 16777216.0));",
+			"\tfloat s = 1.0;",
+			"\tfor( int i=0; i<iterations; i++ )",
+			"\t{",
+			"\t\tfloat n = s*mmx5_base(p, s0);",
+			"\t\tif(mode == 0) {",
+			"\t\t\tn = smax(n,d - scaling * s,smoothness * s);",
+			"\t\t\td = smin(n,d,smoothness * s);",
+			"\t\t} else {",
+			"\t\t\td = smax(d - scaling * s, -n, smoothness * s );",
+			"\t\t}",
+			"\t\tp = vec3(0.02, 1.60, 1.20)*p.x + vec3(-1.60, 0.72,-0.96)*p.y + vec3(-1.20,-0.96, 1.28)*p.z;",
+			"\t\ts = 0.5*s;",
+			"\t}",
+			"\treturn d;",
 			"}"
 		],
 		"includes": [
 			"smooth_minmax",
+			"mm_noise3d",
 			"tex3d_fbm"
 		],
 		"inputs": [
@@ -86,7 +127,7 @@
 		"name": "SDF FBM",
 		"outputs": [
 			{
-				"sdf3d": "sdFbm($uv, $distance($uv), int($iterations), $smoothness, $seed, $scaling, $mode)",
+				"sdf3d": "sd$(hash)Fbm($uv, $distance($uv), int($iterations), $smoothness, $seed, $scaling, $mode)",
 				"type": "sdf3d"
 			}
 		],
@@ -144,6 +185,24 @@
 				"shortdesc": "Scaling",
 				"step": 0.01,
 				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Hash",
+				"longdesc": "Legacy hashes with sin(), whose results differ between GPUs and compilers (kept so existing graphs do not change). Exact uses an integer hash that gives the same values in the preview and in exported HLSL",
+				"name": "hash",
+				"shortdesc": "Hash",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Legacy",
+						"value": ""
+					},
+					{
+						"name": "Exact",
+						"value": "mmx5_"
+					}
+				]
 			}
 		],
 		"shortdesc": "SDF FBM"

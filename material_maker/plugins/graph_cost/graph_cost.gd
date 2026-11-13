@@ -95,14 +95,52 @@ static func estimate_output(generator : MMGenBase, output_index : int) -> Dictio
 	var value : String = source.output_values.get(source.output_type, "")
 	# Only the declarations that the output calls: a node can carry several versions of
 	# a function (the Hash parameter of the 3D noises), and the lint must judge the one in use
-	var code : String = source.get_globals_string(source.defs+source.code+value)+"\n"+source.defs+"\nfloat mm_entry() {\n"+source.code+"\n"+value+";\n}\n"
+	var globals : String = source.get_globals_string(source.defs+source.code+value)
+	var body : String = source.defs+"\nfloat mm_entry() {\n"+source.code+"\n"+value+";\n}\n"
+	var code : String = globals+"\n"+body
 	var constants : Dictionary = {}
 	for u in source.uniforms:
 		if u.value is float or u.value is int:
 			constants[u.name] = u.value
 	var rv : Dictionary = estimate_glsl(code, "mm_entry", constants)
-	rv.parity_warnings = Array(lint_parity(code))
+	# get_globals_string keeps a declaration when its name is a substring of the code, so
+	# blend_dissolve_exact also brings blend_dissolve: lint only what the entry really calls
+	rv.parity_warnings = Array(lint_parity(reachable_code(globals, body)))
 	return rv
+
+## The declarations of globals that body calls (directly or through other declarations),
+## followed by body. Names are matched as whole identifiers.
+static func reachable_code(globals : String, body : String) -> String:
+	var declarations : Array[String] = MMGenBase.split_glsl(globals)
+	var names : PackedStringArray = PackedStringArray()
+	var identifiers : Array = []
+	for d in declarations:
+		names.append(MMGenBase.get_glsl_declaration_name(d))
+		var ids : Dictionary = {}
+		for m in re_identifier.search_all(d):
+			ids[m.get_string()] = true
+		identifiers.append(ids)
+	var used : Dictionary = {}
+	for m in re_identifier.search_all(MMGenBase.remove_comments(body)):
+		used[m.get_string()] = true
+	var kept : Array[bool] = []
+	kept.resize(declarations.size())
+	kept.fill(false)
+	var changed : bool = true
+	while changed:
+		changed = false
+		for i in declarations.size():
+			if kept[i]:
+				continue
+			if names[i] == "" or used.has(names[i]):
+				kept[i] = true
+				changed = true
+				used.merge(identifiers[i])
+	var rv : String = ""
+	for i in declarations.size():
+		if kept[i]:
+			rv += declarations[i]+"\n"
+	return rv+"\n"+body
 
 ## The cost of a material: the sum of the costs of the sources of its inputs
 static func estimate_material(material : MMGenBase) -> Dictionary:

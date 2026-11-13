@@ -34,7 +34,7 @@ The **Blend** node has two or more parameters:
 * The *blend mode*, that can be one of the following: *Normal*, *Dissolve*, *Multiply*, *Screen*,
   *Overlay*, *Hard Light*, *Soft Light*, *Linear Light*, *Vivid Light*, *Pin Light*, *Burn*, *Dodge*,
   *Lighten*, *Darken*, *Difference*, *Additive*, *AddSub*, *Hard Mix*, *Exclusion*, *Hue*, *Saturation*,
-  *Color*, *Value*.
+  *Color*, *Value*, *Dissolve (Exact)*.
 
 * The *opacity* used when mixing the result of the blend operation with the bottom input
   when the corresponding input is not connected. When connected, the opacity channel is
@@ -97,6 +97,8 @@ Blending modes
 | Normal                | |blend_normal|                | This is the default blend mode. It simply displays the top layer over the bottom layer without any blending                   |
 +-----------------------+-------------------------------+-------------------------------------------------------------------------------------------------------------------------------+
 | Dissolve              | |blend_dissolve|              | This blend mode randomly replaces the pixels of the top layer with the pixels of the bottom layer                             |
++-----------------------+-------------------------------+-------------------------------------------------------------------------------------------------------------------------------+
+| Dissolve (Exact)      | |blend_dissolve|              | Same as Dissolve, but with an integer hash on a grid of 16384 cells per unit: the same in the preview and in exports          |
 +-----------------------+-------------------------------+-------------------------------------------------------------------------------------------------------------------------------+
 | Multiply              | |blend_multiply|              | This blend mode multiplies the colors of the two layers, resulting in a darker image                                          |
 +-----------------------+-------------------------------+-------------------------------------------------------------------------------------------------------------------------------+

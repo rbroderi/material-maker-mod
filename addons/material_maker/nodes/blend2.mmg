@@ -127,7 +127,8 @@
 		],
 		"includes": [
 			"blend",
-			"adjust_hsv"
+			"adjust_hsv",
+			"mm_noise3d"
 		],
 		"inputs": [
 			{
@@ -266,6 +267,10 @@
 					{
 						"name": "Value",
 						"value": "value"
+					},
+					{
+						"name": "Dissolve (Exact)",
+						"value": "dissolve_exact"
 					}
 				]
 			},
