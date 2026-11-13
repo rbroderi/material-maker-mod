@@ -14,7 +14,7 @@
 	"seed": 714,
 	"shader_model": {
 		"code": [
-			"vec4 $(name_uv)_xyzw = voronoi_3d($uv.xyz, vec3($scale_x, $scale_y, $scale_z), $intensity, $randomness, $seed);",
+			"vec4 $(name_uv)_xyzw = v$(hash)oronoi_3d($uv.xyz, vec3($scale_x, $scale_y, $scale_z), $intensity, $randomness, $seed);",
 			"vec3 $(name_uv)_cc = fract(floor($(name_uv)_xyzw.xyz)/vec3($scale_x, $scale_y, $scale_z));"
 		],
 		"global": [
@@ -65,7 +65,76 @@
 			"\tvec4 v = iq_voronoi_3d(uv, size, randomness, rand2(vec2(seed, 1.0-seed)));",
 			"\treturn vec4(v.yzw, v.x);",
 			"}",
-			""
+			"",
+			"uint mmx4_seed(float seed) {",
+			"\treturn mm_n3_seed(mod(seed*16777215.0, 16777216.0));",
+			"}",
+			"",
+			"vec3 mmx4_offset(vec3 cell, vec3 size, uint s) {",
+			"\tint x = mm_n3_wrap(int(cell.x), int(size.x));",
+			"\tint y = mm_n3_wrap(int(cell.y), int(size.y));",
+			"\tint z = mm_n3_wrap(int(cell.z), int(size.z));",
+			"\treturn vec3(mm_n3_hash(x, y, z, s), mm_n3_hash(x, y, z, s+1u), mm_n3_hash(x, y, z, s+2u));",
+			"}",
+			"",
+			"vec4 mmx4_cells(vec3 x, vec3 size, float randomness, uint s) {",
+			"\tvec3 n = floor(x);",
+			"\tvec3 f = x-n;",
+			"\tvec3 mg = vec3(0.0);",
+			"\tvec3 mr = vec3(0.0);",
+			"\tvec3 mc = vec3(0.0);",
+			"\tfloat md = 8.0;",
+			"\tfor (int k = -1; k <= 1; k++) {",
+			"\t\tfor (int j = -1; j <= 1; j++) {",
+			"\t\t\tfor (int i = -1; i <= 1; i++) {",
+			"\t\t\t\tvec3 g = vec3(float(i), float(j), float(k));",
+			"\t\t\t\tvec3 o = randomness*mmx4_offset(n + g, size, s);",
+			"\t\t\t\tvec3 c = g + o;",
+			"\t\t\t\tvec3 r = c - f;",
+			"\t\t\t\tfloat d = dot(r, r);",
+			"\t\t\t\tif (d < md) {",
+			"\t\t\t\t\tmc = c;",
+			"\t\t\t\t\tmd = d;",
+			"\t\t\t\t\tmr = r;",
+			"\t\t\t\t\tmg = g;",
+			"\t\t\t\t}",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\tmd = 8.0;",
+			"\tfor (int k = -2; k <= 2; k++) {",
+			"\t\tfor (int j = -2; j <= 2; j++) {",
+			"\t\t\tfor (int i = -2; i <= 2; i++) {",
+			"\t\t\t\tvec3 g = mg + vec3(float(i), float(j), float(k));",
+			"\t\t\t\tvec3 o = randomness*mmx4_offset(n + g, size, s);",
+			"\t\t\t\tvec3 r = g + o - f;",
+			"\t\t\t\tif (dot(r - mr, r - mr) > 0.00001) {",
+			"\t\t\t\t\tmd = min(md, dot(0.5*(mr+r), normalize(r-mr)));",
+			"\t\t\t\t}",
+			"\t\t\t}",
+			"\t\t}",
+			"\t}",
+			"\treturn vec4(md, mc+n);",
+			"}",
+			"",
+			"vec4 vmmx4_oronoi_3d(vec3 uv, vec3 size, float intensity, float randomness, float seed) {",
+			"\tuv *= size;",
+			"\tvec4 v = mmx4_cells(uv, size, randomness, mmx4_seed(seed));",
+			"\treturn vec4(v.yzw, v.x);",
+			"}",
+			"",
+			"float rmmx4_and(vec2 p) {",
+			"\treturn mm_n3_hash(int(floor(p.x*4096.0+0.5)), int(floor(p.y*4096.0+0.5)), 0, 10u);",
+			"}",
+			"",
+			"vec3 rmmx4_and3(vec2 p) {",
+			"\tint a = int(floor(p.x*16777216.0+0.5));",
+			"\tint b = int(floor(p.y*16777216.0+0.5));",
+			"\treturn vec3(mm_n3_hash(a, b, 0, 11u), mm_n3_hash(a, b, 0, 12u), mm_n3_hash(a, b, 0, 13u));",
+			"}"
+		],
+		"includes": [
+			"mm_noise3d"
 		],
 		"inputs": [
 
@@ -89,7 +158,7 @@
 			{
 				"longdesc": "A color pattern that assigns a random color to each cell",
 				"shortdesc": "Random color",
-				"tex3d": "rand3(vec2(rand($(name_uv)_cc.xy), rand($(name_uv)_cc.yz)))",
+				"tex3d": "r$(hash)and3(vec2(r$(hash)and($(name_uv)_cc.xy), r$(hash)and($(name_uv)_cc.yz)))",
 				"type": "tex3d"
 			}
 		],
@@ -153,6 +222,24 @@
 				"shortdesc": "Randomness",
 				"step": 0.01,
 				"type": "float"
+			},
+			{
+				"default": 0,
+				"label": "Hash",
+				"longdesc": "Legacy hashes with sin(), whose results differ between GPUs and compilers (kept so existing graphs do not change). Exact uses an integer hash that gives the same values in the preview and in exported HLSL",
+				"name": "hash",
+				"shortdesc": "Hash",
+				"type": "enum",
+				"values": [
+					{
+						"name": "Legacy",
+						"value": ""
+					},
+					{
+						"name": "Exact",
+						"value": "mmx4_"
+					}
+				]
 			}
 		],
 		"shortdesc": "Voronoi Noise"
