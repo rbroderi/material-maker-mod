@@ -35,6 +35,15 @@
 			"vec3 mm_vox_lin(vec3 c) {",
 			"\treturn vec3(mm_vox_lin1(c.x), mm_vox_lin1(c.y), mm_vox_lin1(c.z));",
 			"}",
+			"// The normal input, or the direction of the position when there is none (as Voxel Inputs)",
+			"vec3 mm_vox_mat_normal(vec3 n, vec3 p) {",
+			"\tfloat l = dot(n, n);",
+			"\treturn (l > 0.25) ? n/sqrt(l) : normalize(p+vec3(0.0, 0.0, 0.000001));",
+			"}",
+			"",
+			"vec3 mm_vox_bump(vec3 n, vec3 g, float b) {",
+			"\treturn normalize(n - b*(g - n*dot(g, n)));",
+			"}",
 			""
 		],
 		"inputs": [
@@ -108,7 +117,7 @@
 			{
 				"longdesc": "Occlusion, roughness and metallic",
 				"shortdesc": "ORM",
-				"tex3d": "vec3($ao_tex($uv), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
+				"tex3d": "vec3(mix(1.0, $ao_tex($uv), $ao), $roughness*$roughness_tex($uv), $metallic*$metallic_tex($uv))",
 				"type": "tex3d"
 			},
 			{
@@ -120,7 +129,7 @@
 			{
 				"longdesc": "Bumped object-space normal",
 				"shortdesc": "Normal",
-				"tex3d": "normalize(vec3($?1, $?2, $?3) - $bump*($bump_tex($uv) - vec3($?1, $?2, $?3)*dot($bump_tex($uv), vec3($?1, $?2, $?3))))",
+				"tex3d": "mm_vox_bump(mm_vox_mat_normal(vec3($?1, $?2, $?3), $uv.xyz), $bump_tex($uv), $bump)",
 				"type": "tex3d"
 			},
 			{
@@ -246,8 +255,7 @@
 			"\tROUGHNESS = $roughness*$roughness_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
 			"\tSPECULAR = 0.5;",
 			"\tEMISSION = $emission_energy*$emission_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
-			"\tAO = $ao_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
-			"\tAO_LIGHT_AFFECT = $ao;",
+			"\tAO = mix(1.0, $ao_tex(vec4(mm_vox_p*$preview_scale, 0.0)), $ao);",
 			"\tvec3 mm_g = $bump_tex(vec4(mm_vox_p*$preview_scale, 0.0));",
 			"\tvec3 mm_nb = normalize(mm_n - $bump*(mm_g - mm_n*dot(mm_g, mm_n)));",
 			"\tNORMAL = normalize((VIEW_MATRIX*MODEL_MATRIX*vec4(mm_nb, 0.0)).xyz);",

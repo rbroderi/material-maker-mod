@@ -196,10 +196,31 @@ def check_voxel(mat):
         fail('MP_NORMAL is not connected')
     if mat.props.get('tangent_space_normal') is not False:
         fail('tangent_space_normal is not set to False')
-    # the normal comes from the Custom expression, through a transform
+    # the normal comes from the Custom expression, through the inverse transpose
+    # transform (Transform + DotProduct + AppendVector + Normalize nodes)
     source = normal_connections[0][0]
-    if not any(c[2] is source and c[0] is custom for c in mat.node_connections):
+    reached = set()
+    todo = [source]
+    while todo:
+        node = todo.pop()
+        if id(node) in reached:
+            continue
+        reached.add(id(node))
+        todo.extend(c[0] for c in mat.node_connections if c[2] is node)
+    if id(custom) not in reached:
         fail('MP_NORMAL is not fed by the Custom expression output')
+    if source.type != 'Normalize':
+        fail('MP_NORMAL is not normalized (%s)' % source.type)
+    kinds = {}
+    for n in mat.nodes:
+        if id(n) in reached:
+            kinds[n.type] = kinds.get(n.type, 0) + 1
+    if kinds.get('DotProduct') != 6 or kinds.get('Transform') != 6 or kinds.get('Normalize') != 2:
+        fail('the normal is not transformed with the inverse transpose (3 basis vectors in each direction): %s' % kinds)
+    # the Normal input of the Custom expression is made the same way, from the world normal
+    normal_in = [c[0] for c in mat.node_connections if c[2] is custom and c[3] == 'Normal']
+    if len(normal_in) != 1 or normal_in[0].type != 'Normalize':
+        fail('the Normal input of the Custom expression is not a normalized inverse transpose transform')
     if not mat.saved:
         fail('the material was not saved')
 

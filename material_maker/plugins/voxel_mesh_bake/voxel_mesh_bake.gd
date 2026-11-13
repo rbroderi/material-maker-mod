@@ -22,6 +22,10 @@ const MAPS : Array[Dictionary] = [
 	{ suffix="opacity", name="opacity", encoding="linear" },
 ]
 
+## Smallest extent of the bounding box used to normalize positions: a flat mesh
+## (a quad) has a zero extent on one axis, which must not be divided by
+const MIN_EXTENT : float = 0.000001
+
 ## The error of the last failed call
 static var last_error : String = ""
 
@@ -132,7 +136,9 @@ static func bake(graph : MMGenBase, mesh : Mesh, size : int, prefix : String, un
 	if position_image.get_width() != size or normal_image.get_width() != size:
 		return { error="the position and normal maps could not be baked" }
 	var aabb : AABB = single.get_aabb()
-	var position_scale : Vector3 = aabb.size*unit_scale
+	# (the position map is (position-aabb.position)/max(aabb.size, MIN_EXTENT), see
+	# position_vertex.tres: it is 0 on a flat axis, which maps back to aabb.position)
+	var position_scale : Vector3 = aabb.size.max(Vector3.ONE*MIN_EXTENT)*unit_scale
 	var position_offset : Vector3 = aabb.position*unit_scale
 	# (the maps are copied so that they keep their full precision)
 	var position_tex : MMTexture = MMTexture.from_image(position_image)

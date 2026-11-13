@@ -294,6 +294,38 @@ static func emit_scalar(lines : PackedStringArray, src : Dictionary, tag : Strin
 		result = [ "Scale_"+tag, "" ]
 	return result
 
+static func normal_transform_lines() -> PackedStringArray:
+	# (the same helper as the Unreal Engine 5 Voxel export target)
+	return PackedStringArray([
+		"# Normals are transformed with the inverse transpose of the local to world matrix M, so",
+		"# that they stay perpendicular to the surface under a non-uniform object scale:",
+		"# n_local = M^T n_world and n_world = M^-T n_local. Component i of both is the dot",
+		"# product of the normal with a basis vector transformed by the vector Transform",
+		"# (local to world for M^T, world to local for M^-T), which needs no scale value.",
+		"def normal_transform(vec, pin, basis_source, basis_target, x, y):",
+		"    dots = []",
+		"    for i, e in enumerate([(1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0)]):",
+		"        c = mat.add_node('Constant3Vector', x, y+120*i)",
+		"        c.set_editor_property('constant', unreal.LinearColor(e[0], e[1], e[2], 0.0))",
+		"        t = mat.add_node('Transform', x+200, y+120*i)",
+		"        t.set_editor_property('transform_source_type', basis_source)",
+		"        t.set_editor_property('transform_type', basis_target)",
+		"        d = mat.add_node('DotProduct', x+400, y+120*i)",
+		"        mat.connect_nodes(c, '', t, '')",
+		"        mat.connect_nodes(t, '', d, 'A')",
+		"        mat.connect_nodes(vec, pin, d, 'B')",
+		"        dots.append(d)",
+		"    a = mat.add_node('AppendVector', x+600, y)",
+		"    mat.connect_nodes(dots[0], '', a, 'A')",
+		"    mat.connect_nodes(dots[1], '', a, 'B')",
+		"    b = mat.add_node('AppendVector', x+700, y)",
+		"    mat.connect_nodes(a, '', b, 'A')",
+		"    mat.connect_nodes(dots[2], '', b, 'B')",
+		"    n = mat.add_node('Normalize', x+800, y)",
+		"    mat.connect_nodes(b, '', n, '')",
+		"    return n",
+	])
+
 ## The Unreal Python script of the master material (see the plan, WP11)
 static func material_script(built : Dictionary, config : Dictionary, shader_path : String, texture_files : Dictionary) -> String:
 	var lines : PackedStringArray = PackedStringArray()
@@ -310,6 +342,7 @@ static func material_script(built : Dictionary, config : Dictionary, shader_path
 	lines.append("# in the configuration (see %s.master.json)." % config.name)
 	lines.append("mat = mm.Material(%s, True)" % py_str(config.name))
 	lines.append("mat.clear()")
+	lines.append_array(normal_transform_lines())
 	lines.append("Custom_0 = mat.add_node('Custom', -264, 80)")
 	lines.append("Custom_0.set_editor_property('code', mm.read_text_file(%s))" % py_str(shader_path.replace("\\", "/")))
 	lines.append("Custom_0.set_editor_property('output_type', unreal.CustomMaterialOutputType.CMOT_FLOAT4)")
@@ -332,13 +365,10 @@ static func material_script(built : Dictionary, config : Dictionary, shader_path
 	lines.append("mat.connect_nodes(WorldPosition_0, '', TransformPosition_0, '')")
 	lines.append("mat.connect_nodes(TransformPosition_0, '', Multiply_0, 'A')")
 	lines.append("mat.connect_nodes(Multiply_0, '', Custom_0, 'Position')")
-	lines.append("# Normal: world normal to local space")
+	lines.append("# Normal: world normal to local space (inverse transpose, see normal_transform)")
 	lines.append("VertexNormal_0 = mat.add_node('VertexNormalWS', -1100, 120)")
-	lines.append("Transform_0 = mat.add_node('Transform', -900, 120)")
-	lines.append("Transform_0.set_editor_property('transform_source_type', unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_WORLD)")
-	lines.append("Transform_0.set_editor_property('transform_type', unreal.MaterialVectorCoordTransform.TRANSFORM_LOCAL)")
-	lines.append("mat.connect_nodes(VertexNormal_0, '', Transform_0, '')")
-	lines.append("mat.connect_nodes(Transform_0, '', Custom_0, 'Normal')")
+	lines.append("NormalToLocal_0 = normal_transform(VertexNormal_0, '', unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_LOCAL, unreal.MaterialVectorCoordTransform.TRANSFORM_WORLD, -1700, 400)")
+	lines.append("mat.connect_nodes(NormalToLocal_0, '', Custom_0, 'Normal')")
 	# Per-thing values and the id, from the configured sources
 	lines.append("# Per-thing values and the recipe id")
 	var y : int = 240
@@ -416,11 +446,8 @@ static func material_script(built : Dictionary, config : Dictionary, shader_path
 		lines.append("%s_object.set_editor_property('texture', %s_asset)" % [ input, input ])
 		lines.append("mat.connect_nodes(%s_object, '', Custom_0, %s)" % [ input, py_str(input) ])
 		ty += 170
-	lines.append("# The normal is in object space: back to world space for the material")
-	lines.append("NormalToWorld_0 = mat.add_node('Transform', -100, 200)")
-	lines.append("NormalToWorld_0.set_editor_property('transform_source_type', unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_LOCAL)")
-	lines.append("NormalToWorld_0.set_editor_property('transform_type', unreal.MaterialVectorCoordTransform.TRANSFORM_WORLD)")
-	lines.append("mat.connect_nodes(Custom_0, 'normal', NormalToWorld_0, '')")
+	lines.append("# The normal is in object space: back to world space for the material (inverse transpose)")
+	lines.append("NormalToWorld_0 = normal_transform(Custom_0, 'normal', unreal.MaterialVectorCoordTransformSource.TRANSFORMSOURCE_WORLD, unreal.MaterialVectorCoordTransform.TRANSFORM_LOCAL, 300, 600)")
 	lines.append("mat.set_editor_property('tangent_space_normal', False)")
 	lines.append("mat.connect_property(Custom_0, 'return', unreal.MaterialProperty.MP_BASE_COLOR)")
 	lines.append("mat.connect_property(Custom_0, 'metallic', unreal.MaterialProperty.MP_METALLIC)")

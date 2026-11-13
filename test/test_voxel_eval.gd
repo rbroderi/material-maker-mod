@@ -203,6 +203,72 @@ func test_evaluate_material() -> void:
 	assert_almost_eq(results.base_color[0], p.x, 1e-5)
 	assert_almost_eq(results.base_color[2], p.z, 1e-5)
 
+# Without normals the graph sees a zero normal: the Normal output must still be a
+# finite unit vector (the direction of the point, as Voxel Inputs gives), with and
+# without a bump connected
+func test_evaluate_without_normals_is_finite_and_unit() -> void:
+	if not gpu_available():
+		pending("needs a rendering device")
+		return
+	await make_graph()
+	var count : int = 3000
+	var arrays : Dictionary = make_arrays(count)
+	# (the first point is the origin, whose direction is not defined)
+	arrays.points[0] = 0.0
+	arrays.points[1] = 0.0
+	arrays.points[2] = 0.0
+	for bump in [ 0.0, 1.0 ]:
+		graph.get_node("Material").set_parameter("bump", bump)
+		var results : Dictionary = await MMVoxelEval.evaluate_material(graph.get_node("Material"), arrays.points)
+		assert_false(results.is_empty(), MMVoxelEval.last_error)
+		var worst_length : float = 0.0
+		var worst_direction : float = 0.0
+		for i in count:
+			var n : Vector3 = Vector3(results.normal[i*3], results.normal[i*3+1], results.normal[i*3+2])
+			if not (is_finite(n.x) and is_finite(n.y) and is_finite(n.z)):
+				fail_test("point %d has a non finite normal %s (bump %s)" % [ i, str(n), str(bump) ])
+				return
+			worst_length = maxf(worst_length, absf(n.length()-1.0))
+			if i > 0:
+				var p : Vector3 = Vector3(arrays.points[i*3], arrays.points[i*3+1], arrays.points[i*3+2]).normalized()
+				worst_direction = maxf(worst_direction, (n-p).length())
+		assert_lt(worst_length, 1e-5, "unit normals (bump %s)" % str(bump))
+		# (no bump input: the normal is the direction of the point)
+		assert_lt(worst_direction, 1e-5, "direction of the point (bump %s)" % str(bump))
+		assert_eq(results.normal[2], 1.0, "origin falls back to +Z")
+
+# The ORM ambient occlusion is mix(1, ao_tex, ao), as in the Unreal export and the preview
+func test_evaluate_material_ao_parameter() -> void:
+	if not gpu_available():
+		pending("needs a rendering device")
+		return
+	await make_graph()
+	var ao_graph : MMGenGraph = await mm_loader.create_gen({
+		nodes=[
+			{ name="In", type="voxel_inputs" },
+			{ name="Material", type="material_voxel", parameters={ linear_albedo=true, ao=0.4 } },
+			{ name="Noise", type="tex3d_noise_value", parameters={ scale_x=4, scale_y=4, scale_z=4 } },
+		],
+		connections=[
+			{ from="In", from_port=2, to="Noise", to_port=0 },
+			{ from="Noise", from_port=0, to="Material", to_port=4 },
+		]
+	})
+	add_child(ao_graph)
+	var count : int = 1000
+	var arrays : Dictionary = make_arrays(count)
+	var worst : float = 0.0
+	for ao in [ 0.4, 0.0, 1.0 ]:
+		ao_graph.get_node("Material").set_parameter("ao", ao)
+		var results : Dictionary = await MMVoxelEval.evaluate_material(ao_graph.get_node("Material"), arrays.points, arrays.normals)
+		assert_false(results.is_empty(), MMVoxelEval.last_error)
+		for i in count:
+			var p : Vector3 = Vector3(arrays.points[i*3], arrays.points[i*3+1], arrays.points[i*3+2])*4.0
+			var expected : float = lerpf(1.0, Noise3d.value_noise(p, 0), ao)
+			worst = maxf(worst, absf(results.orm[i*3]-expected))
+	ao_graph.free()
+	assert_lt(worst, 1e-5, "orm.r = mix(1, ao_tex, ao)")
+
 func test_evaluate_noise() -> void:
 	if not gpu_available():
 		pending("needs a rendering device")

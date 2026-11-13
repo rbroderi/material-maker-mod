@@ -77,7 +77,9 @@ func test_shader_text() -> void:
 	assert_ne(shader, "")
 	check_shader(shader)
 	# the sRGB decode of the default (non linear) albedo and the bump
-	assert_string_contains(shader, "pow((mm_alb+float3(0.055")
+	# (a ternary per channel like the GLSL: pow of a negative base must not reach the result)
+	assert_string_contains(shader, "(mm_alb.x < 0.04045) ? mm_alb.x/12.92 : pow(max((mm_alb.x+0.055)/1.055, 0.0), 2.4)")
+	assert_false(shader.contains("lerp(pow("))
 	assert_string_contains(shader, "normal = normalize(n - ")
 	assert_string_contains(shader, "float3 vox_axis; float3 vox_origin;")
 
@@ -86,7 +88,7 @@ func test_linear_albedo_has_no_srgb_decode() -> void:
 	material.set_parameter("linear_albedo", true)
 	var prefix : String = await do_export("linear")
 	var shader : String = read_file(prefix+".shader")
-	assert_false(shader.contains("pow((mm_alb+float3(0.055"))
+	assert_false(shader.contains("0.04045"))
 	check_shader(shader)
 
 func test_py_template() -> void:

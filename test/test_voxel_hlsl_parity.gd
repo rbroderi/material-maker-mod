@@ -238,6 +238,33 @@ func make_cases() -> Dictionary:
 			{ things={ seed=16777215, age=1.0, axis=[ 0.6, 0.0, 0.8 ], origin=[ 0.5, 0.5, 0.5 ] } } ],
 		tol=TOL_COLOR
 	}
+	# P7: the default sRGB decoding (linear_albedo=false) of albedos that are negative or
+	# around the 0.04045 threshold (the HLSL used to give NaN below -0.055)
+	cases["p7_srgb_position"] = {
+		mat={ linear_albedo=false },
+		wires=[ [ "In", 0, "Material", 0 ] ],
+		variants=[ { things={} } ],
+		tol=TOL_COLOR
+	}
+	var srgb_variants : Array = []
+	for o : Array in [ [ -0.3, 0.04045, 0.04 ], [ 0.04044, 0.04046, -0.056 ], [ -0.06, 0.5, 2.0 ], [ 0.0, -1.0, 0.0404 ], [ 0.0405, 0.9, -0.0001 ] ]:
+		srgb_variants.append({ things={ origin=o } })
+	cases["p7_srgb_threshold"] = {
+		mat={ linear_albedo=false, albedo_color={ r=0.9, g=0.6, b=0.3, a=1.0, type="Color" } },
+		wires=[ [ "In", 9, "Material", 0 ] ],
+		variants=srgb_variants,
+		tol=TOL_COLOR
+	}
+	# P8: non-default material parameters (colour, metallic, roughness, emission, ao and bump
+	# scale the corresponding inputs)
+	cases["p8_material_params"] = {
+		nodes={ N=[ "tex3d_noise_value", {} ], F=[ "tex3d_noise_fbm", { octaves=3.0 } ], G=[ "tex3d_gradient", { mode=1 } ] },
+		mat={ linear_albedo=false, albedo_color={ r=0.8, g=0.5, b=0.2, a=1.0, type="Color" }, metallic=0.7, roughness=0.4, emission_energy=0.6, ao=0.5, bump=0.04 },
+		wires=[ [ "In", 2, "N", 0 ], [ "In", 2, "F", 0 ], [ "F", 0, "G", 0 ], [ "N", 0, "Material", 0 ], [ "F", 0, "Material", 1 ], [ "N", 0, "Material", 2 ],
+				[ "F", 0, "Material", 3 ], [ "N", 0, "Material", 4 ], [ "G", 0, "Material", 6 ] ],
+		variants=[ { things={ seed=5 } }, { things={ seed=12345 }, set={ Material={ ao=0.0 } } }, { things={ seed=9 }, set={ Material={ ao=1.0, metallic=0.0, emission_energy=0.0 } } } ],
+		tol=TOL_COLOR
+	}
 	# P6, informational: the legacy node, hashed with sin
 	cases["p6_legacy_fbm"] = {
 		nodes={ L=[ "tex3d_fbm", {} ] },
@@ -249,7 +276,7 @@ func make_cases() -> Dictionary:
 	return cases
 
 func build(c : Dictionary) -> void:
-	var nodes : Array = [ { name="Material", type="material_voxel", parameters=c.get("mat", {}).merged({ linear_albedo=true }) }, { name="In", type="voxel_inputs" } ]
+	var nodes : Array = [ { name="Material", type="material_voxel", parameters={ linear_albedo=true }.merged(c.get("mat", {}), true) }, { name="In", type="voxel_inputs" } ]
 	for k : String in c.get("nodes", {}).keys():
 		nodes.append({ name=k, type=c.nodes[k][0], parameters=c.nodes[k][1] })
 	var connections : Array = []
@@ -535,6 +562,15 @@ func test_p5_wood() -> void:
 		pending("voxel_wood is not available")
 		return
 	await run_case("p5_wood")
+
+func test_p7_srgb_position_default_decode() -> void:
+	await run_case("p7_srgb_position")
+
+func test_p7_srgb_threshold_default_decode() -> void:
+	await run_case("p7_srgb_threshold")
+
+func test_p8_material_params() -> void:
+	await run_case("p8_material_params")
 
 func test_p6_legacy_fbm_informational() -> void:
 	await run_case("p6_legacy_fbm")

@@ -231,6 +231,44 @@ func test_deterministic_and_obj() -> void:
 			check_cube_maps(prefix)
 	assert_eq(hashes[0], hashes[1])
 
+# A flat mesh (a quad of the plane z = 0.25) has a zero extent on one axis: the
+# baked maps must be finite, with the true position on the flat axis
+func test_bake_flat_quad() -> void:
+	if not gpu_available():
+		pending("needs a GPU")
+		return
+	await make_graph()
+	var arrays : Array = []
+	arrays.resize(Mesh.ARRAY_MAX)
+	arrays[Mesh.ARRAY_VERTEX] = PackedVector3Array([ Vector3(0, 0, 0.25), Vector3(1, 0, 0.25), Vector3(1, 1, 0.25), Vector3(0, 1, 0.25) ])
+	arrays[Mesh.ARRAY_NORMAL] = PackedVector3Array([ Vector3(0, 0, 1), Vector3(0, 0, 1), Vector3(0, 0, 1), Vector3(0, 0, 1) ])
+	arrays[Mesh.ARRAY_TEX_UV] = PackedVector2Array([ Vector2(0.1, 0.1), Vector2(0.9, 0.1), Vector2(0.9, 0.9), Vector2(0.1, 0.9) ])
+	arrays[Mesh.ARRAY_INDEX] = PackedInt32Array([ 0, 1, 2, 0, 2, 3 ])
+	var mesh : ArrayMesh = ArrayMesh.new()
+	mesh.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	var prefix : String = ProjectSettings.globalize_path(TEST_DIR).path_join("flat_quad")
+	var result : Dictionary = await VoxelMeshBake.bake(graph, mesh, SIZE, prefix, 1.0, "exr")
+	assert_false(result.has("error"), str(result.get("error", "")))
+	if result.has("error"):
+		return
+	assert_gt(result.position_scale.z, 0.0)
+	var basecolor : Image = read_image(prefix+"_basecolor.exr")
+	var normal : Image = read_image(prefix+"_normal_object.exr")
+	var checked : int = 0
+	for y in range(int(0.15*SIZE), int(0.85*SIZE), 7):
+		for x in range(int(0.15*SIZE), int(0.85*SIZE), 7):
+			var c : Color = basecolor.get_pixel(x, y)
+			var n : Color = normal.get_pixel(x, y)
+			for v in [ c.r, c.g, c.b, n.r, n.g, n.b ]:
+				if not is_finite(v):
+					fail_test("non finite texel %d,%d" % [ x, y ])
+					return
+			# the albedo is the position: z is the plane of the quad
+			assert_almost_eq(c.b, 0.25, 1e-3)
+			assert_almost_eq(n.b, 1.0, 1e-3, "normal 0.5+0.5*n with n = +Z")
+			checked += 1
+	assert_gt(checked, 40)
+
 func test_errors() -> void:
 	graph = MMGenGraph.new()
 	add_child(graph)
