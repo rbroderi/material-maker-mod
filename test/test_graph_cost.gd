@@ -81,6 +81,8 @@ func test_lint_unsafe_tokens() -> void:
 	assert_eq(MMGraphCost.lint_parity("void f() { mat2 a; mat3 m; mat4 b; uvec2 c; uvec3 d; uvec4 e; }").size(), 0)
 	assert_eq(MMGraphCost.lint_parity("void f() { bvec3 b; }").size(), 1)
 	assert_eq(MMGraphCost.lint_parity("float f(float x) { return dFdx(x); }").size(), 1)
+	assert_eq(MMGraphCost.lint_parity("mat3 f(vec3 a) { return outerProduct(a, a); }").size(), 1)
+	assert_eq(MMGraphCost.lint_parity("mat2 f(mat2 a) { return matrixCompMult(a, a); }").size(), 1)
 	assert_eq(MMGraphCost.lint_parity("float f(vec2 p) { return fract(sin(dot(p, vec2(1.0)))*4.0); }").size(), 1)
 
 ## A loop whose body starts with if (i >= X) break; runs min(bound, X) times

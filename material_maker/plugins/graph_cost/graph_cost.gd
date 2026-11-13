@@ -38,7 +38,9 @@ const SIN_HASH_HELPERS : Array[String] = [ "rand", "rand2", "rand3", "rand31", "
 const UNSAFE_TOKENS : Array[String] = [
 	"bvec2", "bvec3", "bvec4",
 	"lessThan", "lessThanEqual", "greaterThan", "greaterThanEqual", "equal", "notEqual",
-	"dFdx", "dFdy", "fwidth", "texelFetch", "textureSize"
+	"dFdx", "dFdy", "fwidth", "texelFetch", "textureSize",
+	# matrix functions the HLSL translation does not handle
+	"outerProduct", "matrixCompMult"
 ]
 
 static var re_identifier : RegEx = RegEx.create_from_string("[A-Za-z_]\\w*")

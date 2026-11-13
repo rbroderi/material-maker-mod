@@ -286,6 +286,32 @@ func test_value_noise_gpu() -> void:
 		graph.free()
 		graph = null
 
+# Perlin uses unit gradients and is scaled to [-1, 1]: the node's 0.5+0.5*perlin stays in [0, 1],
+# and still uses most of that range (it is not squashed toward 0.5)
+func test_perlin_range_gpu() -> void:
+	if not gpu_available():
+		pending("no rendering device (headless)")
+		return
+	var lo : float = 1.0
+	var hi : float = 0.0
+	for seed_value in [ 0, 7, 12345 ]:
+		var gen : MMGenBase = await make_node("tex3d_noise_perlin", { scale_x=4, scale_y=4, scale_z=4 })
+		gen.set_parameter("seed_offset", float(seed_value))
+		for divisor in [ 1.0, 8.0, 32.0 ]:
+			var image : Image = await render_points(gen, 0, divisor)
+			assert_not_null(image)
+			if image == null:
+				return
+			for idx in 4096:
+				var v : float = image.get_pixel(idx % 64, idx/64).r
+				lo = minf(lo, v)
+				hi = maxf(hi, v)
+		graph.free()
+		graph = null
+	assert_true(lo >= 0.0 and hi <= 1.0, "perlin range [%f, %f]" % [ lo, hi ])
+	assert_lt(lo, 0.2, "perlin minimum %f" % lo)
+	assert_gt(hi, 0.8, "perlin maximum %f" % hi)
+
 func test_fbm_gpu() -> void:
 	if not gpu_available():
 		pending("no rendering device (headless)")
