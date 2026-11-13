@@ -9,6 +9,8 @@ extends MMPlugin
 const VolumeExport = preload("volume_export.gd")
 
 const RESOLUTIONS : Array[int] = [ 32, 64, 128, 256 ]
+## Formats of the export menu (raw and slices are only available from the
+## command line)
 const FORMAT_NAMES : Dictionary = { vdb="OpenVDB (.vdb)", dds="3D DDS (.dds)", ktx2="KTX2 (.ktx2)" }
 
 
@@ -17,7 +19,9 @@ func _enable(api : MMPlugins.API) -> void:
 	api.add_cli_mode("--export-volume", export_mode, "material_maker --export-volume --node <node[:output]> [options] <files>   export a 3D texture or SDF as a volume", {
 		"--voxels": { key="resolution", type=TYPE_INT, help="voxels in each direction of --export-volume (default: 128)" },
 		"--extent": { key="extent", type=TYPE_FLOAT, help="size of the box sampled by --export-volume (default: 1, the box is centered)" },
-		"--texel-format": { key="texel_format", type=TYPE_STRING, help="texel format of --export-volume to dds or ktx2 (%s); --format is vdb, dds or ktx2" % ", ".join(VolumeExport.TEXEL_FORMATS.keys()) } })
+		"--texel-format": { key="texel_format", type=TYPE_STRING, help="texel format of --export-volume to dds, ktx2 (r8 and float formats only), raw or slices (%s); --format is vdb, dds, ktx2, raw (<name>.raw and <name>.raw.json) or slices (<name>_z0000.png or .exr)" % ", ".join(VolumeExport.TEXEL_FORMATS.keys()) },
+		"--volume-origin": { key="volume_origin", type=TYPE_STRING, help="box sampled by --export-volume: center ([-extent/2, extent/2]^3, default) or corner ([0, extent]^3, for noises whose period is the extent)" },
+		"--check-tileable": { key="check_tileable", type=TYPE_BOOL, help="--export-volume fails if the volume is not periodic with the period --extent (maximum difference with the volume offset by the extent over 1/255)" } })
 	api.add_rpc_method("export_volume", export_rpc)
 
 ## The Volume section of the 2D preview's export menu, shown for 3D outputs
@@ -43,7 +47,7 @@ class VolumeSection:
 		resolution.selected = RESOLUTIONS.find(128)
 		hbox.add_child(resolution)
 		format = OptionButton.new()
-		for f in VolumeExport.FORMATS:
+		for f in FORMAT_NAMES.keys():
 			format.add_item(FORMAT_NAMES[f])
 		hbox.add_child(format)
 		var button : Button = Button.new()
@@ -59,7 +63,7 @@ class VolumeSection:
 		var generator : MMGenBase = export_menu.get_generator()
 		if generator == null:
 			return
-		var extension : String = VolumeExport.FORMATS[format.selected]
+		var extension : String = FORMAT_NAMES.keys()[format.selected]
 		var file_dialog := preload("res://material_maker/windows/file_dialog/file_dialog.tscn").instantiate()
 		file_dialog.access = FileDialog.ACCESS_FILESYSTEM
 		file_dialog.file_mode = FileDialog.FILE_MODE_SAVE_FILE
@@ -83,7 +87,9 @@ func export_mode(cli : Node, files : Array, options : Dictionary):
 	var resolution : int = options.get("resolution", 128)
 	var extent : float = options.get("extent", 1.0)
 	var texel_format : String = options.get("texel_format", "")
-	var option_error : String = VolumeExport.check_options(extension, resolution, extent, texel_format)
+	var volume_origin : String = options.get("volume_origin", "center")
+	var check_tileable : bool = options.get("check_tileable", false)
+	var option_error : String = VolumeExport.check_options(extension, resolution, extent, texel_format, volume_origin)
 	if option_error == "" and options.node == "":
 		option_error = "--export-volume requires --node <node[:output]>"
 	if option_error != "":
@@ -97,13 +103,16 @@ func export_mode(cli : Node, files : Array, options : Dictionary):
 			cli.show_file_error("ERROR: %s: %s" % [ f.get_file(), resolved.error ])
 			return
 		var file_name : String = variation_options.output_dir.path_join("%s_%s%s.%s" % [ f.get_file().get_basename(), MMCliTools.spec_to_file_part(variation_options.node), suffix, extension ])
-		var error : String = await VolumeExport.export_volume(resolved.generator, resolved.output, file_name, resolution, extent, texel_format)
+		var error : String = await VolumeExport.export_volume(resolved.generator, resolved.output, file_name, resolution, extent, texel_format, volume_origin, check_tileable)
 		if error != "":
 			cli.show_file_error("ERROR: %s: %s" % [ f.get_file(), error ])
+		elif extension == "slices":
+			print("Exported %s_z*" % file_name.get_basename())
 		else:
 			print("Exported %s" % file_name), "--export-volume")
 
-## RPC: { node, path, output, resolution, extent, texel_format } -> the path
+## RPC: { node, path, output, resolution, extent, texel_format, origin,
+## check_tileable } -> the path
 func export_rpc(params : Dictionary, rpc : Node):
 	if not rpc.require(params, [ "node", "path" ]):
 		return null
@@ -116,12 +125,14 @@ func export_rpc(params : Dictionary, rpc : Node):
 	var resolution : int = int(params.get("resolution", 128))
 	var extent : float = float(params.get("extent", 1.0))
 	var texel_format : String = params.get("texel_format", "")
-	var option_error : String = VolumeExport.check_options(params.path.get_extension().to_lower(), resolution, extent, texel_format)
+	var origin : String = str(params.get("origin", "center"))
+	var check_tileable : bool = bool(params.get("check_tileable", false))
+	var option_error : String = VolumeExport.check_options(params.path.get_extension().to_lower(), resolution, extent, texel_format, origin)
 	if option_error != "":
 		return rpc.fail(option_error)
 	var generator : MMGenBase = rpc.get_generator(await rpc.get_graph(), params.node)
 	if generator == null:
 		return null
 	await MMCliTools.wait_for_renders(rpc.get_tree())
-	var error : String = await VolumeExport.export_volume(generator, output, params.path, resolution, extent, texel_format)
+	var error : String = await VolumeExport.export_volume(generator, output, params.path, resolution, extent, texel_format, origin, check_tileable)
 	return rpc.fail(error) if error != "" else params.path

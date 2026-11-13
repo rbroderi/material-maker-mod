@@ -1,0 +1,132 @@
+extends GutTest
+
+## Tests for the unorm texel formats, the raw and slices formats and the origin
+## of the volumes exported by the volume_export plugin. The volume is hand built:
+## 4 slices in an 8x8 atlas, r = x/4, g = y/4, b = z/4.
+
+const VolumeExport = preload("res://material_maker/plugins/volume_export/volume_export.gd")
+
+const N : int = 4
+
+func make_volume() -> VolumeExport.Volume:
+	var volume : VolumeExport.Volume = VolumeExport.Volume.new()
+	volume.resolution = N
+	volume.columns = 2
+	volume.extent = 2.0
+	volume.kind = "color"
+	volume.atlas = Image.create(8, 8, false, Image.FORMAT_RGBAF)
+	for z in N:
+		for y in N:
+			for x in N:
+				volume.atlas.set_pixel((z%2)*N+x, (z/2)*N+y, Color(x/4.0, y/4.0, z/4.0, 1.0))
+	return volume
+
+func test_r8() -> void:
+	var data : PackedByteArray = VolumeExport.get_texel_data(make_volume(), "r8")
+	assert_eq(data.size(), N*N*N)
+	# 0, 0.25, 0.5 and 0.75 rounded to 8 bits
+	assert_eq(Array(data.slice(0, 4)), [ 0, 64, 128, 191 ])
+	# y varies after x
+	assert_eq(Array(data.slice(4, 8)), [ 0, 64, 128, 191 ])
+
+func test_rg8() -> void:
+	var data : PackedByteArray = VolumeExport.get_texel_data(make_volume(), "rg8")
+	assert_eq(data.size(), N*N*N*2)
+	# x = 2, y = 3, z = 0: r = 0.5, g = 0.75
+	var offset : int = ((0*N+3)*N+2)*2
+	assert_eq(data[offset], 128)
+	assert_eq(data[offset+1], 191)
+
+func test_r16() -> void:
+	var data : PackedByteArray = VolumeExport.get_texel_data(make_volume(), "r16")
+	assert_eq(data.size(), N*N*N*2)
+	# x = 3: 0.75*65535 = 49151.25
+	assert_eq(data.decode_u16(3*2), 49151)
+	# little endian
+	assert_eq(data[6], 49151 & 255)
+	assert_eq(data[7], 49151 >> 8)
+
+func test_rg16() -> void:
+	var data : PackedByteArray = VolumeExport.get_texel_data(make_volume(), "rg16")
+	assert_eq(data.size(), N*N*N*4)
+	# x = 1, y = 2, z = 0
+	var offset : int = ((0*N+2)*N+1)*4
+	assert_eq(data.decode_u16(offset), 16384)
+	assert_eq(data.decode_u16(offset+2), 32768)
+	# x = 1, y = 0, z = 3: g = 0 and the first slice of the second row of the atlas
+	offset = ((3*N+0)*N+1)*4
+	assert_eq(data.decode_u16(offset), 16384)
+	assert_eq(data.decode_u16(offset+2), 0)
+
+func test_values_are_clamped() -> void:
+	var volume : VolumeExport.Volume = make_volume()
+	volume.atlas.set_pixel(0, 0, Color(-3.0, 7.0, 0.0, 1.0))
+	var data : PackedByteArray = VolumeExport.get_texel_data(volume, "rg8")
+	assert_eq(data[0], 0)
+	assert_eq(data[1], 255)
+
+func test_dds_header() -> void:
+	for f in [ "r8", "rg8", "r16", "rg16" ]:
+		var path : String = "user://test_volume_export_formats_%s.dds" % f
+		assert_eq(VolumeExport.write_dds(path, make_volume(), f), OK)
+		var bytes : PackedByteArray = FileAccess.get_file_as_bytes(path)
+		assert_eq(bytes.slice(0, 4).get_string_from_ascii(), "DDS ")
+		# height, width and depth
+		assert_eq(bytes.decode_u32(12), N)
+		assert_eq(bytes.decode_u32(16), N)
+		assert_eq(bytes.decode_u32(24), N)
+		# DX10 header: DXGI format, TEXTURE3D
+		assert_eq(bytes.decode_u32(128), { r8=61, rg8=49, r16=56, rg16=35 }[f], f)
+		assert_eq(bytes.decode_u32(132), 4)
+		assert_eq(bytes.size(), 148+N*N*N*VolumeExport.texel_size(f), f)
+		DirAccess.remove_absolute(path)
+
+func test_raw() -> void:
+	var path : String = "user://test_volume_export_formats.raw"
+	assert_eq(VolumeExport.write_raw(path, make_volume(), "rg16"), OK)
+	assert_eq(FileAccess.get_file_as_bytes(path).size(), N*N*N*4)
+	var description = JSON.parse_string(FileAccess.get_file_as_string(path+".json"))
+	assert_eq(int(description["resolution"]), N)
+	assert_eq(description["texel_format"], "rg16")
+	assert_eq(int(description["channels"]), 2)
+	assert_eq(description["extent"], 2.0)
+	assert_eq(description["origin"], "center")
+	assert_eq(description["order"], "xyz")
+	assert_eq(description.size(), 6)
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(path+".json")
+
+func test_raw_is_deterministic() -> void:
+	var path : String = "user://test_volume_export_formats_a.raw"
+	VolumeExport.write_raw(path, make_volume(), "rgba16f")
+	var first : PackedByteArray = FileAccess.get_file_as_bytes(path)
+	var first_json : String = FileAccess.get_file_as_string(path+".json")
+	VolumeExport.write_raw(path, make_volume(), "rgba16f")
+	assert_eq(FileAccess.get_file_as_bytes(path), first)
+	assert_eq(FileAccess.get_file_as_string(path+".json"), first_json)
+	assert_eq(first.size(), N*N*N*8)
+	DirAccess.remove_absolute(path)
+	DirAccess.remove_absolute(path+".json")
+
+func test_slices() -> void:
+	var base : String = "user://test_volume_export_formats_slices"
+	assert_eq(VolumeExport.write_slices(base, make_volume(), "r8"), OK)
+	var image : Image = Image.load_from_file("%s_z0003.png" % base)
+	assert_not_null(image)
+	assert_eq(image.get_width(), N)
+	# x = 2: 0.5
+	assert_eq(int(round(image.get_pixel(2, 1).r*255.0)), 128)
+	for z in N:
+		DirAccess.remove_absolute("%s_z%04d.png" % [ base, z ])
+	assert_eq(VolumeExport.write_slices(base, make_volume(), "rg16"), OK)
+	assert_true(FileAccess.file_exists("%s_z0000.exr" % base))
+	for z in N:
+		DirAccess.remove_absolute("%s_z%04d.exr" % [ base, z ])
+
+func test_unknown_formats_are_errors() -> void:
+	var generator : MMGenBase = MMGenBase.new()
+	var error : String = await VolumeExport.export_volume(generator, 0, "user://x.raw", 8, 1.0, "r12")
+	assert_string_contains(error, "unknown texel format")
+	error = await VolumeExport.export_volume(generator, 0, "user://x.raw", 8, 1.0, "r8", "middle")
+	assert_string_contains(error, "unknown volume origin")
+	generator.free()

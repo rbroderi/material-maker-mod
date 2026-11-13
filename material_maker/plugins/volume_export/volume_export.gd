@@ -10,20 +10,26 @@ extends RefCounted
 
 
 const VOLUME_TYPES : Array[String] = [ "tex3d", "tex3d_gs", "sdf3d", "sdf3dc" ]
-const FORMATS : Array[String] = [ "vdb", "dds", "ktx2" ]
-## Texel formats of DDS and KTX2 files: Godot image format, texel size and
-## DXGI format (DDS; KTX2 files are written by the ktx2_format plugin)
+const FORMATS : Array[String] = [ "vdb", "dds", "ktx2", "raw", "slices" ]
+## Texel formats of DDS, KTX2, raw and slices files: Godot image format (-1
+## for the unorm formats, quantised by get_texel_data), texel size, channels
+## and DXGI format (DDS; KTX2 files are written by the ktx2_format plugin)
 const TEXEL_FORMATS : Dictionary = {
-	rgba16f={ image=Image.FORMAT_RGBAH, size=8, dxgi=10 },
-	rgba32f={ image=Image.FORMAT_RGBAF, size=16, dxgi=2 },
-	rgba8={ image=Image.FORMAT_RGBA8, size=4, dxgi=28 },
-	r16f={ image=Image.FORMAT_RH, size=2, dxgi=54 },
-	r32f={ image=Image.FORMAT_RF, size=4, dxgi=41 },
+	rgba16f={ image=Image.FORMAT_RGBAH, size=8, channels=4, dxgi=10 },
+	rgba32f={ image=Image.FORMAT_RGBAF, size=16, channels=4, dxgi=2 },
+	rgba8={ image=Image.FORMAT_RGBA8, size=4, channels=4, dxgi=28 },
+	r16f={ image=Image.FORMAT_RH, size=2, channels=1, dxgi=54 },
+	r32f={ image=Image.FORMAT_RF, size=4, channels=1, dxgi=41 },
+	r8={ image=-1, size=1, channels=1, bits=8, dxgi=61 },
+	rg8={ image=-1, size=2, channels=2, bits=8, dxgi=49 },
+	r16={ image=-1, size=2, channels=1, bits=16, dxgi=56 },
+	rg16={ image=-1, size=4, channels=2, bits=16, dxgi=35 },
 }
 const MIN_RESOLUTION : int = 8
 ## All slices are rendered at once, in a 32 bits float atlas (4096x4096 for
 ## 256³ voxels; 512³ voxels would need 2.2 GB)
 const MAX_RESOLUTION : int = 256
+const ORIGINS : Array[String] = [ "center", "corner" ]
 
 
 ## A sampled volume: z slices in an atlas of columns x columns tiles
@@ -32,6 +38,8 @@ class Volume:
 	var resolution : int
 	var columns : int
 	var extent : float
+	## "center" ([-extent/2, extent/2]³) or "corner" ([0, extent]³)
+	var origin : String = "center"
 	## "color" (TEX3D), "density" (grayscale TEX3D) or "sdf"
 	var kind : String
 	## RGBA 32 bits floats
@@ -61,7 +69,8 @@ static func is_volume_output(generator : MMGenBase, output_index : int) -> bool:
 	return output_index < outputs.size() and outputs[output_index].get("type", "") in VOLUME_TYPES
 
 ## Samples a 3D output of a generator
-static func render_volume(generator : MMGenBase, output_index : int, resolution : int, extent : float = 1.0) -> Volume:
+## ("origin" is "center" or "corner", offset moves the sampled box)
+static func render_volume(generator : MMGenBase, output_index : int, resolution : int, extent : float = 1.0, origin : String = "center", offset : Vector3 = Vector3.ZERO) -> Volume:
 	if not is_volume_output(generator, output_index):
 		return null
 	var type : String = generator.get_output_defs()[output_index].type
@@ -83,12 +92,13 @@ static func render_volume(generator : MMGenBase, output_index : int, resolution 
 		"sdf3dc":
 			value = "vec4((%s).xyy, 1.0)" % value
 	# Position of the voxel of each pixel of the atlas
+	var shift : float = 0.0 if origin == "corner" else 0.5
 	source.defs = "\n".join([
 		"vec4 mm_volume_p(vec2 uv) {",
 		"\tvec2 cell = floor(uv*%d.0);" % columns,
 		"\tvec2 local = fract(uv*%d.0);" % columns,
 		"\tfloat z = (cell.y*%d.0+cell.x+0.5)/%d.0;" % [ columns, resolution ],
-		"\treturn vec4((vec3(local, z)-vec3(0.5))*%f, 0.0);" % extent,
+		"\treturn vec4((vec3(local, z)-vec3(%.1f))*%.9f+vec3(%.9f, %.9f, %.9f), 0.0);" % [ shift, extent, offset.x, offset.y, offset.z ],
 		"}", "" ])+source.defs
 	source.output_values = { rgba=value }
 	source.output_type = "rgba"
@@ -102,6 +112,7 @@ static func render_volume(generator : MMGenBase, output_index : int, resolution 
 	volume.resolution = resolution
 	volume.columns = columns
 	volume.extent = extent
+	volume.origin = "corner" if origin == "corner" else "center"
 	volume.kind = { tex3d="color", tex3d_gs="density", sdf3d="sdf", sdf3dc="sdf" }[type]
 	volume.atlas = (await texture.get_texture()).get_image()
 	if volume.atlas.get_format() != Image.FORMAT_RGBAF:
@@ -109,9 +120,11 @@ static func render_volume(generator : MMGenBase, output_index : int, resolution 
 	return volume
 
 ## Checks the options of an export: returns an error message, or ""
-static func check_options(extension : String, resolution : int, extent : float, texel_format : String) -> String:
+static func check_options(extension : String, resolution : int, extent : float, texel_format : String, origin : String = "center") -> String:
 	if not extension in FORMATS:
-		return "unknown volume format '%s' (use vdb, dds or ktx2)" % extension
+		return "unknown volume format '%s' (use %s)" % [ extension, ", ".join(FORMATS) ]
+	if not origin in ORIGINS:
+		return "unknown volume origin '%s' (use %s)" % [ origin, ", ".join(ORIGINS) ]
 	if resolution < MIN_RESOLUTION or resolution > MAX_RESOLUTION:
 		return "incorrect resolution %d (voxels in each direction, from %d to %d)" % [ resolution, MIN_RESOLUTION, MAX_RESOLUTION ]
 	if not extent > 0.0 or is_inf(extent):
@@ -121,23 +134,53 @@ static func check_options(extension : String, resolution : int, extent : float, 
 	return ""
 
 ## Renders and saves a volume, the format being chosen by the file extension
-static func export_volume(generator : MMGenBase, output_index : int, file_name : String, resolution : int, extent : float = 1.0, texel_format : String = "") -> String:
+## The "raw" format writes <name>.raw and <name>.raw.json, and "slices" (file
+## extension .slices) writes <name>_z0000.png (8 bits formats) or .exr files.
+## With check_tileable, fails if the volume is not periodic with the period
+## extent (it is compared to the volume sampled one extent further).
+static func export_volume(generator : MMGenBase, output_index : int, file_name : String, resolution : int, extent : float = 1.0, texel_format : String = "", origin : String = "center", check_tileable : bool = false) -> String:
 	var extension : String = file_name.get_extension().to_lower()
-	var option_error : String = check_options(extension, resolution, extent, texel_format)
+	var option_error : String = check_options(extension, resolution, extent, texel_format, origin)
 	if option_error != "":
 		return option_error
-	var volume : Volume = await render_volume(generator, output_index, resolution, extent)
+	var volume : Volume = await render_volume(generator, output_index, resolution, extent, origin)
 	if volume == null:
 		return "the output is not a 3D texture or SDF, or could not be rendered"
+	if check_tileable:
+		var shifted : Volume = await render_volume(generator, output_index, resolution, extent, origin, Vector3(extent, extent, extent))
+		if shifted == null:
+			return "the output could not be rendered to check that it is tileable"
+		var difference : float = max_difference(volume, shifted)
+		if difference > 1.0/255.0:
+			return "the volume is not tileable (maximum difference %f with the volume offset by the extent, more than 1/255)" % difference
+	if texel_format == "":
+		texel_format = default_texel_format(volume)
 	var error : Error
 	match extension:
 		"vdb":
 			error = write_vdb(file_name, volume)
 		"dds":
-			error = write_dds(file_name, volume, texel_format if texel_format != "" else default_texel_format(volume))
+			error = write_dds(file_name, volume, texel_format)
 		"ktx2":
-			error = write_ktx2(file_name, volume, texel_format if texel_format != "" else default_texel_format(volume))
+			if not MMPlugins.load_plugin_file("ktx2_format", "ktx2.gd").FORMATS.has(texel_format):
+				return "KTX2 files do not support the texel format %s" % texel_format
+			error = write_ktx2(file_name, volume, texel_format)
+		"raw":
+			error = write_raw(file_name, volume, texel_format)
+		"slices":
+			error = write_slices(file_name.get_basename(), volume, texel_format)
 	return "" if error == OK else "cannot write '%s' (%s)" % [ file_name, error_string(error) ]
+
+## The maximum absolute difference between the samples of two volumes
+static func max_difference(a : Volume, b : Volume) -> float:
+	var da : PackedFloat32Array = a.atlas.get_data().to_float32_array()
+	var db : PackedFloat32Array = b.atlas.get_data().to_float32_array()
+	if da.size() != db.size():
+		return INF
+	var rv : float = 0.0
+	for i in da.size():
+		rv = max(rv, abs(da[i]-db[i]))
+	return rv
 
 static func default_texel_format(volume : Volume) -> String:
 	return "rgba16f" if volume.kind == "color" else "r16f"
@@ -149,6 +192,8 @@ static func default_texel_format(volume : Volume) -> String:
 ## Texel data of all slices (x fastest, then y, then z) in a texel format
 static func get_texel_data(volume : Volume, texel_format : String) -> PackedByteArray:
 	var image_format : int = TEXEL_FORMATS[texel_format].image
+	if image_format < 0:
+		return quantize_texels(volume, TEXEL_FORMATS[texel_format])
 	var data : PackedByteArray = PackedByteArray()
 	for z in volume.resolution:
 		var slice : Image = volume.get_slice(z)
@@ -158,6 +203,95 @@ static func get_texel_data(volume : Volume, texel_format : String) -> PackedByte
 
 static func texel_size(texel_format : String) -> int:
 	return TEXEL_FORMATS[texel_format].size
+
+## Unorm texels (8 or 16 bits, little endian, channels interleaved): each
+## value is clamped to [0, 1] and rounded
+static func quantize_texels(volume : Volume, format : Dictionary) -> PackedByteArray:
+	var channels : int = format.channels
+	var bytes : int = format.bits/8
+	var maximum : float = 255.0 if bytes == 1 else 65535.0
+	var values : Array = []
+	for c in channels:
+		values.append(volume.get_channel(c))
+	var count : int = values[0].size()
+	var data : PackedByteArray = PackedByteArray()
+	data.resize(count*channels*bytes)
+	var offset : int = 0
+	for i in count:
+		for c in channels:
+			var v : int = int(roundf(clampf(values[c][i], 0.0, 1.0)*maximum))
+			if bytes == 1:
+				data.encode_u8(offset, v)
+			else:
+				data.encode_u16(offset, v)
+			offset += bytes
+	return data
+
+## <name>.raw (the texels of get_texel_data) and <name>.raw.json (what the
+## raw file contains)
+static func write_raw(file_name : String, volume : Volume, texel_format : String) -> Error:
+	var f : FileAccess = FileAccess.open(file_name, FileAccess.WRITE)
+	if f == null:
+		return FileAccess.get_open_error()
+	f.store_buffer(get_texel_data(volume, texel_format))
+	f.close()
+	var description : Dictionary = {
+		resolution=volume.resolution,
+		texel_format=texel_format,
+		channels=TEXEL_FORMATS[texel_format].channels,
+		extent=volume.extent,
+		origin=volume.origin,
+		order="xyz",
+	}
+	f = FileAccess.open(file_name+".json", FileAccess.WRITE)
+	if f == null:
+		return FileAccess.get_open_error()
+	f.store_string(JSON.stringify(description, "\t", true))
+	return OK
+
+## One file per z slice, <path>_z0000.png for 8 bits formats (one channel
+## images are grayscale, two channels images have a null blue channel) and
+## <path>_z0000.exr for the others (16 bits unorm formats are saved as 32 bits
+## floats, two channels ones with a null blue channel and an alpha of 1)
+static func write_slices(path : String, volume : Volume, texel_format : String) -> Error:
+	var format : Dictionary = TEXEL_FORMATS[texel_format]
+	var n : int = volume.resolution
+	var is_png : bool = format.image == Image.FORMAT_RGBA8 or format.get("bits", 0) == 8
+	var all_texels : PackedByteArray
+	if format.image < 0:
+		all_texels = get_texel_data(volume, texel_format)
+	var slice_bytes : int = n*n*format.size
+	for z in n:
+		var slice : Image
+		if format.image >= 0:
+			slice = volume.get_slice(z)
+			slice.convert(format.image)
+		else:
+			var texels : PackedByteArray = all_texels.slice(z*slice_bytes, (z+1)*slice_bytes)
+			slice = unorm_slice_image(texels, n, format)
+		var slice_name : String = "%s_z%04d.%s" % [ path, z, "png" if is_png else "exr" ]
+		var error : Error = slice.save_png(slice_name) if is_png else slice.save_exr(slice_name)
+		if error != OK:
+			return error
+	return OK
+
+static func unorm_slice_image(texels : PackedByteArray, n : int, format : Dictionary) -> Image:
+	var channels : int = format.channels
+	if format.bits == 8:
+		if channels == 1:
+			return Image.create_from_data(n, n, false, Image.FORMAT_L8, texels)
+		var rgb : PackedByteArray = PackedByteArray()
+		rgb.resize(n*n*3)
+		for i in n*n:
+			rgb[i*3] = texels[i*2]
+			rgb[i*3+1] = texels[i*2+1]
+		return Image.create_from_data(n, n, false, Image.FORMAT_RGB8, rgb)
+	var image : Image = Image.create(n, n, false, Image.FORMAT_RF if channels == 1 else Image.FORMAT_RGBAF)
+	for i in n*n:
+		var r : float = texels.decode_u16(i*channels*2)/65535.0
+		var g : float = texels.decode_u16(i*channels*2+2)/65535.0 if channels == 2 else 0.0
+		image.set_pixel(i%n, i/n, Color(r, g, 0.0, 1.0))
+	return image
 
 static func write_dds(file_name : String, volume : Volume, texel_format : String) -> Error:
 	var size : int = volume.resolution
