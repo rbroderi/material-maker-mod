@@ -13,8 +13,18 @@
 
 ## Material library
 
-- **Real-world material presets.** A library (or installable preset pack) of materials that match
-  real ones, each a tidy graph with a few meaningful parameters (age, wetness, wear, colour
+- **Real-world material presets.** Goal: an extensive library covering most surfaces found in the
+  real world, not a sample set. Use the Physically Based database (physicallybased.info; check its
+  license, believed CC0) as the coverage checklist and value source: every material it lists gets a
+  preset, and families it lacks are added from other measured sources. To reach that scale, build a
+  small set of parametric family graphs (wood, stone, ground, metal, coating, fabric, organic,
+  synthetic) and make each material a named parameter set over its family, generated from a data
+  table (material, family, measured values, ranges, reference) instead of hand-built graphs; keep
+  a coverage report of which listed materials have presets and which pass the reference check.
+  Target list for a city setting: design/city_materials/city_materials.csv, 10000 materials
+  ranked by likelihood (5000 hard, 2500 soft, 2500 organic), each a base, finish and condition;
+  regenerate or reweight with design/city_materials/generate_city_materials.py.
+  A library (or installable preset pack) of materials that match real ones, each a tidy graph with a few meaningful parameters (age, wetness, wear, colour
   variation, scale in real units) rather than raw noise knobs, all outputs set (albedo, roughness,
   metallic, normal, height, AO), tileable, and checked against measured reference data:
   - Wood: redwood, pine, oak, walnut, maple, birch, cherry, mahogany, ash, teak; end grain, plank
